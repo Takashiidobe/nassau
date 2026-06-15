@@ -39,15 +39,26 @@ pub struct ParseError {
 pub struct Parser {
     tokens: Vec<Token>,
     index: usize,
+    allow_implicit_val: bool,
 }
 
 impl Parser {
     pub fn new(tokens: Vec<Token>) -> Self {
-        Self { tokens, index: 0 }
+        Self {
+            tokens,
+            index: 0,
+            allow_implicit_val: false,
+        }
     }
 
     pub fn from_source(source: &str, file: &str) -> Result<Self, LexerError> {
         Ok(Self::new(Lexer::new(source, file).tokenize()?))
+    }
+
+    pub fn from_repl_source(source: &str, file: &str) -> Result<Self, LexerError> {
+        let mut parser = Self::new(Lexer::new(source, file).tokenize()?);
+        parser.allow_implicit_val = true;
+        Ok(parser)
     }
 
     fn error(&self, message: impl Into<String>) -> ParseError {
@@ -89,14 +100,21 @@ impl Parser {
                 self.index += 1;
                 continue;
             }
-            let start = self
-                .expect(TokenKind::Val, "expected a val declaration")?
-                .start;
-            self.expect(
-                TokenKind::Underscore,
-                "expected wildcard pattern '_' after val",
-            )?;
-            self.expect(TokenKind::Equals, "expected '=' after val pattern")?;
+            let start = if self.tokens[self.index].value == TokenKind::Val {
+                let start = self
+                    .expect(TokenKind::Val, "expected a val declaration")?
+                    .start;
+                self.expect(
+                    TokenKind::Underscore,
+                    "expected wildcard pattern '_' after val",
+                )?;
+                self.expect(TokenKind::Equals, "expected '=' after val pattern")?;
+                start
+            } else if self.allow_implicit_val {
+                self.tokens[self.index].start.clone()
+            } else {
+                return Err(self.error("expected a val declaration"));
+            };
             let identifier = self
                 .tokens
                 .get(self.index)

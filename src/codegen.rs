@@ -1,0 +1,315 @@
+use crate::parser::{ExprKind, Program, StmtKind};
+use clap::ValueEnum;
+use cranelift_codegen::ir::{AbiParam, InstBuilder, types};
+use cranelift_codegen::settings::Configurable;
+use cranelift_codegen::{self, settings};
+use cranelift_control::ControlPlane;
+use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
+use cranelift_module::{DataDescription, Linkage, Module, default_libcall_names};
+use cranelift_object::{ObjectBuilder, ObjectModule};
+use std::env;
+use std::fs;
+use std::path::Path;
+use std::process::Command;
+use std::time::Instant;
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+pub enum OptLevel {
+    None,
+    Speed,
+    #[value(name = "speed-and-size")]
+    SpeedAndSize,
+}
+impl OptLevel {
+    fn as_cranelift(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Speed => "speed",
+            Self::SpeedAndSize => "speed_and_size",
+        }
+    }
+}
+
+pub struct Codegen {
+    opt_level: OptLevel,
+    debug_passes: bool,
+    asm: bool,
+    dump_ir: bool,
+    dump_optimized_ir: bool,
+    verify: bool,
+    timings: bool,
+    stats: bool,
+    objdump: bool,
+}
+impl Codegen {
+    pub fn new(
+        opt_level: OptLevel,
+        debug_passes: bool,
+        asm: bool,
+        dump_ir: bool,
+        dump_optimized_ir: bool,
+        verify: bool,
+        timings: bool,
+        stats: bool,
+        objdump: bool,
+    ) -> Self {
+        Self {
+            opt_level,
+            debug_passes,
+            asm,
+            dump_ir,
+            dump_optimized_ir,
+            verify,
+            timings,
+            stats,
+            objdump,
+        }
+    }
+    pub fn compile(&self, program: &Program, output: &Path) -> Result<(), String> {
+        self.lower_and_link(program, output)
+    }
+    fn lower_and_link(&self, program: &Program, output: &Path) -> Result<(), String> {
+        let total_start = Instant::now();
+        let mut flag_builder = settings::builder();
+        flag_builder
+            .set("opt_level", self.opt_level.as_cranelift())
+            .map_err(|error| error.to_string())?;
+        let flags = settings::Flags::new(flag_builder);
+        let isa = cranelift_native::builder()
+            .map_err(|error| error.to_string())?
+            .finish(flags)
+            .map_err(|error| error.to_string())?;
+        let frontend_config = isa.frontend_config();
+        let object_builder = ObjectBuilder::new(isa, "nassau", default_libcall_names())
+            .map_err(|error| error.to_string())?;
+        let mut module = ObjectModule::new(object_builder);
+        let mut signature = module.make_signature();
+        signature.returns.push(AbiParam::new(types::I32));
+        let function = module
+            .declare_function("main", Linkage::Export, &signature)
+            .map_err(|error| error.to_string())?;
+
+        let mut context = module.make_context();
+        context.func.signature = signature;
+        let mut builder_context = FunctionBuilderContext::new();
+        let mut builder = FunctionBuilder::new(&mut context.func, &mut builder_context);
+        let block = builder.create_block();
+        builder.switch_to_block(block);
+        builder.seal_block(block);
+        let pointer_type = module.isa().pointer_type();
+        let has_print = program
+            .statements
+            .iter()
+            .any(|statement| matches!(statement.value, StmtKind::Print(_)));
+        let has_exit = program
+            .statements
+            .iter()
+            .any(|statement| matches!(statement.value, StmtKind::Exit(_)));
+        let printf = if has_print {
+            let mut sig = module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type));
+            sig.params.push(AbiParam::new(pointer_type));
+            sig.returns.push(AbiParam::new(types::I32));
+            Some(
+                module
+                    .declare_function("printf", Linkage::Import, &sig)
+                    .map_err(|e| e.to_string())?,
+            )
+        } else {
+            None
+        };
+        let exit = if has_exit {
+            let mut sig = module.make_signature();
+            sig.params.push(AbiParam::new(types::I32));
+            Some(
+                module
+                    .declare_function("exit", Linkage::Import, &sig)
+                    .map_err(|e| e.to_string())?,
+            )
+        } else {
+            None
+        };
+        let format_data = if has_print {
+            let id = module
+                .declare_data("nassau_format", Linkage::Local, false, false)
+                .map_err(|e| e.to_string())?;
+            let mut data = DataDescription::new();
+            data.define(b"%s\0".to_vec().into_boxed_slice());
+            module.define_data(id, &data).map_err(|e| e.to_string())?;
+            Some(id)
+        } else {
+            None
+        };
+        let mut string_data = Vec::new();
+        for (index, statement) in program.statements.iter().enumerate() {
+            if let StmtKind::Print(expr) = &statement.value {
+                if let ExprKind::String(value) = &expr.value {
+                    let id = module
+                        .declare_data(
+                            &format!("nassau_string_{index}"),
+                            Linkage::Local,
+                            false,
+                            false,
+                        )
+                        .map_err(|e| e.to_string())?;
+                    let mut data = DataDescription::new();
+                    let mut bytes = value.as_bytes().to_vec();
+                    bytes.push(0);
+                    data.define(bytes.into_boxed_slice());
+                    module.define_data(id, &data).map_err(|e| e.to_string())?;
+                    string_data.push((index, id));
+                }
+            }
+        }
+        for (index, statement) in program.statements.iter().enumerate() {
+            match &statement.value {
+                StmtKind::Print(_) => {
+                    let format_id = format_data.unwrap();
+                    let string_id = string_data.iter().find(|(i, _)| *i == index).unwrap().1;
+                    let format_gv = module.declare_data_in_func(format_id, builder.func);
+                    let string_gv = module.declare_data_in_func(string_id, builder.func);
+                    let fmt = builder.ins().symbol_value(pointer_type, format_gv);
+                    let string = builder.ins().symbol_value(pointer_type, string_gv);
+                    let func = module.declare_func_in_func(printf.unwrap(), builder.func);
+                    builder.ins().call(func, &[fmt, string]);
+                }
+                StmtKind::Exit(expr) => {
+                    let ExprKind::PosixExit(word8) = &expr.value else {
+                        unreachable!()
+                    };
+                    let ExprKind::Word8FromInt(integer) = &word8.value else {
+                        unreachable!()
+                    };
+                    let ExprKind::Integer(value) = integer.value else {
+                        unreachable!()
+                    };
+                    let func = module.declare_func_in_func(exit.unwrap(), builder.func);
+                    let code = builder.ins().iconst(types::I32, value.rem_euclid(256));
+                    builder.ins().call(func, &[code]);
+                }
+            }
+        }
+        let result = builder.ins().iconst(types::I32, i64::from(program.result));
+        builder.ins().return_(&[result]);
+        builder.finalize(frontend_config);
+        let frontend_time = total_start.elapsed();
+        let dump_ir = self.debug_passes || self.dump_ir;
+        let dump_optimized_ir = self.debug_passes || self.dump_optimized_ir;
+        let needs_manual_optimization = dump_optimized_ir || self.verify || self.stats;
+        if self.verify {
+            cranelift_codegen::verify_function(&context.func, module.isa())
+                .map_err(|error| error.to_string())?;
+        }
+        if dump_ir {
+            println!(
+                "== Cranelift IR before optimization ==\n{}",
+                context.func.display()
+            );
+        }
+        let optimization_start = Instant::now();
+        if needs_manual_optimization {
+            context
+                .optimize(module.isa(), &mut ControlPlane::default())
+                .map_err(|error| error.to_string())?;
+        }
+        let optimization_time = optimization_start.elapsed();
+        if self.verify && needs_manual_optimization {
+            cranelift_codegen::verify_function(&context.func, module.isa())
+                .map_err(|error| error.to_string())?;
+        }
+        if dump_optimized_ir {
+            println!(
+                "== Cranelift IR after optimization ==\n{}",
+                context.func.display()
+            );
+        }
+        context.set_disasm(self.debug_passes || self.asm);
+        let codegen_start = Instant::now();
+        module
+            .define_function(function, &mut context)
+            .map_err(|error| error.to_string())?;
+        let codegen_time = codegen_start.elapsed();
+        if self.stats {
+            let blocks = context.func.layout.blocks().count();
+            let instructions = context
+                .func
+                .layout
+                .blocks()
+                .map(|block| context.func.layout.block_insts(block).count())
+                .sum::<usize>();
+            let code_size = context
+                .compiled_code()
+                .map(|compiled| compiled.code_info().total_size)
+                .unwrap_or_default();
+            println!(
+                "== Cranelift stats ==\nblocks: {blocks}\nIR instructions: {instructions}\ncode bytes: {code_size}"
+            );
+        }
+        if self.debug_passes || self.asm {
+            let disassembly = context
+                .compiled_code()
+                .and_then(|compiled| compiled.vcode.as_deref())
+                .ok_or_else(|| "target does not provide a textual assembly listing".to_string())?;
+            if self.debug_passes {
+                println!("== Cranelift machine instructions ==\n{disassembly}");
+            }
+            if self.asm {
+                fs::write(output, disassembly).map_err(|error| error.to_string())?;
+                if self.timings {
+                    println!(
+                        "== Timings ==\nfrontend: {:?}\noptimization: {:?}\ncodegen: {:?}\ntotal: {:?}",
+                        frontend_time,
+                        optimization_time,
+                        codegen_time,
+                        total_start.elapsed()
+                    );
+                }
+                return Ok(());
+            }
+        }
+        let object = module.finish().emit().map_err(|error| error.to_string())?;
+
+        let object_path = env::temp_dir().join(format!("nassau-{}.o", std::process::id()));
+        fs::write(&object_path, object).map_err(|error| error.to_string())?;
+        if self.objdump {
+            let objdump = Command::new("objdump")
+                .args(["-drwC"])
+                .arg(&object_path)
+                .output()
+                .map_err(|error| format!("failed to invoke objdump: {error}"))?;
+            if !objdump.status.success() {
+                let _ = fs::remove_file(&object_path);
+                return Err(String::from_utf8_lossy(&objdump.stderr).trim().to_string());
+            }
+            println!(
+                "== Object disassembly ==\n{}",
+                String::from_utf8_lossy(&objdump.stdout)
+            );
+        }
+        let linker = env::var("NASSAU_CC").unwrap_or_else(|_| "cc".to_string());
+        let link_start = Instant::now();
+        let link_result = Command::new(&linker)
+            .args(["-o"])
+            .arg(output)
+            .arg(&object_path)
+            .output()
+            .map_err(|error| format!("failed to invoke {linker}: {error}"))?;
+        let _ = fs::remove_file(&object_path);
+        if !link_result.status.success() {
+            return Err(String::from_utf8_lossy(&link_result.stderr)
+                .trim()
+                .to_string());
+        }
+        if self.timings {
+            println!(
+                "== Timings ==\nfrontend: {:?}\noptimization: {:?}\ncodegen: {:?}\nlink: {:?}\ntotal: {:?}",
+                frontend_time,
+                optimization_time,
+                codegen_time,
+                link_start.elapsed(),
+                total_start.elapsed()
+            );
+        }
+        Ok(())
+    }
+}

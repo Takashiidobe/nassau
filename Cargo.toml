@@ -5,6 +5,8 @@ edition = "2024"
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
+miette = { version = "7", features = ["fancy"] }
+thiserror = "2"
 cranelift-codegen = "0.136"
 cranelift-control = "0.136"
 cranelift-frontend = "0.136"

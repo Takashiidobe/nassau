@@ -11,6 +11,7 @@ pub enum TokenKind {
     Identifier(String),
     Underscore,
     Equals,
+    Plus,
     Semicolon,
     Dot,
     LeftParen,
@@ -113,6 +114,7 @@ impl<'a> Lexer<'a> {
             let kind = match first {
                 '_' => TokenKind::Underscore,
                 '=' => TokenKind::Equals,
+                '+' => TokenKind::Plus,
                 ';' => TokenKind::Semicolon,
                 '.' => TokenKind::Dot,
                 '(' => TokenKind::LeftParen,

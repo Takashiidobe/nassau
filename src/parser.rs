@@ -1,4 +1,4 @@
-use miette::SourceSpan;
+use std::collections::HashSet;
 
 use crate::error::{LexerError, ParseError};
 use crate::lexer::{Lexer, Token, TokenKind};
@@ -10,6 +10,8 @@ pub type Stmt = Span<StmtKind>;
 #[derive(Debug)]
 pub enum ExprKind {
     Integer(i64),
+    Variable(String),
+    Add(Box<Expr>, Box<Expr>),
     String(String),
     Word8FromInt(Box<Expr>),
     PosixExit(Box<Expr>),
@@ -17,6 +19,7 @@ pub enum ExprKind {
 
 #[derive(Debug)]
 pub enum StmtKind {
+    Val(String, Expr),
     Print(Expr),
     Exit(Expr),
 }
@@ -31,6 +34,7 @@ pub struct Parser {
     tokens: Vec<Token>,
     index: usize,
     allow_implicit_val: bool,
+    variables: HashSet<String>,
 }
 
 impl Parser {
@@ -39,6 +43,7 @@ impl Parser {
             tokens,
             index: 0,
             allow_implicit_val: false,
+            variables: HashSet::new(),
         }
     }
 
@@ -49,6 +54,16 @@ impl Parser {
     pub fn from_repl_source(source: &str, file: &str) -> Result<Self, LexerError> {
         let mut parser = Self::new(Lexer::new(source, file).tokenize()?);
         parser.allow_implicit_val = true;
+        Ok(parser)
+    }
+
+    pub fn from_repl_source_with_variables(
+        source: &str,
+        file: &str,
+        variables: impl IntoIterator<Item = String>,
+    ) -> Result<Self, LexerError> {
+        let mut parser = Self::from_repl_source(source, file)?;
+        parser.variables.extend(variables);
         Ok(parser)
     }
 
@@ -95,39 +110,33 @@ impl Parser {
                 let start = self
                     .expect(TokenKind::Val, "expected a val declaration")?
                     .start;
-                self.expect(
-                    TokenKind::Underscore,
-                    "expected wildcard pattern '_' after val",
-                )?;
-                self.expect(TokenKind::Equals, "expected '=' after val pattern")?;
                 start
             } else if self.allow_implicit_val {
                 self.tokens[self.index].start.clone()
             } else {
                 return Err(self.error("expected a val declaration"));
             };
-            let identifier = self
-                .tokens
-                .get(self.index)
-                .ok_or_else(|| self.error("expected print or Posix.Process.exit"))?
-                .clone();
-            let kind = match &identifier.value {
-                TokenKind::Identifier(name) if name == "print" => {
-                    self.index += 1;
-                    let token = self.expect_string("print expects a string literal")?;
-                    let TokenKind::String(value) = token.value else {
-                        unreachable!()
-                    };
-                    StmtKind::Print(Span::new(token.start, token.end, ExprKind::String(value)))
-                }
-                TokenKind::Identifier(name) if name == "Posix" => {
-                    let value = self.parse_posix_exit()?;
-                    StmtKind::Exit(value)
-                }
-                _ => return Err(self.error("expected print or Posix.Process.exit")),
+            if matches!(
+                self.tokens.get(self.index).map(|token| &token.value),
+                Some(TokenKind::Underscore)
+            ) {
+                self.index += 1;
+                self.expect(TokenKind::Equals, "expected '=' after val pattern")?;
+                let kind = self.parse_effect()?;
+                let end = self.tokens[self.index - 1].end.clone();
+                statements.push(Span::new(start, end, kind));
+                continue;
+            }
+            let name = match self.tokens.get(self.index).map(|token| &token.value) {
+                Some(TokenKind::Identifier(name)) => name.clone(),
+                _ => return Err(self.error("expected a variable name or wildcard pattern")),
             };
-            let end = self.tokens[self.index - 1].end.clone();
-            statements.push(Span::new(start, end, kind));
+            self.index += 1;
+            self.expect(TokenKind::Equals, "expected '=' after val name")?;
+            let expr = self.parse_integer_expr()?;
+            let end = expr.end.clone();
+            self.variables.insert(name.clone());
+            statements.push(Span::new(start, end, StmtKind::Val(name, expr)));
         }
         if statements.is_empty() {
             return Err(self.error("expected a program"));
@@ -136,6 +145,67 @@ impl Parser {
             statements,
             result: 0,
         })
+    }
+
+    fn parse_effect(&mut self) -> Result<StmtKind, ParseError> {
+        let identifier = self
+            .tokens
+            .get(self.index)
+            .ok_or_else(|| self.error("expected print or Posix.Process.exit"))?
+            .clone();
+        match &identifier.value {
+            TokenKind::Identifier(name) if name == "print" => {
+                self.index += 1;
+                let token = self.expect_string("print expects a string literal")?;
+                let TokenKind::String(value) = token.value else {
+                    unreachable!()
+                };
+                Ok(StmtKind::Print(Span::new(
+                    token.start,
+                    token.end,
+                    ExprKind::String(value),
+                )))
+            }
+            TokenKind::Identifier(name) if name == "Posix" => {
+                Ok(StmtKind::Exit(self.parse_posix_exit()?))
+            }
+            _ => Err(self.error("expected print or Posix.Process.exit")),
+        }
+    }
+
+    fn parse_integer_expr(&mut self) -> Result<Expr, ParseError> {
+        let mut expr = self.parse_atom()?;
+        while self
+            .tokens
+            .get(self.index)
+            .is_some_and(|token| token.value == TokenKind::Plus)
+        {
+            self.index += 1;
+            let rhs = self.parse_atom()?;
+            let start = expr.start.clone();
+            let end = rhs.end.clone();
+            expr = Span::new(start, end, ExprKind::Add(Box::new(expr), Box::new(rhs)));
+        }
+        Ok(expr)
+    }
+
+    fn parse_atom(&mut self) -> Result<Expr, ParseError> {
+        let token = self
+            .tokens
+            .get(self.index)
+            .ok_or_else(|| self.error("expected an integer expression"))?
+            .clone();
+        self.index += 1;
+        match token.value {
+            TokenKind::Integer(value) => {
+                Ok(Span::new(token.start, token.end, ExprKind::Integer(value)))
+            }
+            TokenKind::Identifier(name) if self.variables.contains(&name) => {
+                Ok(Span::new(token.start, token.end, ExprKind::Variable(name)))
+            }
+            TokenKind::Identifier(name) => Err(self.error(format!("unbound variable '{name}'"))),
+            _ => Err(self.error("expected an integer expression")),
+        }
     }
 
     fn expect_string(&mut self, message: &str) -> Result<Token, ParseError> {
@@ -178,33 +248,16 @@ impl Parser {
             TokenKind::Identifier("fromInt".into()),
             "expected fromInt after Word8.",
         )?;
-        let integer = self
-            .tokens
-            .get(self.index)
-            .ok_or_else(|| self.error("Word8.fromInt expects an integer"))?
-            .clone();
-        let TokenKind::Integer(value) = integer.value else {
-            return Err(self.error("Word8.fromInt expects an integer"));
-        };
-        self.index += 1;
-        let inner = Span::new(
-            integer.start.clone(),
-            integer.end.clone(),
-            ExprKind::Integer(value),
-        );
-        self.expect(
-            TokenKind::RightParen,
-            "expected ')' after Word8.fromInt argument",
-        )?;
+        let integer = self.parse_integer_expr()?;
+        let word8_end = integer.end.clone();
         let word8 = Span::new(
             word8_start,
-            integer.end,
-            ExprKind::Word8FromInt(Box::new(inner)),
+            word8_end,
+            ExprKind::Word8FromInt(Box::new(integer)),
         );
-        Ok(Span::new(
-            start,
-            self.tokens[self.index - 1].end.clone(),
-            ExprKind::PosixExit(Box::new(word8)),
-        ))
+        let end = self
+            .expect(TokenKind::RightParen, "expected ')' after exit status")?
+            .end;
+        Ok(Span::new(start, end, ExprKind::PosixExit(Box::new(word8))))
     }
 }

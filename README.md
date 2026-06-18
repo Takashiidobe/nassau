@@ -28,3 +28,11 @@ cargo run -- --objdump input.ml
 ```
 
 `--objdump` disassembles the actual Cranelift object bytes and requires `objdump` to be installed. `--debug-passes` remains as a shortcut for the main IR and instruction dumps.
+
+The REPL integration test compares Nassau sessions with SML/NJ. Run it with:
+
+```sh
+SMLNJ=/path/to/sml cargo test --test repl
+```
+
+When `SMLNJ` is unset, the test uses `sml` from `PATH` and skips if SML/NJ is not installed.

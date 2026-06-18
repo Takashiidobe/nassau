@@ -1,4 +1,5 @@
 mod codegen;
+mod error;
 mod lexer;
 mod parser;
 mod repl;
@@ -81,7 +82,7 @@ fn run(cli: &Cli) -> miette::Result<PathBuf> {
         cli.objdump,
     )
     .compile(&program, &output)
-    .map_err(miette::Report::msg)?;
+    .map_err(miette::Report::new)?;
     Ok(output)
 }
 

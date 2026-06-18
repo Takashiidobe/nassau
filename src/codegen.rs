@@ -14,6 +14,7 @@ use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{DataDescription, FuncId, Linkage, Module, default_libcall_names};
 use cranelift_object::{ObjectBuilder, ObjectModule};
 
+use crate::error::CodegenError;
 use crate::parser::{ExprKind, Program, StmtKind};
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
@@ -79,28 +80,28 @@ impl Codegen {
         }
     }
 
-    fn isa(&self, jit: bool) -> Result<cranelift_codegen::isa::OwnedTargetIsa, String> {
+    fn isa(&self, jit: bool) -> Result<cranelift_codegen::isa::OwnedTargetIsa, CodegenError> {
         let mut flag_builder = settings::builder();
         flag_builder
             .set("opt_level", self.opt_level.as_cranelift())
-            .map_err(|error| error.to_string())?;
+            .map_err(|error| CodegenError::Backend(error.to_string()))?;
         if jit {
             flag_builder
                 .set("use_colocated_libcalls", "false")
-                .map_err(|error| error.to_string())?;
+                .map_err(|error| CodegenError::Backend(error.to_string()))?;
             if cfg!(target_arch = "x86_64") {
                 flag_builder
                     .set("is_pic", "true")
-                    .map_err(|error| error.to_string())?;
+                    .map_err(|error| CodegenError::Backend(error.to_string()))?;
             }
         }
         cranelift_native::builder()
-            .map_err(|error| error.to_string())?
+            .map_err(|error| CodegenError::Backend(error.to_string()))?
             .finish(settings::Flags::new(flag_builder))
-            .map_err(|error| error.to_string())
+            .map_err(|error| CodegenError::Backend(error.to_string()))
     }
 
-    pub fn new_jit_module(&self) -> Result<JITModule, String> {
+    pub fn new_jit_module(&self) -> Result<JITModule, CodegenError> {
         let builder = JITBuilder::with_isa(self.isa(true)?, default_libcall_names());
         Ok(JITModule::new(builder))
     }
@@ -110,19 +111,19 @@ impl Codegen {
         module: &mut JITModule,
         program: &Program,
         name: &str,
-    ) -> Result<*const u8, String> {
+    ) -> Result<*const u8, CodegenError> {
         let function = self.define_program(module, program, name)?;
         module
             .finalize_definitions()
-            .map_err(|error| error.to_string())?;
+            .map_err(|error| CodegenError::Backend(error.to_string()))?;
         Ok(module.get_finalized_function(function.id))
     }
 
-    pub fn compile(&self, program: &Program, output: &Path) -> Result<(), String> {
+    pub fn compile(&self, program: &Program, output: &Path) -> Result<(), CodegenError> {
         let total_start = Instant::now();
         let isa = self.isa(false)?;
         let object_builder = ObjectBuilder::new(isa, "nassau", default_libcall_names())
-            .map_err(|error| error.to_string())?;
+            .map_err(|error| CodegenError::Backend(error.to_string()))?;
         let mut module = ObjectModule::new(object_builder);
         let function = self.define_program(&mut module, program, "main")?;
 
@@ -131,29 +132,41 @@ impl Codegen {
                 .context
                 .compiled_code()
                 .and_then(|compiled| compiled.vcode.as_deref())
-                .ok_or_else(|| "target does not provide a textual assembly listing".to_string())?;
+                .ok_or_else(|| {
+                    CodegenError::Message(
+                        "target does not provide a textual assembly listing".into(),
+                    )
+                })?;
             if self.debug_passes {
                 println!("== Cranelift machine instructions ==\n{disassembly}");
             }
             if self.asm {
-                fs::write(output, disassembly).map_err(|error| error.to_string())?;
+                fs::write(output, disassembly)
+                    .map_err(|error| CodegenError::Io(error.to_string()))?;
                 self.print_timings(&function, Duration::ZERO, total_start.elapsed());
                 return Ok(());
             }
         }
 
-        let object = module.finish().emit().map_err(|error| error.to_string())?;
+        let object = module
+            .finish()
+            .emit()
+            .map_err(|error| CodegenError::Backend(error.to_string()))?;
         let object_path = env::temp_dir().join(format!("nassau-{}.o", std::process::id()));
-        fs::write(&object_path, object).map_err(|error| error.to_string())?;
+        fs::write(&object_path, object).map_err(|error| CodegenError::Io(error.to_string()))?;
         if self.objdump {
             let objdump = Command::new("objdump")
                 .args(["-drwC"])
                 .arg(&object_path)
                 .output()
-                .map_err(|error| format!("failed to invoke objdump: {error}"))?;
+                .map_err(|error| {
+                    CodegenError::Tool(format!("failed to invoke objdump: {error}"))
+                })?;
             if !objdump.status.success() {
                 let _ = fs::remove_file(&object_path);
-                return Err(String::from_utf8_lossy(&objdump.stderr).trim().to_string());
+                return Err(CodegenError::Tool(
+                    String::from_utf8_lossy(&objdump.stderr).trim().to_string(),
+                ));
             }
             println!(
                 "== Object disassembly ==\n{}",
@@ -167,12 +180,14 @@ impl Codegen {
             .arg(output)
             .arg(&object_path)
             .output()
-            .map_err(|error| format!("failed to invoke {linker}: {error}"))?;
+            .map_err(|error| CodegenError::Tool(format!("failed to invoke {linker}: {error}")))?;
         let _ = fs::remove_file(&object_path);
         if !link_result.status.success() {
-            return Err(String::from_utf8_lossy(&link_result.stderr)
-                .trim()
-                .to_string());
+            return Err(CodegenError::Linker(
+                String::from_utf8_lossy(&link_result.stderr)
+                    .trim()
+                    .to_string(),
+            ));
         }
         self.print_timings(&function, link_start.elapsed(), total_start.elapsed());
         Ok(())
@@ -183,14 +198,14 @@ impl Codegen {
         module: &mut M,
         program: &Program,
         name: &str,
-    ) -> Result<FunctionBuild, String> {
+    ) -> Result<FunctionBuild, CodegenError> {
         let total_start = Instant::now();
         let frontend_config = module.isa().frontend_config();
         let mut signature = module.make_signature();
         signature.returns.push(AbiParam::new(types::I32));
         let function = module
             .declare_function(name, Linkage::Export, &signature)
-            .map_err(|error| error.to_string())?;
+            .map_err(|error| CodegenError::Backend(error.to_string()))?;
         let mut context = module.make_context();
         context.func.signature = signature;
         let mut builder_context = FunctionBuilderContext::new();
@@ -216,7 +231,7 @@ impl Codegen {
             Some(
                 module
                     .declare_function("printf", Linkage::Import, &signature)
-                    .map_err(|error| error.to_string())?,
+                    .map_err(|error| CodegenError::Backend(error.to_string()))?,
             )
         } else {
             None
@@ -228,7 +243,7 @@ impl Codegen {
             Some(
                 module
                     .declare_function("fflush", Linkage::Import, &signature)
-                    .map_err(|error| error.to_string())?,
+                    .map_err(|error| CodegenError::Backend(error.to_string()))?,
             )
         } else {
             None
@@ -239,7 +254,7 @@ impl Codegen {
             Some(
                 module
                     .declare_function("exit", Linkage::Import, &signature)
-                    .map_err(|error| error.to_string())?,
+                    .map_err(|error| CodegenError::Backend(error.to_string()))?,
             )
         } else {
             None
@@ -247,12 +262,12 @@ impl Codegen {
         let format_data = if has_print {
             let id = module
                 .declare_data(&format!("{name}_format"), Linkage::Local, false, false)
-                .map_err(|error| error.to_string())?;
+                .map_err(|error| CodegenError::Backend(error.to_string()))?;
             let mut data = DataDescription::new();
             data.define(b"%s\0".to_vec().into_boxed_slice());
             module
                 .define_data(id, &data)
-                .map_err(|error| error.to_string())?;
+                .map_err(|error| CodegenError::Backend(error.to_string()))?;
             Some(id)
         } else {
             None
@@ -268,14 +283,14 @@ impl Codegen {
                             false,
                             false,
                         )
-                        .map_err(|error| error.to_string())?;
+                        .map_err(|error| CodegenError::Backend(error.to_string()))?;
                     let mut data = DataDescription::new();
                     let mut bytes = value.as_bytes().to_vec();
                     bytes.push(0);
                     data.define(bytes.into_boxed_slice());
                     module
                         .define_data(id, &data)
-                        .map_err(|error| error.to_string())?;
+                        .map_err(|error| CodegenError::Backend(error.to_string()))?;
                     string_data.push((index, id));
                 }
             }
@@ -320,7 +335,7 @@ impl Codegen {
         let needs_manual_optimization = dump_optimized_ir || self.verify || self.stats;
         if self.verify {
             cranelift_codegen::verify_function(&context.func, module.isa())
-                .map_err(|error| error.to_string())?;
+                .map_err(|error| CodegenError::Backend(error.to_string()))?;
         }
         if dump_ir {
             println!(
@@ -332,12 +347,12 @@ impl Codegen {
         if needs_manual_optimization {
             context
                 .optimize(module.isa(), &mut ControlPlane::default())
-                .map_err(|error| error.to_string())?;
+                .map_err(|error| CodegenError::Backend(error.to_string()))?;
         }
         let optimization = optimization_start.elapsed();
         if self.verify && needs_manual_optimization {
             cranelift_codegen::verify_function(&context.func, module.isa())
-                .map_err(|error| error.to_string())?;
+                .map_err(|error| CodegenError::Backend(error.to_string()))?;
         }
         if dump_optimized_ir {
             println!(
@@ -349,7 +364,7 @@ impl Codegen {
         let codegen_start = Instant::now();
         module
             .define_function(function, &mut context)
-            .map_err(|error| error.to_string())?;
+            .map_err(|error| CodegenError::Backend(error.to_string()))?;
         let codegen = codegen_start.elapsed();
         if self.stats {
             let blocks = context.func.layout.blocks().count();

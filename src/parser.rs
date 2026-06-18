@@ -1,7 +1,7 @@
-use miette::{Diagnostic, SourceSpan};
-use thiserror::Error;
+use miette::SourceSpan;
 
-use crate::lexer::{Lexer, LexerError, Token, TokenKind};
+use crate::error::{LexerError, ParseError};
+use crate::lexer::{Lexer, Token, TokenKind};
 use crate::span::Span;
 
 pub type Expr = Span<ExprKind>;
@@ -25,15 +25,6 @@ pub enum StmtKind {
 pub struct Program {
     pub statements: Vec<Stmt>,
     pub result: i32,
-}
-
-#[derive(Debug, Error, Diagnostic)]
-#[error("{message}")]
-#[diagnostic(code(nassau::parser))]
-pub struct ParseError {
-    pub message: String,
-    #[label("could not parse this source")]
-    pub span: SourceSpan,
 }
 
 pub struct Parser {

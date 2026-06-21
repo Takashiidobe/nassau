@@ -6,7 +6,7 @@ use std::process::Command;
 use std::time::{Duration, Instant};
 
 use clap::ValueEnum;
-use cranelift_codegen::ir::{AbiParam, InstBuilder, types};
+use cranelift_codegen::ir::{AbiParam, InstBuilder, immediates::Ieee64, types};
 use cranelift_codegen::settings::Configurable;
 use cranelift_codegen::{self, settings};
 use cranelift_control::ControlPlane;
@@ -16,7 +16,7 @@ use cranelift_module::{DataDescription, FuncId, Linkage, Module, default_libcall
 use cranelift_object::{ObjectBuilder, ObjectModule};
 
 use crate::error::CodegenError;
-use crate::parser::{ExprKind, Program, StmtKind};
+use crate::parser::{ExprKind, NumericValue, Program, StmtKind};
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
 pub enum OptLevel {
@@ -112,7 +112,7 @@ impl Codegen {
         module: &mut JITModule,
         program: &Program,
         name: &str,
-        initial_variables: &HashMap<String, i32>,
+        initial_variables: &HashMap<String, NumericValue>,
     ) -> Result<*const u8, CodegenError> {
         let function = self.define_program(module, program, name, initial_variables)?;
         module
@@ -200,7 +200,7 @@ impl Codegen {
         module: &mut M,
         program: &Program,
         name: &str,
-        initial_variables: &HashMap<String, i32>,
+        initial_variables: &HashMap<String, NumericValue>,
     ) -> Result<FunctionBuild, CodegenError> {
         let total_start = Instant::now();
         let frontend_config = module.isa().frontend_config();
@@ -303,14 +303,21 @@ impl Codegen {
             .map(|(name, value)| {
                 (
                     name.clone(),
-                    builder.ins().iconst(types::I32, i64::from(*value)),
+                    match value {
+                        NumericValue::Integer(value) => {
+                            builder.ins().iconst(types::I32, i64::from(*value))
+                        }
+                        NumericValue::Real(value) => {
+                            builder.ins().f64const(Ieee64::with_float(*value))
+                        }
+                    },
                 )
             })
             .collect::<HashMap<_, _>>();
         for (index, statement) in program.statements.iter().enumerate() {
             match &statement.value {
                 StmtKind::Val(name, expr) => {
-                    let value = Self::compile_integer_expr(expr, &mut builder, &variables);
+                    let value = Self::compile_expr(expr, &mut builder, &variables)?;
                     variables.insert(name.clone(), value);
                 }
                 StmtKind::Print(_) => {
@@ -333,7 +340,12 @@ impl Codegen {
                     let ExprKind::Word8FromInt(integer) = &word8.value else {
                         unreachable!()
                     };
-                    let value = Self::compile_integer_expr(integer, &mut builder, &variables);
+                    let value = Self::compile_expr(integer, &mut builder, &variables)?;
+                    if builder.func.dfg.value_type(value) != types::I32 {
+                        return Err(CodegenError::Message(
+                            "Posix.Process.exit expects an integer".into(),
+                        ));
+                    }
                     let function = module.declare_func_in_func(exit.unwrap(), builder.func);
                     let code = builder.ins().urem_imm_u(value, 256);
                     builder.ins().call(function, &[code]);
@@ -405,20 +417,58 @@ impl Codegen {
         })
     }
 
-    fn compile_integer_expr(
+    fn compile_expr(
         expr: &crate::parser::Expr,
         builder: &mut FunctionBuilder<'_>,
         variables: &HashMap<String, cranelift_codegen::ir::Value>,
-    ) -> cranelift_codegen::ir::Value {
+    ) -> Result<cranelift_codegen::ir::Value, CodegenError> {
         match &expr.value {
-            ExprKind::Integer(value) => builder.ins().iconst(types::I32, *value),
-            ExprKind::Variable(name) => variables[name],
-            ExprKind::Add(lhs, rhs) => {
-                let lhs = Self::compile_integer_expr(lhs, builder, variables);
-                let rhs = Self::compile_integer_expr(rhs, builder, variables);
-                builder.ins().iadd(lhs, rhs)
+            ExprKind::Integer(value) => Ok(builder.ins().iconst(types::I32, *value)),
+            ExprKind::Real(value) => Ok(builder.ins().f64const(Ieee64::with_float(*value))),
+            ExprKind::Variable(name) => Ok(variables[name]),
+            ExprKind::Add(lhs, rhs)
+            | ExprKind::Subtract(lhs, rhs)
+            | ExprKind::Multiply(lhs, rhs)
+            | ExprKind::Divide(lhs, rhs)
+            | ExprKind::IntDivide(lhs, rhs) => {
+                let lhs = Self::compile_expr(lhs, builder, variables)?;
+                let rhs = Self::compile_expr(rhs, builder, variables)?;
+                let ty = builder.func.dfg.value_type(lhs);
+                if builder.func.dfg.value_type(rhs) != ty {
+                    return Err(CodegenError::Message(
+                        "arithmetic operands must have the same type".into(),
+                    ));
+                }
+                let is_real_division = matches!(expr.value, ExprKind::Divide(_, _));
+                let is_integer_division = matches!(expr.value, ExprKind::IntDivide(_, _));
+                let instruction = match (ty, &expr.value) {
+                    (types::I32, ExprKind::Add(_, _)) => builder.ins().iadd(lhs, rhs),
+                    (types::I32, ExprKind::Subtract(_, _)) => builder.ins().isub(lhs, rhs),
+                    (types::I32, ExprKind::Multiply(_, _)) => builder.ins().imul(lhs, rhs),
+                    (types::I32, ExprKind::IntDivide(_, _)) => builder.ins().sdiv(lhs, rhs),
+                    (types::F64, ExprKind::Add(_, _)) => builder.ins().fadd(lhs, rhs),
+                    (types::F64, ExprKind::Subtract(_, _)) => builder.ins().fsub(lhs, rhs),
+                    (types::F64, ExprKind::Multiply(_, _)) => builder.ins().fmul(lhs, rhs),
+                    (types::F64, ExprKind::Divide(_, _)) => builder.ins().fdiv(lhs, rhs),
+                    _ if is_real_division => {
+                        return Err(CodegenError::Message("'/' expects real operands".into()));
+                    }
+                    _ if is_integer_division => {
+                        return Err(CodegenError::Message(
+                            "'div' expects integer operands".into(),
+                        ));
+                    }
+                    _ => {
+                        return Err(CodegenError::Message(
+                            "arithmetic requires integer or real operands of the same type".into(),
+                        ));
+                    }
+                };
+                Ok(instruction)
             }
-            _ => unreachable!(),
+            _ => Err(CodegenError::Message(
+                "expected an integer or real expression".into(),
+            )),
         }
     }
 

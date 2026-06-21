@@ -23,6 +23,10 @@ fn repl_source(source: &str) -> String {
         + "\n"
 }
 
+fn smlnj_source(source: &str) -> String {
+    repl_source(source)
+}
+
 fn run_with_input(command: &mut Command, input: &str) -> std::io::Result<Output> {
     let mut child = command
         .stdin(Stdio::piped())
@@ -37,7 +41,8 @@ fn normalized_stdout(output: &Output, prompt: &str, filter_val_echoes: bool) -> 
     let stdout = String::from_utf8_lossy(&output.stdout).replace(prompt, "");
     stdout
         .lines()
-        .filter(|line| !line.trim_start().starts_with("val ") || !filter_val_echoes)
+        .filter(|line| !filter_val_echoes || !line.trim_start().starts_with("val it ="))
+        .filter(|line| !line.starts_with("Standard ML of New Jersey"))
         .filter(|line| !line.trim().is_empty())
         .collect::<Vec<_>>()
         .join("\n")
@@ -49,7 +54,7 @@ fn compare_repl(fixture: &Path, smlnj: &str) {
     let input = repl_source(&source);
     let nassau = run_with_input(&mut Command::new(env!("CARGO_BIN_EXE_nassau")), &input)
         .expect("run Nassau REPL");
-    let reference = run_with_input(&mut Command::new(smlnj), &input)
+    let reference = run_with_input(&mut Command::new(smlnj), &smlnj_source(&source))
         .unwrap_or_else(|error| panic!("run SML/NJ ({smlnj}) for {}: {error}", fixture.display()));
 
     assert_eq!(
@@ -85,4 +90,19 @@ fn repl_matches_smlnj() {
     for fixture in fixtures() {
         compare_repl(&fixture, smlnj);
     }
+}
+
+#[test]
+fn repl_evaluates_real_division_and_addition() {
+    let output = run_with_input(
+        &mut Command::new(env!("CARGO_BIN_EXE_nassau")),
+        "val half = 1.0 / 2.0\nval one = half + half\n",
+    )
+    .expect("run Nassau REPL");
+
+    assert!(output.status.success());
+    assert_eq!(
+        normalized_stdout(&output, "nassau> ", false),
+        b"val half = 0.5 : real\nval one = 1.0 : real"
+    );
 }

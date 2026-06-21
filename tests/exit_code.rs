@@ -54,11 +54,13 @@ fn compare_fixture(fixture: &Path) -> bool {
         stem.to_string_lossy()
     ));
     fs::create_dir_all(&oracle_dir).expect("create MLton output directory");
+    let oracle_source = oracle_dir.join("input.sml");
+    fs::write(&oracle_source, &source).expect("write MLton source");
     let oracle_executable = oracle_dir.join("oracle");
     let mlton = match Command::new("mlton")
         .args(["-output"])
         .arg(&oracle_executable)
-        .arg(fixture)
+        .arg(&oracle_source)
         .output()
     {
         Ok(output) => output,

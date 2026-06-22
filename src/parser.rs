@@ -1,6 +1,6 @@
-use std::collections::HashSet;
+use std::path::PathBuf;
 
-use crate::error::{LexerError, ParseError};
+use crate::error::{LexerError, ParseError, ParseErrorKind};
 use crate::lexer::{Lexer, Token, TokenKind};
 use crate::span::Span;
 
@@ -45,71 +45,73 @@ pub struct Parser {
     tokens: Vec<Token>,
     index: usize,
     allow_implicit_val: bool,
-    variables: HashSet<String>,
+    file: PathBuf,
 }
 
 impl Parser {
-    pub fn new(tokens: Vec<Token>) -> Self {
+    fn with_file(tokens: Vec<Token>, file: PathBuf) -> Self {
         Self {
             tokens,
             index: 0,
             allow_implicit_val: false,
-            variables: HashSet::new(),
+            file,
         }
     }
 
     pub fn from_source(source: &str, file: &str) -> Result<Self, LexerError> {
-        Ok(Self::new(Lexer::new(source, file).tokenize()?))
+        Ok(Self::with_file(
+            Lexer::new(source, file).tokenize()?,
+            PathBuf::from(file),
+        ))
     }
 
     pub fn from_repl_source(source: &str, file: &str) -> Result<Self, LexerError> {
-        let mut parser = Self::new(Lexer::new(source, file).tokenize()?);
+        let mut parser = Self::with_file(Lexer::new(source, file).tokenize()?, PathBuf::from(file));
         parser.allow_implicit_val = true;
         Ok(parser)
     }
 
-    pub fn from_repl_source_with_variables(
-        source: &str,
-        file: &str,
-        variables: impl IntoIterator<Item = String>,
-    ) -> Result<Self, LexerError> {
-        let mut parser = Self::from_repl_source(source, file)?;
-        parser.variables.extend(variables);
-        Ok(parser)
+    fn error(&self, kind: ParseErrorKind) -> ParseError {
+        self.error_kind(kind)
     }
 
-    fn error(&self, message: impl Into<String>) -> ParseError {
+    fn error_kind(&self, kind: ParseErrorKind) -> ParseError {
         let token = self.tokens.get(self.index).or_else(|| self.tokens.last());
-        let span = token
-            .map(Span::source_span)
-            .unwrap_or_else(|| (0, 0).into());
-        ParseError {
-            message: message.into(),
-            span,
-        }
+        let (start, end) = token
+            .map(|token| (token.start.clone(), token.end.clone()))
+            .unwrap_or_else(|| {
+                let loc = crate::span::Loc {
+                    file: self.file.clone(),
+                    line: 1,
+                    column: 1,
+                    offset: 0,
+                };
+                (loc.clone(), loc)
+            });
+        Span::new(start, end, kind)
     }
 
-    fn expect(&mut self, expected: TokenKind, message: &str) -> Result<Token, ParseError> {
+    fn expect(&mut self, expected: TokenKind, kind: ParseErrorKind) -> Result<Token, ParseError> {
         let Some(token) = self.tokens.get(self.index) else {
-            return Err(self.error(message));
+            return Err(self.error(kind));
         };
         if token.value != expected {
-            return Err(self.error(message));
+            return Err(self.error(kind));
         }
         self.index += 1;
         Ok(token.clone())
     }
 
     pub fn parse(mut self) -> Result<Program, ParseError> {
-        if self.tokens.len() == 1 {
-            if let TokenKind::Integer(value) = self.tokens[0].value {
-                let result = i32::try_from(value)
-                    .map_err(|_| self.error("integer literal does not fit in i32"))?;
-                return Ok(Program {
-                    statements: Vec::new(),
-                    result,
-                });
-            }
+        if self.tokens.len() == 1
+            && let TokenKind::Integer(value) = self.tokens[0].value
+        {
+            let result = i32::try_from(value)
+                .map_err(|_| self.error_kind(ParseErrorKind::IntegerOutOfRange))?;
+            return Ok(Program {
+                statements: Vec::new(),
+                result,
+            });
         }
         let mut statements = Vec::new();
         while self.index < self.tokens.len() {
@@ -118,21 +120,25 @@ impl Parser {
                 continue;
             }
             let start = if self.tokens[self.index].value == TokenKind::Val {
-                let start = self
-                    .expect(TokenKind::Val, "expected a val declaration")?
-                    .start;
-                start
+                self.expect(
+                    TokenKind::Val,
+                    ParseErrorKind::Expect("a val declaration".into()),
+                )?
+                .start
             } else if self.allow_implicit_val {
                 self.tokens[self.index].start.clone()
             } else {
-                return Err(self.error("expected a val declaration"));
+                return Err(self.error(ParseErrorKind::Expect("a val declaration".into())));
             };
             if matches!(
                 self.tokens.get(self.index).map(|token| &token.value),
                 Some(TokenKind::Underscore)
             ) {
                 self.index += 1;
-                self.expect(TokenKind::Equals, "expected '=' after val pattern")?;
+                self.expect(
+                    TokenKind::Equals,
+                    ParseErrorKind::Expect("= after val pattern".into()),
+                )?;
                 let kind = self.parse_effect()?;
                 let end = self.tokens[self.index - 1].end.clone();
                 statements.push(Span::new(start, end, kind));
@@ -140,17 +146,23 @@ impl Parser {
             }
             let name = match self.tokens.get(self.index).map(|token| &token.value) {
                 Some(TokenKind::Identifier(name)) => name.clone(),
-                _ => return Err(self.error("expected a variable name or wildcard pattern")),
+                _ => {
+                    return Err(self.error(ParseErrorKind::Expect(
+                        "a variable name or wildcard pattern".into(),
+                    )));
+                }
             };
             self.index += 1;
-            self.expect(TokenKind::Equals, "expected '=' after val name")?;
+            self.expect(
+                TokenKind::Equals,
+                ParseErrorKind::Expect("= after val name".into()),
+            )?;
             let expr = self.parse_integer_expr()?;
             let end = expr.end.clone();
-            self.variables.insert(name.clone());
             statements.push(Span::new(start, end, StmtKind::Val(name, expr)));
         }
         if statements.is_empty() {
-            return Err(self.error("expected a program"));
+            return Err(self.error(ParseErrorKind::Expect("a program".into())));
         }
         Ok(Program {
             statements,
@@ -162,12 +174,16 @@ impl Parser {
         let identifier = self
             .tokens
             .get(self.index)
-            .ok_or_else(|| self.error("expected print or Posix.Process.exit"))?
+            .ok_or_else(|| {
+                self.error(ParseErrorKind::Expect("print or Posix.Process.exit".into()))
+            })?
             .clone();
         match &identifier.value {
             TokenKind::Identifier(name) if name == "print" => {
                 self.index += 1;
-                let token = self.expect_string("print expects a string literal")?;
+                let token = self.expect_string(ParseErrorKind::Expect(
+                    "a string literal after print".into(),
+                ))?;
                 let TokenKind::String(value) = token.value else {
                     unreachable!()
                 };
@@ -180,7 +196,7 @@ impl Parser {
             TokenKind::Identifier(name) if name == "Posix" => {
                 Ok(StmtKind::Exit(self.parse_posix_exit()?))
             }
-            _ => Err(self.error("expected print or Posix.Process.exit")),
+            _ => Err(self.error(ParseErrorKind::Expect("print or Posix.Process.exit".into()))),
         }
     }
 
@@ -234,7 +250,7 @@ impl Parser {
         let token = self
             .tokens
             .get(self.index)
-            .ok_or_else(|| self.error("expected an integer expression"))?
+            .ok_or_else(|| self.error(ParseErrorKind::Expect("an integer expression".into())))?
             .clone();
         self.index += 1;
         match token.value {
@@ -242,7 +258,9 @@ impl Parser {
                 let integer = self
                     .tokens
                     .get(self.index)
-                    .ok_or_else(|| self.error("expected an integer after unary '-'"))?
+                    .ok_or_else(|| {
+                        self.error(ParseErrorKind::Expect("an integer after unary '-'".into()))
+                    })?
                     .clone();
                 self.index += 1;
                 match integer.value {
@@ -254,27 +272,26 @@ impl Parser {
                     TokenKind::Real(value) => {
                         Ok(Span::new(token.start, integer.end, ExprKind::Real(-value)))
                     }
-                    _ => Err(self.error("expected a number after unary '-'")),
+                    _ => Err(self.error(ParseErrorKind::Expect("a number after unary '-'".into()))),
                 }
             }
             TokenKind::Integer(value) => {
                 Ok(Span::new(token.start, token.end, ExprKind::Integer(value)))
             }
             TokenKind::Real(value) => Ok(Span::new(token.start, token.end, ExprKind::Real(value))),
-            TokenKind::Identifier(name) if self.variables.contains(&name) => {
+            TokenKind::Identifier(name) => {
                 Ok(Span::new(token.start, token.end, ExprKind::Variable(name)))
             }
-            TokenKind::Identifier(name) => Err(self.error(format!("unbound variable '{name}'"))),
-            _ => Err(self.error("expected an integer expression")),
+            _ => Err(self.error(ParseErrorKind::Expect("an integer expression".into()))),
         }
     }
 
-    fn expect_string(&mut self, message: &str) -> Result<Token, ParseError> {
+    fn expect_string(&mut self, kind: ParseErrorKind) -> Result<Token, ParseError> {
         let Some(token) = self.tokens.get(self.index) else {
-            return Err(self.error(message));
+            return Err(self.error(kind));
         };
         if !matches!(token.value, TokenKind::String(_)) {
-            return Err(self.error(message));
+            return Err(self.error(kind));
         }
         self.index += 1;
         Ok(token.clone())
@@ -284,30 +301,42 @@ impl Parser {
         let start = self
             .expect(
                 TokenKind::Identifier("Posix".into()),
-                "expected Posix.Process.exit",
+                ParseErrorKind::Expect("Posix.Process.exit".into()),
             )?
             .start;
-        self.expect(TokenKind::Dot, "expected '.' after Posix")?;
+        self.expect(
+            TokenKind::Dot,
+            ParseErrorKind::Expect(". after Posix".into()),
+        )?;
         self.expect(
             TokenKind::Identifier("Process".into()),
-            "expected Process after Posix.",
+            ParseErrorKind::Expect("Process after Posix.".into()),
         )?;
-        self.expect(TokenKind::Dot, "expected '.' after Posix.Process")?;
+        self.expect(
+            TokenKind::Dot,
+            ParseErrorKind::Expect(". after Posix.Process".into()),
+        )?;
         self.expect(
             TokenKind::Identifier("exit".into()),
-            "expected exit after Posix.Process.",
+            ParseErrorKind::Expect("exit after Posix.Process.".into()),
         )?;
-        self.expect(TokenKind::LeftParen, "expected '(' before exit status")?;
+        self.expect(
+            TokenKind::LeftParen,
+            ParseErrorKind::Expect("( before exit status".into()),
+        )?;
         let word8_start = self
             .expect(
                 TokenKind::Identifier("Word8".into()),
-                "expected Word8.fromInt",
+                ParseErrorKind::Expect("Word8.fromInt".into()),
             )?
             .start;
-        self.expect(TokenKind::Dot, "expected '.' after Word8")?;
+        self.expect(
+            TokenKind::Dot,
+            ParseErrorKind::Expect(". after Word8".into()),
+        )?;
         self.expect(
             TokenKind::Identifier("fromInt".into()),
-            "expected fromInt after Word8.",
+            ParseErrorKind::Expect("fromInt after Word8.".into()),
         )?;
         let integer = self.parse_integer_expr()?;
         let word8_end = integer.end.clone();
@@ -317,7 +346,10 @@ impl Parser {
             ExprKind::Word8FromInt(Box::new(integer)),
         );
         let end = self
-            .expect(TokenKind::RightParen, "expected ')' after exit status")?
+            .expect(
+                TokenKind::RightParen,
+                ParseErrorKind::Expect(") after exit status".into()),
+            )?
             .end;
         Ok(Span::new(start, end, ExprKind::PosixExit(Box::new(word8))))
     }

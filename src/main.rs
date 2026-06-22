@@ -3,12 +3,14 @@ mod error;
 mod lexer;
 mod parser;
 mod repl;
+mod sema;
 mod span;
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::codegen::{Codegen, OptLevel};
+use crate::codegen::{Codegen, CodegenOptions, OptLevel};
+use crate::error::SourceError;
 use crate::parser::Parser as SmlParser;
 use clap::Parser;
 
@@ -62,27 +64,39 @@ fn run(cli: &Cli) -> miette::Result<PathBuf> {
     let source = fs::read_to_string(input).map_err(|error| miette::miette!("{error}"))?;
     let named_source = miette::NamedSource::new(input.display().to_string(), source.clone());
     let program = SmlParser::from_source(&source, input.to_string_lossy().as_ref())
-        .map_err(|error| miette::Report::new(error).with_source_code(named_source.clone()))?
+        .map_err(|error| {
+            miette::Report::new(SourceError::from_span(error))
+                .with_source_code(named_source.clone())
+        })?
         .parse()
-        .map_err(|error| miette::Report::new(error).with_source_code(named_source))?;
+        .map_err(|error| {
+            miette::Report::new(SourceError::from_span(error))
+                .with_source_code(named_source.clone())
+        })?;
+    sema::Analyzer::new()
+        .analyze_program(&program)
+        .map_err(|(error, expr)| {
+            miette::Report::new(SourceError::new(error, expr.source_span()))
+                .with_source_code(named_source)
+        })?;
     let output = if cli.asm {
         input.with_extension("S")
     } else {
         output_path(input).map_err(miette::Report::msg)?
     };
-    Codegen::new(
-        cli.opt_level,
-        cli.debug_passes,
-        cli.asm,
-        cli.dump_ir,
-        cli.dump_optimized_ir,
-        cli.verify,
-        cli.timings,
-        cli.stats,
-        cli.objdump,
-    )
+    Codegen::new(CodegenOptions {
+        opt_level: cli.opt_level,
+        debug_passes: cli.debug_passes,
+        asm: cli.asm,
+        dump_ir: cli.dump_ir,
+        dump_optimized_ir: cli.dump_optimized_ir,
+        verify: cli.verify,
+        timings: cli.timings,
+        stats: cli.stats,
+        objdump: cli.objdump,
+    })
     .compile(&program, &output)
-    .map_err(miette::Report::new)?;
+    .map_err(miette::Report::msg)?;
     Ok(output)
 }
 

@@ -6,7 +6,12 @@ use std::process::Command;
 use std::time::{Duration, Instant};
 
 use clap::ValueEnum;
-use cranelift_codegen::ir::{AbiParam, InstBuilder, immediates::Ieee64, types};
+use cranelift_codegen::ir::{
+    AbiParam, InstBuilder,
+    condcodes::{FloatCC, IntCC},
+    immediates::Ieee64,
+    types,
+};
 use cranelift_codegen::settings::Configurable;
 use cranelift_codegen::{self, settings};
 use cranelift_control::ControlPlane;
@@ -17,7 +22,7 @@ use cranelift_object::{ObjectBuilder, ObjectModule};
 
 use crate::error::CodegenError;
 use crate::parser::{ExprKind, NumericValue, Program, StmtKind};
-use crate::sema::{self, ArithmeticOperator, Type};
+use crate::sema::{self, ArithmeticOperator, ComparisonOperator, Type};
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
 pub enum OptLevel {
@@ -313,6 +318,9 @@ impl Codegen {
                         NumericValue::Real(value) => {
                             builder.ins().f64const(Ieee64::with_float(*value))
                         }
+                        NumericValue::Boolean(value) => {
+                            builder.ins().iconst(types::I8, i64::from(*value))
+                        }
                     },
                 )
             })
@@ -429,6 +437,48 @@ impl Codegen {
             ExprKind::Integer(value) => Ok(builder.ins().iconst(types::I32, *value)),
             ExprKind::Real(value) => Ok(builder.ins().f64const(Ieee64::with_float(*value))),
             ExprKind::Variable(name) => Ok(variables[name]),
+            ExprKind::Greater(lhs, rhs) | ExprKind::Less(lhs, rhs) | ExprKind::Equal(lhs, rhs) => {
+                let lhs = Self::compile_expr(lhs, builder, variables)?;
+                let rhs = Self::compile_expr(rhs, builder, variables)?;
+                let operator = match &expr.value {
+                    ExprKind::Greater(_, _) => ComparisonOperator::Greater,
+                    ExprKind::Less(_, _) => ComparisonOperator::Less,
+                    ExprKind::Equal(_, _) => ComparisonOperator::Equal,
+                    _ => unreachable!(),
+                };
+                let type_of = |value| match builder.func.dfg.value_type(value) {
+                    types::I32 => Ok(Type::Integer),
+                    types::F64 => Ok(Type::Real),
+                    types::I8 => Ok(Type::Boolean),
+                    _ => Err(CodegenError::Message(
+                        "unsupported comparison operand type".into(),
+                    )),
+                };
+                let result_type = sema::comparison_result(operator, type_of(lhs)?, type_of(rhs)?)
+                    .map_err(|error| CodegenError::Message(error.to_string()))?;
+                let comparison = match (operator, result_type, builder.func.dfg.value_type(lhs)) {
+                    (ComparisonOperator::Greater, Type::Boolean, types::I32) => {
+                        builder.ins().icmp(IntCC::SignedGreaterThan, lhs, rhs)
+                    }
+                    (ComparisonOperator::Less, Type::Boolean, types::I32) => {
+                        builder.ins().icmp(IntCC::SignedLessThan, lhs, rhs)
+                    }
+                    (ComparisonOperator::Equal, Type::Boolean, types::I32 | types::I8) => {
+                        builder.ins().icmp(IntCC::Equal, lhs, rhs)
+                    }
+                    (ComparisonOperator::Greater, Type::Boolean, types::F64) => {
+                        builder.ins().fcmp(FloatCC::GreaterThan, lhs, rhs)
+                    }
+                    (ComparisonOperator::Less, Type::Boolean, types::F64) => {
+                        builder.ins().fcmp(FloatCC::LessThan, lhs, rhs)
+                    }
+                    (ComparisonOperator::Equal, Type::Boolean, types::F64) => {
+                        builder.ins().fcmp(FloatCC::Equal, lhs, rhs)
+                    }
+                    _ => unreachable!(),
+                };
+                Ok(comparison)
+            }
             ExprKind::Add(lhs, rhs)
             | ExprKind::Subtract(lhs, rhs)
             | ExprKind::Multiply(lhs, rhs)

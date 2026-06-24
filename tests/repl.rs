@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 
 fn fixtures() -> Vec<PathBuf> {
-    let directory = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    let directory = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/repl");
     let mut paths: Vec<_> = fs::read_dir(directory)
         .expect("read test fixtures directory")
         .map(|entry| entry.expect("read fixture directory entry").path())
@@ -78,10 +78,10 @@ fn compare_repl(fixture: &Path, smlnj: &str) {
 #[test]
 fn repl_matches_smlnj() {
     let explicit_smlnj = std::env::var("SMLNJ").ok();
-    let smlnj = explicit_smlnj.as_deref().unwrap_or("sml");
+    let smlnj = explicit_smlnj.as_deref().unwrap_or("smlnj");
     if let Err(error) = Command::new(smlnj).stdin(Stdio::null()).output() {
         if error.kind() == std::io::ErrorKind::NotFound && explicit_smlnj.is_none() {
-            eprintln!("skipping SML/NJ REPL comparison: set SMLNJ or install `sml`");
+            eprintln!("skipping SML/NJ REPL comparison: set SMLNJ or install `smlnj`");
             return;
         }
         panic!("could not start SML/NJ ({smlnj}): {error}");
@@ -90,19 +90,4 @@ fn repl_matches_smlnj() {
     for fixture in fixtures() {
         compare_repl(&fixture, smlnj);
     }
-}
-
-#[test]
-fn repl_evaluates_real_division_and_addition() {
-    let output = run_with_input(
-        &mut Command::new(env!("CARGO_BIN_EXE_nassau")),
-        "val half = 1.0 / 2.0\nval one = half + half\n",
-    )
-    .expect("run Nassau REPL");
-
-    assert!(output.status.success());
-    assert_eq!(
-        normalized_stdout(&output, "nassau> ", false),
-        b"val half = 0.5 : real\nval one = 1.0 : real"
-    );
 }

@@ -8,6 +8,7 @@ pub enum Type {
     Integer,
     Real,
     String,
+    Boolean,
     Unit,
 }
 
@@ -20,6 +21,13 @@ pub enum ArithmeticOperator {
     IntDivide,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ComparisonOperator {
+    Greater,
+    Less,
+    Equal,
+}
+
 #[derive(Debug, ThisError)]
 pub enum SemanticError {
     #[error("unbound variable '{0}'")]
@@ -28,6 +36,8 @@ pub enum SemanticError {
     TypeMismatch { expected: Type, found: Type },
     #[error(transparent)]
     InvalidArithmetic(#[from] ArithmeticTypeError),
+    #[error(transparent)]
+    InvalidComparison(#[from] ComparisonTypeError),
     #[error("integer literal does not fit in i32")]
     IntegerOutOfRange,
 }
@@ -40,6 +50,17 @@ pub enum ArithmeticTypeError {
     RequiredInteger { lhs: Type, rhs: Type },
     #[error("arithmetic operands must have the same numeric type, found {lhs} and {rhs}")]
     MismatchedTypes { lhs: Type, rhs: Type },
+}
+
+#[derive(Debug, ThisError)]
+pub enum ComparisonTypeError {
+    #[error("comparison operands must have the same type, found {lhs} and {rhs}")]
+    MismatchedTypes { lhs: Type, rhs: Type },
+    #[error("operator '{operator}' does not support {ty}")]
+    UnsupportedOperands {
+        operator: ComparisonOperator,
+        ty: Type,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -129,6 +150,21 @@ pub fn arithmetic_result(
     }
 }
 
+pub fn comparison_result(
+    operator: ComparisonOperator,
+    lhs: Type,
+    rhs: Type,
+) -> Result<Type, ComparisonTypeError> {
+    if lhs != rhs {
+        return Err(ComparisonTypeError::MismatchedTypes { lhs, rhs });
+    }
+    match (operator, lhs) {
+        (ComparisonOperator::Greater | ComparisonOperator::Less, Type::Integer | Type::Real)
+        | (ComparisonOperator::Equal, Type::Integer | Type::Boolean) => Ok(Type::Boolean),
+        _ => Err(ComparisonTypeError::UnsupportedOperands { operator, ty: lhs }),
+    }
+}
+
 fn analyze_expr<'a>(
     expr: &'a Expr,
     scopes: &[HashMap<String, Type>],
@@ -163,6 +199,18 @@ fn analyze_expr<'a>(
             arithmetic_result(operator, lhs, rhs)
                 .map_err(|error| (SemanticError::InvalidArithmetic(error), expr))
         }
+        ExprKind::Greater(lhs, rhs) | ExprKind::Less(lhs, rhs) | ExprKind::Equal(lhs, rhs) => {
+            let operator = match &expr.value {
+                ExprKind::Greater(_, _) => ComparisonOperator::Greater,
+                ExprKind::Less(_, _) => ComparisonOperator::Less,
+                ExprKind::Equal(_, _) => ComparisonOperator::Equal,
+                _ => unreachable!(),
+            };
+            let lhs = analyze_expr(lhs, scopes)?;
+            let rhs = analyze_expr(rhs, scopes)?;
+            comparison_result(operator, lhs, rhs)
+                .map_err(|error| (SemanticError::InvalidComparison(error), expr))
+        }
         ExprKind::Word8FromInt(expr) => {
             expect_type(analyze_expr(expr, scopes)?, Type::Integer, expr)?;
             Ok(Type::Integer)
@@ -188,7 +236,18 @@ impl std::fmt::Display for Type {
             Self::Integer => "int",
             Self::Real => "real",
             Self::String => "string",
+            Self::Boolean => "bool",
             Self::Unit => "unit",
+        })
+    }
+}
+
+impl std::fmt::Display for ComparisonOperator {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::Greater => ">",
+            Self::Less => "<",
+            Self::Equal => "=",
         })
     }
 }

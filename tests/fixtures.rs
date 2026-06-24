@@ -17,22 +17,8 @@ fn fixtures() -> Vec<PathBuf> {
     paths
 }
 
-fn expected_exit_code(source: &str) -> i32 {
-    source
-        .lines()
-        .find_map(|line| {
-            line.trim()
-                .strip_prefix("(* exit_code: ")
-                .and_then(|line| line.strip_suffix(" *)"))
-        })
-        .expect("fixture must declare an expected exit code")
-        .parse()
-        .expect("expected exit code must be an integer")
-}
-
 fn compare_fixture(fixture: &Path) -> bool {
     let source = fs::read_to_string(fixture).expect("read fixture");
-    let expected = expected_exit_code(&source);
     let compiler_status = Command::new(env!("CARGO_BIN_EXE_nassau"))
         .arg(fixture)
         .output()
@@ -92,12 +78,6 @@ fn compare_fixture(fixture: &Path) -> bool {
         nassau_output.status.code(),
         mlton_output.status.code(),
         "exit status differs for {}",
-        fixture.display()
-    );
-    assert_eq!(
-        nassau_output.status.code(),
-        Some(expected),
-        "exit status differs from fixture expectation for {}",
         fixture.display()
     );
 

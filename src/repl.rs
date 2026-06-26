@@ -148,11 +148,20 @@ fn evaluate_integer_expr(
         crate::parser::ExprKind::Greater(lhs, rhs) => {
             apply_comparison(ComparisonOperator::Greater, lhs, rhs, variables)
         }
+        crate::parser::ExprKind::GreaterEqual(lhs, rhs) => {
+            apply_comparison(ComparisonOperator::GreaterEqual, lhs, rhs, variables)
+        }
         crate::parser::ExprKind::Less(lhs, rhs) => {
             apply_comparison(ComparisonOperator::Less, lhs, rhs, variables)
         }
+        crate::parser::ExprKind::LessEqual(lhs, rhs) => {
+            apply_comparison(ComparisonOperator::LessEqual, lhs, rhs, variables)
+        }
         crate::parser::ExprKind::Equal(lhs, rhs) => {
             apply_comparison(ComparisonOperator::Equal, lhs, rhs, variables)
+        }
+        crate::parser::ExprKind::NotEqual(lhs, rhs) => {
+            apply_comparison(ComparisonOperator::NotEqual, lhs, rhs, variables)
         }
         _ => unreachable!(),
     }
@@ -240,19 +249,38 @@ fn apply_comparison(
         (ComparisonOperator::Greater, NumericValue::Integer(lhs), NumericValue::Integer(rhs)) => {
             lhs > rhs
         }
+        (
+            ComparisonOperator::GreaterEqual,
+            NumericValue::Integer(lhs),
+            NumericValue::Integer(rhs),
+        ) => lhs >= rhs,
         (ComparisonOperator::Less, NumericValue::Integer(lhs), NumericValue::Integer(rhs)) => {
             lhs < rhs
+        }
+        (ComparisonOperator::LessEqual, NumericValue::Integer(lhs), NumericValue::Integer(rhs)) => {
+            lhs <= rhs
         }
         (ComparisonOperator::Equal, NumericValue::Integer(lhs), NumericValue::Integer(rhs)) => {
             lhs == rhs
         }
+        (ComparisonOperator::NotEqual, NumericValue::Integer(lhs), NumericValue::Integer(rhs)) => {
+            lhs != rhs
+        }
         (ComparisonOperator::Greater, NumericValue::Real(lhs), NumericValue::Real(rhs)) => {
             lhs > rhs
         }
+        (ComparisonOperator::GreaterEqual, NumericValue::Real(lhs), NumericValue::Real(rhs)) => {
+            lhs >= rhs
+        }
         (ComparisonOperator::Less, NumericValue::Real(lhs), NumericValue::Real(rhs)) => lhs < rhs,
-        (ComparisonOperator::Equal, NumericValue::Real(lhs), NumericValue::Real(rhs)) => lhs == rhs,
+        (ComparisonOperator::LessEqual, NumericValue::Real(lhs), NumericValue::Real(rhs)) => {
+            lhs <= rhs
+        }
         (ComparisonOperator::Equal, NumericValue::Boolean(lhs), NumericValue::Boolean(rhs)) => {
             lhs == rhs
+        }
+        (ComparisonOperator::NotEqual, NumericValue::Boolean(lhs), NumericValue::Boolean(rhs)) => {
+            lhs != rhs
         }
         _ => unreachable!(),
     };

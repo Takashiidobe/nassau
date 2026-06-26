@@ -437,13 +437,21 @@ impl Codegen {
             ExprKind::Integer(value) => Ok(builder.ins().iconst(types::I32, *value)),
             ExprKind::Real(value) => Ok(builder.ins().f64const(Ieee64::with_float(*value))),
             ExprKind::Variable(name) => Ok(variables[name]),
-            ExprKind::Greater(lhs, rhs) | ExprKind::Less(lhs, rhs) | ExprKind::Equal(lhs, rhs) => {
+            ExprKind::Greater(lhs, rhs)
+            | ExprKind::GreaterEqual(lhs, rhs)
+            | ExprKind::Less(lhs, rhs)
+            | ExprKind::LessEqual(lhs, rhs)
+            | ExprKind::Equal(lhs, rhs)
+            | ExprKind::NotEqual(lhs, rhs) => {
                 let lhs = Self::compile_expr(lhs, builder, variables)?;
                 let rhs = Self::compile_expr(rhs, builder, variables)?;
                 let operator = match &expr.value {
                     ExprKind::Greater(_, _) => ComparisonOperator::Greater,
+                    ExprKind::GreaterEqual(_, _) => ComparisonOperator::GreaterEqual,
                     ExprKind::Less(_, _) => ComparisonOperator::Less,
+                    ExprKind::LessEqual(_, _) => ComparisonOperator::LessEqual,
                     ExprKind::Equal(_, _) => ComparisonOperator::Equal,
+                    ExprKind::NotEqual(_, _) => ComparisonOperator::NotEqual,
                     _ => unreachable!(),
                 };
                 let type_of = |value| match builder.func.dfg.value_type(value) {
@@ -460,20 +468,38 @@ impl Codegen {
                     (ComparisonOperator::Greater, Type::Boolean, types::I32) => {
                         builder.ins().icmp(IntCC::SignedGreaterThan, lhs, rhs)
                     }
+                    (ComparisonOperator::GreaterEqual, Type::Boolean, types::I32) => builder
+                        .ins()
+                        .icmp(IntCC::SignedGreaterThanOrEqual, lhs, rhs),
                     (ComparisonOperator::Less, Type::Boolean, types::I32) => {
                         builder.ins().icmp(IntCC::SignedLessThan, lhs, rhs)
                     }
-                    (ComparisonOperator::Equal, Type::Boolean, types::I32 | types::I8) => {
-                        builder.ins().icmp(IntCC::Equal, lhs, rhs)
+                    (ComparisonOperator::LessEqual, Type::Boolean, types::I32) => {
+                        builder.ins().icmp(IntCC::SignedLessThanOrEqual, lhs, rhs)
+                    }
+                    (
+                        ComparisonOperator::Equal | ComparisonOperator::NotEqual,
+                        Type::Boolean,
+                        types::I32 | types::I8,
+                    ) => {
+                        let condition = if operator == ComparisonOperator::Equal {
+                            IntCC::Equal
+                        } else {
+                            IntCC::NotEqual
+                        };
+                        builder.ins().icmp(condition, lhs, rhs)
                     }
                     (ComparisonOperator::Greater, Type::Boolean, types::F64) => {
                         builder.ins().fcmp(FloatCC::GreaterThan, lhs, rhs)
                     }
+                    (ComparisonOperator::GreaterEqual, Type::Boolean, types::F64) => {
+                        builder.ins().fcmp(FloatCC::GreaterThanOrEqual, lhs, rhs)
+                    }
                     (ComparisonOperator::Less, Type::Boolean, types::F64) => {
                         builder.ins().fcmp(FloatCC::LessThan, lhs, rhs)
                     }
-                    (ComparisonOperator::Equal, Type::Boolean, types::F64) => {
-                        builder.ins().fcmp(FloatCC::Equal, lhs, rhs)
+                    (ComparisonOperator::LessEqual, Type::Boolean, types::F64) => {
+                        builder.ins().fcmp(FloatCC::LessThanOrEqual, lhs, rhs)
                     }
                     _ => unreachable!(),
                 };

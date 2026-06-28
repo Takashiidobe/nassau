@@ -186,6 +186,7 @@ fn analyze_expr<'a>(
             .map(|_| Type::Integer)
             .map_err(|_| (SemanticError::IntegerOutOfRange, expr)),
         ExprKind::Real(_) => Ok(Type::Real),
+        ExprKind::Boolean(_) => Ok(Type::Boolean),
         ExprKind::String(_) => Ok(Type::String),
         ExprKind::Variable(name) => scopes
             .iter()
@@ -230,6 +231,22 @@ fn analyze_expr<'a>(
             let rhs = analyze_expr(rhs, scopes)?;
             comparison_result(operator, lhs, rhs)
                 .map_err(|error| (SemanticError::InvalidComparison(error), expr))
+        }
+        ExprKind::If(condition, consequent, alternative) => {
+            expect_type(analyze_expr(condition, scopes)?, Type::Boolean, condition)?;
+            let consequent_type = analyze_expr(consequent, scopes)?;
+            let alternative_type = analyze_expr(alternative, scopes)?;
+            if consequent_type == alternative_type {
+                Ok(consequent_type)
+            } else {
+                Err((
+                    SemanticError::TypeMismatch {
+                        expected: consequent_type,
+                        found: alternative_type,
+                    },
+                    expr,
+                ))
+            }
         }
         ExprKind::Word8FromInt(expr) => {
             expect_type(analyze_expr(expr, scopes)?, Type::Integer, expr)?;

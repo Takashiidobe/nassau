@@ -436,7 +436,40 @@ impl Codegen {
         match &expr.value {
             ExprKind::Integer(value) => Ok(builder.ins().iconst(types::I32, *value)),
             ExprKind::Real(value) => Ok(builder.ins().f64const(Ieee64::with_float(*value))),
+            ExprKind::Boolean(value) => Ok(builder.ins().iconst(types::I8, i64::from(*value))),
             ExprKind::Variable(name) => Ok(variables[name]),
+            ExprKind::If(condition, consequent, alternative) => {
+                let condition = Self::compile_expr(condition, builder, variables)?;
+                let then_block = builder.create_block();
+                let else_block = builder.create_block();
+                let merge_block = builder.create_block();
+                builder
+                    .ins()
+                    .brif(condition, then_block, &[], else_block, &[]);
+                builder.seal_block(then_block);
+                builder.seal_block(else_block);
+
+                builder.switch_to_block(then_block);
+                let then_value = Self::compile_expr(consequent, builder, variables)?;
+                let result_type = builder.func.dfg.value_type(then_value);
+                let result = builder.append_block_param(merge_block, result_type);
+                let then_arg = then_value.into();
+                builder.ins().jump(merge_block, &[then_arg]);
+
+                builder.switch_to_block(else_block);
+                let else_value = Self::compile_expr(alternative, builder, variables)?;
+                if builder.func.dfg.value_type(else_value) != result_type {
+                    return Err(CodegenError::Message(
+                        "conditional branches must have the same type".into(),
+                    ));
+                }
+                let else_arg = else_value.into();
+                builder.ins().jump(merge_block, &[else_arg]);
+
+                builder.seal_block(merge_block);
+                builder.switch_to_block(merge_block);
+                Ok(result)
+            }
             ExprKind::Greater(lhs, rhs)
             | ExprKind::GreaterEqual(lhs, rhs)
             | ExprKind::Less(lhs, rhs)

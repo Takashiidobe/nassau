@@ -9,6 +9,11 @@ pub enum TokenKind {
     Real(f64),
     String(String),
     Val,
+    If,
+    Then,
+    Else,
+    True,
+    False,
     Identifier(String),
     Underscore,
     Equals,
@@ -210,6 +215,11 @@ impl<'a> Lexer<'a> {
                     match word.as_str() {
                         "val" => TokenKind::Val,
                         "div" => TokenKind::Div,
+                        "if" => TokenKind::If,
+                        "then" => TokenKind::Then,
+                        "else" => TokenKind::Else,
+                        "true" => TokenKind::True,
+                        "false" => TokenKind::False,
                         _ => TokenKind::Identifier(word),
                     }
                 }

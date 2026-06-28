@@ -2,7 +2,7 @@
 val _ = print "hello, world\n"
 val quotient = 24 div 3
 val product = quotient * 4
-val answer = 42 + 8 - product
+val answer = if quotient >= 8 then 42 + 8 - product else 0
 val half = 1.0 / 2.0
 val one = half + half
 val greater = 3 > 2

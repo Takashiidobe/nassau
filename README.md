@@ -29,12 +29,19 @@ cargo run -- --objdump input.ml
 
 `--objdump` disassembles the actual Cranelift object bytes and requires `objdump` to be installed. `--debug-passes` remains as a shortcut for the main IR and instruction dumps.
 
-Integer arithmetic supports `+`, `-`, `*`, and `div`. Decimal literals are reals; real arithmetic supports `+`, `-`, `*`, and `/`.
-
 The REPL integration test compares Nassau sessions with SML/NJ. Run it with:
 
 ```sh
-SMLNJ=/path/to/sml cargo test --test repl
+cargo test --test repl
 ```
 
-When `SMLNJ` is unset, the test uses `sml` from `PATH` and skips if SML/NJ is not installed.
+The test uses `smlnj` from `PATH` and skips if `smlnj` is not installed.
+
+## Features
+
+- Integer arithmetic supports `+`, `-`, `*`, and `div`.
+- Real arithmetic supports `+`, `-`, `*`, and `/`.
+- Conditionals like `If then else`
+- Relops, CmpOps like `<=, >=, <, >, =, <>`
+- Basic list construction
+- `true` and `false`

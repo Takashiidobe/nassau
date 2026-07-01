@@ -49,6 +49,7 @@ pub enum NumericValue {
     Integer(i32),
     Real(f64),
     Boolean(bool),
+    List(*mut u64),
 }
 
 pub struct Parser {

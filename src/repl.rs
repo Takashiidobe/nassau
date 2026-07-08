@@ -82,7 +82,7 @@ impl Repl {
                 self.variables.insert(name.clone(), value);
                 match value {
                     NumericValue::Integer(value) => println!("val {name} = {value} : int"),
-                    NumericValue::Real(value) => println!("val {name} = {value} : real"),
+                    NumericValue::Real(value) => println!("val {name} = {value:?} : real"),
                     NumericValue::Boolean(value) => println!("val {name} = {value} : bool"),
                     NumericValue::List(_) => println!("val {name} = [] : _ list"),
                 }

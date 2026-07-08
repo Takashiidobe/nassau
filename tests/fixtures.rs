@@ -1,7 +1,9 @@
+mod common;
+
 use libtest_mimic::{Arguments, Completion, Trial};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Output};
 
 fn fixtures() -> Vec<PathBuf> {
     let directory = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
@@ -97,6 +99,32 @@ fn smlnj_program_output(output: &[u8], fixture: &Path) -> Vec<u8> {
     output[start + opening.len()..].as_bytes().to_vec()
 }
 
+fn check_program(fixture: &Path, source: &str, output: &Output) {
+    let code = output.status.code();
+    if source.contains("(* CHECK-EXIT") {
+        let code = code.map_or_else(|| "signal".to_owned(), |code| code.to_string());
+        common::check_stream(
+            fixture,
+            source,
+            "CHECK-EXIT",
+            format!("{code}\n").as_bytes(),
+            true,
+        )
+        .unwrap_or_else(|error| panic!("{error}"));
+    } else {
+        assert_eq!(
+            code,
+            Some(0),
+            "no CHECK-EXIT, expected success: {}",
+            fixture.display()
+        );
+    }
+    common::check_stream(fixture, source, "CHECK-STDOUT", &output.stdout, true)
+        .unwrap_or_else(|error| panic!("{error}"));
+    common::check_stream(fixture, source, "CHECK-STDERR", &output.stderr, true)
+        .unwrap_or_else(|error| panic!("{error}"));
+}
+
 fn compare_fixture(fixture: &Path, smlnj: &str) {
     let valid = expected_valid(fixture);
     let directory = fixture.parent().expect("fixture has a parent directory");
@@ -115,6 +143,11 @@ fn compare_fixture(fixture: &Path, smlnj: &str) {
         "Nassau: {}",
         fixture.display()
     );
+    let source = fs::read_to_string(fixture).expect("read fixture");
+    if !valid {
+        common::check_stream(fixture, &source, "CHECK-ERR", &nassau.stderr, false)
+            .unwrap_or_else(|error| panic!("{error}"));
+    }
 
     let reference = Command::new(smlnj)
         .arg(fixture)
@@ -154,6 +187,7 @@ fn compare_fixture(fixture: &Path, smlnj: &str) {
             .output()
             .expect("run Nassau output");
         let _ = fs::remove_file(&executable);
+        check_program(fixture, &source, &nassau_output);
         if fixture.parent().and_then(Path::file_name) == Some(std::ffi::OsStr::new("lists")) {
             assert!(nassau_output.status.success(), "{}", fixture.display());
         } else {

@@ -1,0 +1,9 @@
+val decimal = 123
+val negative = ~17
+val hexadecimal = 0x2a
+val word = 0w15
+val hexadecimalWord = 0wx2a
+val decimalReal = 1.25
+val exponentReal = 1e3
+val negativeExponentReal = 1.2e~3
+val arbitraryPrecision = 123456789012345678901234567890 : IntInf.int

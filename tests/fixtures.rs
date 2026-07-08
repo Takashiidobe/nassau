@@ -27,12 +27,57 @@ fn collect_fixtures(directory: &Path, paths: &mut Vec<PathBuf>) {
 }
 
 fn expected_valid(fixture: &Path) -> bool {
-    fixture.parent().and_then(Path::file_name) != Some(std::ffi::OsStr::new("lists"))
-        || fixture
+    match fixture.parent().and_then(Path::file_name) {
+        Some(name) if name == "lists" => fixture
             .file_stem()
             .expect("fixture has a file stem")
             .to_string_lossy()
-            .starts_with("valid-")
+            .starts_with("valid-"),
+        Some(name) if name == "lexer" => fixture
+            .file_stem()
+            .expect("fixture has a file stem")
+            .to_string_lossy()
+            .starts_with("valid-"),
+        _ => !fixture
+            .file_stem()
+            .expect("fixture has a file stem")
+            .to_string_lossy()
+            .starts_with("invalid-"),
+    }
+}
+
+fn is_lexer_fixture(fixture: &Path) -> bool {
+    fixture.parent().and_then(Path::file_name) == Some(std::ffi::OsStr::new("lexer"))
+}
+
+fn compare_mlton(fixture: &Path, mlton: &str, valid: bool) {
+    if !is_lexer_fixture(fixture) {
+        return;
+    }
+    let executable = std::env::temp_dir().join(format!(
+        "nassau-mlton-{}-{}",
+        std::process::id(),
+        fixture
+            .file_stem()
+            .expect("fixture has a file stem")
+            .to_string_lossy()
+    ));
+    let _ = fs::remove_file(&executable);
+    let result = Command::new(mlton)
+        .arg("-output")
+        .arg(&executable)
+        .arg(fixture)
+        .current_dir(fixture.parent().expect("fixture has a parent directory"))
+        .output()
+        .unwrap_or_else(|error| panic!("run MLton ({mlton}): {error}"));
+    assert_eq!(
+        result.status.success(),
+        valid,
+        "MLton: {}: {}",
+        fixture.display(),
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let _ = fs::remove_file(executable);
 }
 
 fn smlnj_program_output(output: &[u8], fixture: &Path) -> Vec<u8> {
@@ -55,7 +100,11 @@ fn smlnj_program_output(output: &[u8], fixture: &Path) -> Vec<u8> {
 fn compare_fixture(fixture: &Path, smlnj: &str) {
     let valid = expected_valid(fixture);
     let directory = fixture.parent().expect("fixture has a parent directory");
-    let nassau = Command::new(env!("CARGO_BIN_EXE_nassau"))
+    let mut nassau_command = Command::new(env!("CARGO_BIN_EXE_nassau"));
+    if is_lexer_fixture(fixture) {
+        nassau_command.arg("--dump-tokens");
+    }
+    let nassau = nassau_command
         .arg(fixture)
         .current_dir(directory)
         .output()
@@ -72,7 +121,10 @@ fn compare_fixture(fixture: &Path, smlnj: &str) {
         .current_dir(directory)
         .output()
         .expect("run SML/NJ");
-    if fixture.parent().and_then(Path::file_name) == Some(std::ffi::OsStr::new("lists")) {
+    if !valid
+        || fixture.parent().and_then(Path::file_name) == Some(std::ffi::OsStr::new("lists"))
+        || is_lexer_fixture(fixture)
+    {
         assert_eq!(
             reference.status.success(),
             valid,
@@ -80,6 +132,19 @@ fn compare_fixture(fixture: &Path, smlnj: &str) {
             fixture.display(),
             String::from_utf8_lossy(&reference.stdout)
         );
+    }
+
+    if is_lexer_fixture(fixture) && valid {
+        let expected = fs::read(fixture.with_extension("tokens")).unwrap_or_else(|error| {
+            panic!("read token snapshot for {}: {error}", fixture.display())
+        });
+        assert_eq!(
+            nassau.stdout,
+            expected,
+            "tokens differ for {}",
+            fixture.display()
+        );
+        return;
     }
 
     if valid {
@@ -117,6 +182,13 @@ fn main() {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound && !explicit_smlnj => false,
         Err(error) => panic!("could not start SML/NJ ({smlnj}): {error}"),
     };
+    let mlton_explicit = std::env::var_os("MLTON").is_some();
+    let mlton = std::env::var("MLTON").unwrap_or_else(|_| "mlton".into());
+    let mlton_available = match Command::new(&mlton).output() {
+        Ok(_) => true,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound && !mlton_explicit => false,
+        Err(error) => panic!("could not start MLton ({mlton}): {error}"),
+    };
     let fixtures_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
     let trials = fixtures()
         .into_iter()
@@ -127,11 +199,15 @@ fn main() {
                 .display()
                 .to_string();
             let smlnj = smlnj.clone();
+            let mlton = mlton.clone();
             Trial::ignorable_test(name, move || {
                 if !smlnj_available {
                     return Ok(Completion::ignored_with("SML/NJ is not installed"));
                 }
                 compare_fixture(&fixture, &smlnj);
+                if mlton_available {
+                    compare_mlton(&fixture, &mlton, expected_valid(&fixture));
+                }
                 Ok(Completion::Completed)
             })
         })

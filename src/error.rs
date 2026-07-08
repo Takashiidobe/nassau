@@ -35,10 +35,12 @@ pub enum LexerErrorKind {
     UnterminatedStringEscape,
     #[error("unterminated string literal")]
     UnterminatedString,
-    #[error("invalid real literal")]
-    InvalidRealLiteral,
     #[error("invalid integer literal")]
     InvalidIntegerLiteral,
+    #[error("invalid word literal")]
+    InvalidWordLiteral,
+    #[error("invalid character literal")]
+    InvalidCharacterLiteral,
     #[error("unexpected character: {0}")]
     UnexpectedCharacter(char),
 }
@@ -51,6 +53,8 @@ pub enum ParseErrorKind {
     Expect(String),
     #[error("integer literal does not fit in i32")]
     IntegerOutOfRange,
+    #[error("invalid real literal")]
+    InvalidRealLiteral,
 }
 
 pub type ParseError = Span<ParseErrorKind>;

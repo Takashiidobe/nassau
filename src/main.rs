@@ -1,3 +1,4 @@
+mod ast_dump;
 mod codegen;
 mod error;
 mod lexer;
@@ -34,6 +35,8 @@ struct Cli {
     dump_ir: bool,
     #[arg(long, help = "Print the lexical tokens for a source file")]
     dump_tokens: bool,
+    #[arg(long, help = "Print the parsed syntax tree for a source file")]
+    dump_ast: bool,
     #[arg(long, help = "Print Cranelift IR after optimization")]
     dump_optimized_ir: bool,
     #[arg(long, help = "Verify IR before and after optimization")]
@@ -103,6 +106,20 @@ fn run(cli: &Cli) -> miette::Result<PathBuf> {
     Ok(output)
 }
 
+fn parse_file(input: &Path) -> miette::Result<crate::parser::Program> {
+    let source = fs::read_to_string(input).map_err(|error| miette::miette!("{error}"))?;
+    let named_source = miette::NamedSource::new(input.display().to_string(), source.clone());
+    SmlParser::from_source(&source, input.to_string_lossy().as_ref())
+        .map_err(|error| {
+            miette::Report::new(SourceError::from_span(error))
+                .with_source_code(named_source.clone())
+        })?
+        .parse()
+        .map_err(|error| {
+            miette::Report::new(SourceError::from_span(error)).with_source_code(named_source)
+        })
+}
+
 fn dump_tokens(input: &Path) -> miette::Result<()> {
     let source = fs::read_to_string(input).map_err(|error| miette::miette!("{error}"))?;
     let named_source = miette::NamedSource::new(input.display().to_string(), source.clone());
@@ -125,6 +142,20 @@ fn main() {
         if let Err(error) = dump_tokens(input) {
             eprintln!("{error:?}");
             std::process::exit(1);
+        }
+        return;
+    }
+    if cli.dump_ast {
+        let Some(input) = cli.input.as_ref() else {
+            eprintln!("--dump-ast requires a source file");
+            std::process::exit(2);
+        };
+        match parse_file(input) {
+            Ok(program) => print!("{}", ast_dump::program(&program)),
+            Err(error) => {
+                eprintln!("{error:?}");
+                std::process::exit(1);
+            }
         }
         return;
     }

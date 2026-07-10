@@ -1,3 +1,3 @@
 val invalid = 1e+3
-(* CHECK-ERR: × expected a val declaration *)
-(* CHECK-ERR: :1:16] *)
+(* CHECK-ERR: × function application is not supported yet *)
+(* CHECK-ERR: :1:15] *)

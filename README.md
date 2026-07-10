@@ -61,4 +61,5 @@ differ from SML/NJ; it fails the suite once it starts passing.
 - Conditionals like `If then else`
 - Relops, CmpOps like `<=, >=, <, >, =, <>`
 - Basic list construction
+- The parser accepts the full SML expression syntax (application, default infix fixities, tuples, records, selectors, sequences, `let`, `case`, `fn`, `while`, `raise`/`handle`, type annotations); `--dump-ast` prints the tree. Semantic analysis still rejects the forms it cannot check or compile yet.
 - `true` and `false`

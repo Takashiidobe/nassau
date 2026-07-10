@@ -8,6 +8,7 @@ as SML comment lines at the end of the file:
     (* CHECK-STDOUT: hello, world *)        stdout of the compiled program
     (* CHECK-STDERR: ... *)                 stderr of the compiled program
     (* CHECK-ERR: × expected int, ... *)    compiler diagnostic for invalid-* fixtures
+    (* CHECK-STDOUT: (val x (+ 1 2)) *)    syntax tree (--dump-ast) for tests/fixtures/parser
     (* CHECK-REPL: val x = 1 : int *)       REPL transcript for tests/repl fixtures
 
 Later lines of the same stream use the -NEXT suffix (and -EMPTY for blank
@@ -195,6 +196,8 @@ def classify(path):
     if "lexer" in parts:
         # Valid lexer fixtures are token snapshots (.tokens), not FileCheck.
         return "error" if stem.startswith("invalid-") else "skip"
+    if "parser" in parts:
+        return "error" if stem.startswith("invalid-") else "parse"
     return "error" if stem.startswith("invalid-") else "run"
 
 
@@ -216,7 +219,9 @@ def generate_run(oracle, fixture, warnings):
 
 
 def generate_error(oracle, fixture, warnings):
-    extra = ["--dump-tokens"] if "lexer" in fixture.relative_to(TESTS).parts else []
+    parts = fixture.relative_to(TESTS).parts
+    extra = ["--dump-tokens"] if "lexer" in parts else []
+    extra += ["--dump-ast"] if "parser" in parts else []
     result = oracle.nassau_compile(fixture, extra)
     if result.returncode == 0:
         raise ToolError("Nassau accepted an invalid-* fixture")
@@ -231,6 +236,16 @@ def generate_error(oracle, fixture, warnings):
         f"(* CHECK-ERR: × {escape(message.group(1))} *)",
         f"(* CHECK-ERR: {location.group(1)}] *)",
     ]
+
+
+def generate_parse(oracle, fixture, warnings):
+    """Syntax-tree dump from Nassau; SML/NJ only vouches that the file is valid SML."""
+    result = oracle.nassau_compile(fixture, ["--dump-ast"])
+    if result.returncode != 0:
+        raise ToolError("Nassau rejected a valid fixture:\n" + decode(result.stderr))
+    if oracle.smlnj_rejects(fixture):
+        warnings.append(f"{rel(fixture)}: SML/NJ rejects this valid-* fixture")
+    return stream_lines("CHECK-STDOUT", decode(result.stdout))
 
 
 def generate_repl(oracle, fixture, warnings):
@@ -292,7 +307,12 @@ def main():
         subprocess.run(["cargo", "build", "--quiet"], cwd=ROOT, check=True)
     oracle = Oracle(args.smlnj, args.nassau)
 
-    generators = {"run": generate_run, "error": generate_error, "repl": generate_repl}
+    generators = {
+        "run": generate_run,
+        "error": generate_error,
+        "parse": generate_parse,
+        "repl": generate_repl,
+    }
     warnings, stale, failed = [], [], []
     for fixture in find_fixtures(args.paths):
         kind = classify(fixture)

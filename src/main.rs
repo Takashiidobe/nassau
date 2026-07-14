@@ -5,8 +5,10 @@ mod lexer;
 mod matching;
 mod parser;
 mod repl;
+mod scope;
 mod sema;
 mod span;
+mod walk;
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -56,18 +58,26 @@ struct Cli {
     objdump: bool,
 }
 
-/// Reports redundant rules as errors and non-exhaustive matches as warnings.
+/// Reports scope errors and redundant rules as errors and non-exhaustive
+/// matches as warnings.
 fn check_matches(
     program: &crate::parser::Program,
     named_source: &miette::NamedSource<String>,
 ) -> miette::Result<()> {
+    if let Some(diagnostic) = scope::check_program(program).into_iter().next() {
+        return Err(
+            miette::Report::new(SourceError::new(diagnostic.kind, diagnostic.span))
+                .with_source_code(named_source.clone()),
+        );
+    }
     let diagnostics = matching::check_program(program);
     for diagnostic in &diagnostics {
-        if diagnostic.kind == matching::MatchDiagnosticKind::NonExhaustive {
-            eprintln!(
+        match diagnostic.kind {
+            matching::MatchDiagnosticKind::NonExhaustive => eprintln!(
                 "warning: match nonexhaustive at {}:{}",
                 diagnostic.line, diagnostic.column
-            );
+            ),
+            matching::MatchDiagnosticKind::Redundant => {}
         }
     }
     if let Some(diagnostic) = diagnostics
@@ -110,9 +120,8 @@ fn run(cli: &Cli) -> miette::Result<PathBuf> {
     check_matches(&program, &named_source)?;
     sema::Analyzer::new()
         .analyze_program(&program)
-        .map_err(|(error, expr)| {
-            miette::Report::new(SourceError::new(error, expr.source_span()))
-                .with_source_code(named_source)
+        .map_err(|(error, span)| {
+            miette::Report::new(SourceError::new(error, span)).with_source_code(named_source)
         })?;
     let output = if cli.asm {
         input.with_extension("S")

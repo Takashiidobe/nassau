@@ -249,10 +249,10 @@ def generate_parse(oracle, fixture, warnings):
         warnings.append(f"{rel(fixture)}: SML/NJ rejects this valid fixture")
     stderr = decode(result.stderr)
     expected = decode(reference.stdout).count("Warning: match nonexhaustive")
-    if stderr.count("warning: match nonexhaustive") != expected:
+    actual = stderr.count("warning: match nonexhaustive")
+    if actual != expected:
         warnings.append(
-            f"{rel(fixture)}: Nassau reports {stderr.count('warning: match nonexhaustive')} "
-            f"non-exhaustive matches, SML/NJ {expected}"
+            f"{rel(fixture)}: Nassau reports {actual} non-exhaustive matches, SML/NJ {expected}"
         )
     lines = stream_lines("CHECK-STDOUT", decode(result.stdout))
     if stderr.strip():

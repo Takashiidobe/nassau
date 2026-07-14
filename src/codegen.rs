@@ -367,6 +367,9 @@ impl Codegen {
                     let null = builder.ins().iconst(pointer_type, 0);
                     builder.ins().call(function, &[null]);
                 }
+                StmtKind::Declaration(_) => {
+                    unreachable!("semantic analysis rejects declarations the backend lacks")
+                }
                 StmtKind::Exit(expr) => {
                     let ExprKind::PosixExit(word8) = &expr.value else {
                         unreachable!()

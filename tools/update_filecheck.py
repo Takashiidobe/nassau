@@ -10,6 +10,7 @@ as SML comment lines at the end of the file:
     (* CHECK-ERR: × expected int, ... *)    compiler diagnostic for fixtures under an error/ directory
     (* CHECK-STDOUT: (val x (+ 1 2)) *)    syntax tree (--dump-ast) for tests/fixtures/parser,
                                            with CHECK-STDERR for its match warnings
+    (* CHECK-STDOUT: val f : 'a -> 'a *)    inferred types (--dump-types) for tests/fixtures/types
     (* CHECK-REPL: val x = 1 : int *)       REPL transcript for tests/repl fixtures
 
 Later lines of the same stream use the -NEXT suffix (and -EMPTY for blank
@@ -199,6 +200,8 @@ def classify(path):
         return "skip"
     if "parser" in parts[:-1]:
         return "parse"
+    if "types" in parts[:-1]:
+        return "types"
     return "run"
 
 
@@ -223,6 +226,7 @@ def generate_error(oracle, fixture, warnings):
     parts = fixture.relative_to(TESTS).parts
     extra = ["--dump-tokens"] if "lexer" in parts else []
     extra += ["--dump-ast"] if "parser" in parts else []
+    extra += ["--dump-types"] if "types" in parts else []
     result = oracle.nassau_compile(fixture, extra)
     if result.returncode == 0:
         raise ToolError("Nassau accepted a fixture under error/")
@@ -255,6 +259,34 @@ def generate_parse(oracle, fixture, warnings):
             f"{rel(fixture)}: Nassau reports {actual} non-exhaustive matches, SML/NJ {expected}"
         )
     lines = stream_lines("CHECK-STDOUT", decode(result.stdout))
+    if stderr.strip():
+        lines += stream_lines("CHECK-STDERR", stderr)
+    return lines
+
+
+def smlnj_bindings(oracle, fixture):
+    """(name, type) of every binding SML/NJ echoes when it loads the fixture."""
+    result = run([oracle.smlnj], stdin=fixture.read_bytes(), cwd=fixture.parent)
+    bindings = []
+    for line in smlnj_strip_noise(decode(result.stdout)).split("\n"):
+        line = re.sub(r"^(?:[-=] )+", "", line)
+        match = re.match(r"val (\S+) = (.*)$", line)
+        if match and " : " in match.group(2):
+            bindings.append((match.group(1), match.group(2).rsplit(" : ", 1)[1].strip()))
+    return bindings
+
+
+def generate_types(oracle, fixture, warnings):
+    """Inferred types from Nassau, cross-checked against what SML/NJ echoes."""
+    result = oracle.nassau_compile(fixture, ["--dump-types"])
+    if result.returncode != 0:
+        raise ToolError("Nassau rejected a valid fixture:\n" + decode(result.stderr))
+    stdout = decode(result.stdout)
+    ours = [tuple(line[4:].split(" : ", 1)) for line in stdout.splitlines()]
+    if ours != smlnj_bindings(oracle, fixture):
+        warnings.append(f"{rel(fixture)}: Nassau's inferred types differ from SML/NJ")
+    lines = stream_lines("CHECK-STDOUT", stdout)
+    stderr = decode(result.stderr)
     if stderr.strip():
         lines += stream_lines("CHECK-STDERR", stderr)
     return lines
@@ -323,6 +355,7 @@ def main():
         "run": generate_run,
         "error": generate_error,
         "parse": generate_parse,
+        "types": generate_types,
         "repl": generate_repl,
     }
     warnings, stale, failed = [], [], []

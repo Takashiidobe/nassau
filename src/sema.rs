@@ -145,6 +145,10 @@ impl Analyzer {
                         DeclKind::Val { .. } => "val declarations with patterns",
                         DeclKind::Fun(_) => "fun declarations",
                         DeclKind::Type(_) => "type declarations",
+                        DeclKind::Datatype { .. } | DeclKind::DatatypeCopy { .. } => {
+                            "datatype declarations"
+                        }
+                        DeclKind::Abstype { .. } => "abstype declarations",
                         DeclKind::Local(..) => "local declarations",
                         DeclKind::Fixity { .. } => "fixity declarations",
                     };

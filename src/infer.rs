@@ -14,7 +14,8 @@ use miette::SourceSpan;
 
 use crate::error::ThisError;
 use crate::parser::{
-    Decl, DeclKind, Expr, ExprKind, Pat, PatKind, Program, Rule, StmtKind, Ty as SyntaxTy, TyKind,
+    DataBinding, Decl, DeclKind, Expr, ExprKind, Pat, PatKind, Program, Rule, StmtKind,
+    Ty as SyntaxTy, TyKind,
 };
 
 #[derive(Debug, ThisError)]
@@ -39,12 +40,14 @@ pub enum TypeError {
     ConstructorNeedsArgument(String),
     #[error("constructor '{0}' does not take an argument")]
     ConstructorTakesNoArgument(String),
-    #[error("type '{name}' expects {expected} arguments, found {found}")]
+    #[error("type '{name}' expects {expected} type argument(s), found {found}")]
     TypeArity {
         name: String,
         expected: usize,
         found: usize,
     },
+    #[error("unbound type variable {0} in type declaration")]
+    UnboundTypeVariable(String),
     #[error("integer literal does not fit in i32")]
     IntegerOutOfRange,
     #[error("{0} are not supported yet")]
@@ -60,10 +63,31 @@ pub struct Binding {
     pub ty: String,
 }
 
+/// A type constructor. Built-in ones have stamp 0; every `datatype` gets its
+/// own stamp, so two datatypes with the same name are different types.
+#[derive(Clone, Debug, PartialEq)]
+struct TyCon {
+    name: String,
+    stamp: usize,
+}
+
+impl TyCon {
+    fn builtin(name: &str) -> Self {
+        Self {
+            name: name.to_string(),
+            stamp: 0,
+        }
+    }
+
+    fn is(&self, name: &str) -> bool {
+        self.stamp == 0 && self.name == name
+    }
+}
+
 #[derive(Clone, Debug)]
 enum Type {
     Var(usize),
-    Con(String, Vec<Type>),
+    Con(TyCon, Vec<Type>),
     Arrow(Box<Type>, Box<Type>),
     /// Labels are kept sorted; tuples use the labels `1`, `2`, ...
     Record(Vec<(String, Type)>),
@@ -94,6 +118,20 @@ struct Alias {
     body: Type,
 }
 
+enum TypeEntry {
+    Alias(Alias),
+    Data { tycon: TyCon, arity: usize },
+}
+
+/// What is known about a datatype once it is declared.
+struct DataInfo {
+    constructors: Vec<(String, Scheme)>,
+    /// Whether some constructor holds a function, `real` or `exn`.
+    never_equal: bool,
+    /// Which parameters must admit equality for the datatype to.
+    equal_params: Vec<bool>,
+}
+
 enum UnifyError {
     Mismatch,
     Circular(usize, Type),
@@ -120,7 +158,7 @@ const TYPE_CONSTRUCTORS: &[(&str, usize)] = &[
 ];
 
 fn con(name: &str) -> Type {
-    Type::Con(name.to_string(), Vec::new())
+    Type::Con(TyCon::builtin(name), Vec::new())
 }
 
 fn arrow(from: Type, to: Type) -> Type {
@@ -128,7 +166,7 @@ fn arrow(from: Type, to: Type) -> Type {
 }
 
 fn list(element: Type) -> Type {
-    Type::Con("list".into(), vec![element])
+    Type::Con(TyCon::builtin("list"), vec![element])
 }
 
 fn tuple(items: Vec<Type>) -> Type {
@@ -156,7 +194,9 @@ struct Infer {
     vars: Vec<VarInfo>,
     level: usize,
     values: Vec<Entry>,
-    types: Vec<(String, Alias)>,
+    types: Vec<(String, TypeEntry)>,
+    datatypes: HashMap<usize, DataInfo>,
+    next_stamp: usize,
     overloaded: Vec<usize>,
     /// Type variables written in annotations, shared within a top-level declaration.
     tyvars: HashMap<String, Type>,
@@ -169,6 +209,8 @@ impl Infer {
             level: 0,
             values: Vec::new(),
             types: Vec::new(),
+            datatypes: HashMap::new(),
+            next_stamp: 0,
             overloaded: Vec::new(),
             tyvars: HashMap::new(),
         };
@@ -182,8 +224,8 @@ impl Infer {
         let boolean = || con("bool");
         let unit = || con("unit");
         let real = || con("real");
-        let option = |ty: Type| Type::Con("option".into(), vec![ty]);
-        let reference = |ty: Type| Type::Con("ref".into(), vec![ty]);
+        let option = |ty: Type| Type::Con(TyCon::builtin("option"), vec![ty]);
+        let reference = |ty: Type| Type::Con(TyCon::builtin("ref"), vec![ty]);
         self.builtin("nil", true, 1, |v| list(v[0].clone()));
         self.builtin("::", true, 1, |v| {
             arrow(
@@ -396,7 +438,7 @@ impl Infer {
             self.require_equality(ty)?;
         }
         if let Some(candidates) = &self.vars[id].overload
-            && !matches!(ty, Type::Con(name, args) if args.is_empty() && candidates.contains(&name.as_str()))
+            && !matches!(ty, Type::Con(name, args) if args.is_empty() && name.stamp == 0 && candidates.contains(&name.name.as_str()))
         {
             return Err(UnifyError::NotOverloaded(ty.clone()));
         }
@@ -431,10 +473,23 @@ impl Infer {
                 }
                 Ok(())
             }
-            Type::Con(name, _) if name == "real" || name == "exn" => {
+            Type::Con(name, _) if name.is("real") || name.is("exn") => {
                 Err(UnifyError::NotEquality(ty.clone()))
             }
-            Type::Con(name, _) if name == "ref" => Ok(()),
+            Type::Con(name, _) if name.is("ref") => Ok(()),
+            Type::Con(name, args) if name.stamp != 0 => {
+                let Some(info) = self.datatypes.get(&name.stamp) else {
+                    return Ok(());
+                };
+                if info.never_equal {
+                    return Err(UnifyError::NotEquality(ty.clone()));
+                }
+                let needed = info.equal_params.clone();
+                args.iter()
+                    .zip(needed)
+                    .filter(|(_, needed)| *needed)
+                    .try_for_each(|(arg, _)| self.require_equality(arg))
+            }
             Type::Con(_, args) => args.iter().try_for_each(|arg| self.require_equality(arg)),
             Type::Arrow(..) => Err(UnifyError::NotEquality(ty.clone())),
             Type::Record(fields) => fields
@@ -618,15 +673,18 @@ impl Infer {
     fn show(&self, ty: &Type, names: &mut Namer, precedence: u8) -> String {
         match self.prune(ty) {
             Type::Var(id) => names.name(id, self.vars[id].equality),
-            Type::Con(name, args) => match args.as_slice() {
-                [] => name,
-                [single] => format!("{} {name}", self.show(single, names, 2)),
-                many => {
-                    let args: Vec<String> =
-                        many.iter().map(|arg| self.show(arg, names, 0)).collect();
-                    format!("({}) {name}", args.join(", "))
+            Type::Con(tycon, args) => {
+                let name = names.tycon(&tycon);
+                match args.as_slice() {
+                    [] => name,
+                    [single] => format!("{} {name}", self.show(single, names, 2)),
+                    many => {
+                        let args: Vec<String> =
+                            many.iter().map(|arg| self.show(arg, names, 0)).collect();
+                        format!("({}) {name}", args.join(","))
+                    }
                 }
-            },
+            }
             Type::Arrow(from, to) => {
                 let text = format!(
                     "{} -> {}",
@@ -667,8 +725,44 @@ impl Infer {
         }
     }
 
+    /// The type of a top-level binding. Like SML/NJ, a datatype that is no
+    /// longer in scope, because its declaration was local, is shown as `?.t`.
     fn show_scheme(&self, scheme: &Scheme) -> String {
-        self.show(&scheme.ty, &mut Namer::new(), 0)
+        let mut namer = Namer::new();
+        self.hide_inaccessible(&scheme.ty, &mut namer);
+        self.show(&scheme.ty, &mut namer, 0)
+    }
+
+    fn hide_inaccessible(&self, ty: &Type, namer: &mut Namer) {
+        match self.prune(ty) {
+            Type::Con(tycon, args) => {
+                let accessible = tycon.stamp == 0
+                    || self
+                        .types
+                        .iter()
+                        .rev()
+                        .find(|(name, _)| *name == tycon.name)
+                        .is_some_and(|(_, entry)| {
+                            matches!(entry, TypeEntry::Data { tycon: found, .. } if *found == tycon)
+                        });
+                if !accessible {
+                    namer.hidden.push(tycon.stamp);
+                }
+                for arg in &args {
+                    self.hide_inaccessible(arg, namer);
+                }
+            }
+            Type::Arrow(from, to) => {
+                self.hide_inaccessible(&from, namer);
+                self.hide_inaccessible(&to, namer);
+            }
+            Type::Record(fields) => {
+                for (_, field) in &fields {
+                    self.hide_inaccessible(field, namer);
+                }
+            }
+            Type::Var(_) => {}
+        }
     }
 }
 
@@ -677,6 +771,11 @@ impl Infer {
 struct Namer {
     names: HashMap<usize, String>,
     letters: usize,
+    /// Stamps seen for each type name, so distinct types of one name can be
+    /// told apart as `t` and `t/2`.
+    tycons: HashMap<String, Vec<usize>>,
+    /// Stamps of datatypes that are out of scope.
+    hidden: Vec<usize>,
 }
 
 impl Namer {
@@ -684,6 +783,27 @@ impl Namer {
         Self {
             names: HashMap::new(),
             letters: 0,
+            tycons: HashMap::new(),
+            hidden: Vec::new(),
+        }
+    }
+
+    fn tycon(&mut self, tycon: &TyCon) -> String {
+        if self.hidden.contains(&tycon.stamp) {
+            return format!("?.{}", tycon.name);
+        }
+        let stamps = self.tycons.entry(tycon.name.clone()).or_default();
+        let index = match stamps.iter().position(|stamp| *stamp == tycon.stamp) {
+            Some(index) => index,
+            None => {
+                stamps.push(tycon.stamp);
+                stamps.len() - 1
+            }
+        };
+        if index == 0 {
+            tycon.name.clone()
+        } else {
+            format!("{}/{}", tycon.name, index + 1)
         }
     }
 
@@ -723,25 +843,43 @@ impl Infer {
                 for argument in arguments {
                     converted.push(self.convert(argument, variables)?);
                 }
-                if let Some((_, alias)) = self.types.iter().rev().find(|(alias, _)| alias == name) {
-                    if alias.params.len() != converted.len() {
-                        return Err((
-                            TypeError::TypeArity {
-                                name: name.clone(),
-                                expected: alias.params.len(),
-                                found: converted.len(),
-                            },
-                            ty.source_span(),
-                        ));
+                let arity_error = |expected: usize, found: usize| {
+                    (
+                        TypeError::TypeArity {
+                            name: name.clone(),
+                            expected,
+                            found,
+                        },
+                        ty.source_span(),
+                    )
+                };
+                match self
+                    .types
+                    .iter()
+                    .rev()
+                    .find(|(known, _)| known == name)
+                    .map(|(_, entry)| entry)
+                {
+                    Some(TypeEntry::Alias(alias)) => {
+                        if alias.params.len() != converted.len() {
+                            return Err(arity_error(alias.params.len(), converted.len()));
+                        }
+                        let map: HashMap<usize, Type> =
+                            alias.params.iter().copied().zip(converted).collect();
+                        let body = alias.body.clone();
+                        return Ok(self.substitute(&body, &map));
                     }
-                    let map: HashMap<usize, Type> =
-                        alias.params.iter().copied().zip(converted).collect();
-                    let body = alias.body.clone();
-                    return Ok(self.substitute(&body, &map));
+                    Some(TypeEntry::Data { tycon, arity }) => {
+                        if *arity != converted.len() {
+                            return Err(arity_error(*arity, converted.len()));
+                        }
+                        return Ok(Type::Con(tycon.clone(), converted));
+                    }
+                    None => {}
                 }
                 match TYPE_CONSTRUCTORS.iter().find(|(known, _)| known == name) {
                     Some((_, arity)) if *arity == converted.len() => {
-                        Ok(Type::Con(name.clone(), converted))
+                        Ok(Type::Con(TyCon::builtin(name), converted))
                     }
                     Some((_, arity)) => Err((
                         TypeError::TypeArity {
@@ -1213,22 +1351,39 @@ impl Infer {
                     .collect())
             }
             DeclKind::Type(bindings) => {
-                let mut aliases = Vec::new();
-                for binding in bindings {
-                    let mut variables = HashMap::new();
-                    let mut params = Vec::new();
-                    for parameter in &binding.parameters {
-                        let ty = self.fresh();
-                        if let Type::Var(id) = &ty {
-                            params.push(*id);
-                        }
-                        variables.insert(parameter.clone(), ty);
-                    }
-                    let body = self.convert(&binding.ty, &mut variables)?;
-                    aliases.push((binding.name.clone(), Alias { params, body }));
-                }
+                let aliases = self.convert_aliases(bindings)?;
                 self.types.extend(aliases);
                 Ok(Vec::new())
+            }
+            DeclKind::Datatype { bindings, withtype } => {
+                self.infer_datatypes(bindings, withtype)?;
+                Ok(Vec::new())
+            }
+            DeclKind::DatatypeCopy { name, original } => {
+                self.copy_datatype(name, original, decl.source_span())?;
+                Ok(Vec::new())
+            }
+            DeclKind::Abstype {
+                bindings,
+                withtype,
+                body,
+            } => {
+                let before = self.values.len();
+                let tycons = self.infer_datatypes(bindings, withtype)?;
+                let after = self.values.len();
+                let mut bound = Vec::new();
+                for declaration in body {
+                    bound.extend(self.infer_decl(declaration)?);
+                }
+                // The constructors are private to the body, and outside it
+                // the type is abstract: no equality.
+                self.values.drain(before..after);
+                for tycon in tycons {
+                    if let Some(info) = self.datatypes.get_mut(&tycon.stamp) {
+                        info.never_equal = true;
+                    }
+                }
+                Ok(bound)
             }
             DeclKind::Local(private, public) => {
                 let mark = self.mark();
@@ -1241,7 +1396,7 @@ impl Infer {
                     bound.extend(self.infer_decl(declaration)?);
                 }
                 let values: Vec<Entry> = self.values.drain(visible.0..).collect();
-                let types: Vec<(String, Alias)> = self.types.drain(visible.1..).collect();
+                let types: Vec<(String, TypeEntry)> = self.types.drain(visible.1..).collect();
                 self.release(mark);
                 self.values.extend(values);
                 self.types.extend(types);
@@ -1249,6 +1404,260 @@ impl Infer {
             }
             DeclKind::Fixity { .. } => Ok(Vec::new()),
         }
+    }
+
+    /// The abbreviations of a `type` (or `withtype`) declaration; they cannot
+    /// see one another.
+    fn convert_aliases(
+        &mut self,
+        bindings: &[crate::parser::TypeBinding],
+    ) -> Res<Vec<(String, TypeEntry)>> {
+        let mut aliases = Vec::new();
+        for binding in bindings {
+            let mut variables = HashMap::new();
+            let mut params = Vec::new();
+            for parameter in &binding.parameters {
+                let ty = self.fresh();
+                if let Type::Var(id) = &ty {
+                    params.push(*id);
+                }
+                variables.insert(parameter.clone(), ty);
+            }
+            let body = self.convert(&binding.ty, &mut variables)?;
+            self.check_closed(
+                &variables,
+                binding.parameters.len(),
+                &binding.parameters,
+                &binding.ty,
+            )?;
+            aliases.push((
+                binding.name.clone(),
+                TypeEntry::Alias(Alias { params, body }),
+            ));
+        }
+        Ok(aliases)
+    }
+
+    /// A declaration's types may only mention the type variables it binds.
+    fn check_closed(
+        &self,
+        variables: &HashMap<String, Type>,
+        bound: usize,
+        parameters: &[String],
+        ty: &SyntaxTy,
+    ) -> Res<()> {
+        if variables.len() > bound
+            && let Some(name) = variables.keys().find(|name| !parameters.contains(name))
+        {
+            return Err((
+                TypeError::UnboundTypeVariable(name.clone()),
+                ty.source_span(),
+            ));
+        }
+        Ok(())
+    }
+
+    /// Declares the types and constructors of a `datatype ... and ...` group
+    /// and returns the new type constructors.
+    fn infer_datatypes(
+        &mut self,
+        bindings: &[DataBinding],
+        withtype: &[crate::parser::TypeBinding],
+    ) -> Res<Vec<TyCon>> {
+        // The names come first: constructors and abbreviations may refer to
+        // any datatype of the group.
+        let mut tycons = Vec::new();
+        for binding in bindings {
+            self.next_stamp += 1;
+            let tycon = TyCon {
+                name: binding.name.clone(),
+                stamp: self.next_stamp,
+            };
+            self.types.push((
+                binding.name.clone(),
+                TypeEntry::Data {
+                    tycon: tycon.clone(),
+                    arity: binding.parameters.len(),
+                },
+            ));
+            tycons.push(tycon);
+        }
+        let aliases = self.convert_aliases(withtype)?;
+        self.types.extend(aliases);
+
+        let mut declared = Vec::new();
+        let mut parameter_vars = Vec::new();
+        let mut argument_types = Vec::new();
+        for (binding, tycon) in bindings.iter().zip(&tycons) {
+            let mut variables = HashMap::new();
+            let mut params = Vec::new();
+            let mut parameter_types = Vec::new();
+            for parameter in &binding.parameters {
+                let ty = self.fresh();
+                if let Type::Var(id) = &ty {
+                    params.push(*id);
+                }
+                variables.insert(parameter.clone(), ty.clone());
+                parameter_types.push(ty);
+            }
+            let result = Type::Con(tycon.clone(), parameter_types);
+            let mut constructors = Vec::new();
+            let mut arguments = Vec::new();
+            for constructor in &binding.constructors {
+                let argument = match &constructor.value.argument {
+                    Some(ty) => {
+                        let converted = self.convert(ty, &mut variables)?;
+                        self.check_closed(&variables, params.len(), &binding.parameters, ty)?;
+                        Some(converted)
+                    }
+                    None => None,
+                };
+                let ty = match &argument {
+                    Some(argument) => arrow(argument.clone(), result.clone()),
+                    None => result.clone(),
+                };
+                constructors.push((
+                    constructor.value.name.clone(),
+                    Scheme {
+                        vars: params.clone(),
+                        ty,
+                    },
+                ));
+                arguments.push(argument);
+            }
+            declared.push(constructors);
+            parameter_vars.push(params);
+            argument_types.push(arguments);
+        }
+
+        let equality = self.datatype_equality(&tycons, &parameter_vars, &argument_types);
+        for (((tycon, constructors), (never_equal, equal_params)), _) in tycons
+            .iter()
+            .zip(declared)
+            .zip(equality)
+            .zip(&parameter_vars)
+        {
+            for (name, scheme) in &constructors {
+                self.values.push(Entry {
+                    name: name.clone(),
+                    scheme: scheme.clone(),
+                    constructor: true,
+                });
+            }
+            self.datatypes.insert(
+                tycon.stamp,
+                DataInfo {
+                    constructors,
+                    never_equal,
+                    equal_params,
+                },
+            );
+        }
+        Ok(tycons)
+    }
+
+    /// For each datatype of a group: whether it never admits equality, and
+    /// which of its parameters it needs to. Datatypes of the group refer to
+    /// each other, so this iterates to a fixed point.
+    fn datatype_equality(
+        &self,
+        tycons: &[TyCon],
+        parameters: &[Vec<usize>],
+        arguments: &[Vec<Option<Type>>],
+    ) -> Vec<(bool, Vec<bool>)> {
+        let mut state: Vec<(bool, Vec<bool>)> = parameters
+            .iter()
+            .map(|params| (false, vec![false; params.len()]))
+            .collect();
+        loop {
+            let before = state.clone();
+            for (index, arguments) in arguments.iter().enumerate() {
+                for argument in arguments.iter().flatten() {
+                    self.equality_walk(argument, index, tycons, parameters, &mut state);
+                }
+            }
+            if state == before {
+                return state;
+            }
+        }
+    }
+
+    fn equality_walk(
+        &self,
+        ty: &Type,
+        index: usize,
+        tycons: &[TyCon],
+        parameters: &[Vec<usize>],
+        state: &mut Vec<(bool, Vec<bool>)>,
+    ) {
+        match self.prune(ty) {
+            Type::Var(id) => {
+                if let Some(position) = parameters[index].iter().position(|param| *param == id) {
+                    state[index].1[position] = true;
+                }
+            }
+            Type::Arrow(..) => state[index].0 = true,
+            Type::Record(fields) => {
+                for (_, field) in &fields {
+                    self.equality_walk(field, index, tycons, parameters, state);
+                }
+            }
+            Type::Con(name, _) if name.is("real") || name.is("exn") => state[index].0 = true,
+            Type::Con(name, _) if name.is("ref") => {}
+            Type::Con(name, args) => {
+                let (never, needed) = match tycons.iter().position(|tycon| *tycon == name) {
+                    Some(other) => state[other].clone(),
+                    None => match self.datatypes.get(&name.stamp) {
+                        Some(info) => (info.never_equal, info.equal_params.clone()),
+                        None => (false, vec![false; args.len()]),
+                    },
+                };
+                if never {
+                    state[index].0 = true;
+                }
+                for (arg, needed) in args.iter().zip(needed) {
+                    if needed {
+                        self.equality_walk(arg, index, tycons, parameters, state);
+                    }
+                }
+            }
+        }
+    }
+
+    /// `datatype t = datatype u`.
+    fn copy_datatype(&mut self, name: &str, original: &str, span: SourceSpan) -> Res<()> {
+        let entry = self
+            .types
+            .iter()
+            .rev()
+            .find(|(known, _)| known == original)
+            .map(|(_, entry)| entry);
+        let Some(TypeEntry::Data { tycon, arity }) = entry else {
+            let error = match TYPE_CONSTRUCTORS
+                .iter()
+                .any(|(known, _)| *known == original)
+            {
+                true => TypeError::Unsupported("replications of built-in datatypes"),
+                false => TypeError::UnboundType(original.to_string()),
+            };
+            return Err((error, span));
+        };
+        let (tycon, arity) = (tycon.clone(), *arity);
+        let constructors = self
+            .datatypes
+            .get(&tycon.stamp)
+            .map(|info| info.constructors.clone())
+            .unwrap_or_default();
+        self.types
+            .push((name.to_string(), TypeEntry::Data { tycon, arity }));
+        for (name, scheme) in constructors {
+            self.values.push(Entry {
+                name,
+                scheme,
+                constructor: true,
+            });
+        }
+        Ok(())
     }
 
     fn infer_val_binding(&mut self, pattern: &Pat, expr: &Expr) -> Res<Vec<(String, Type)>> {

@@ -149,6 +149,7 @@ impl Analyzer {
                             "datatype declarations"
                         }
                         DeclKind::Abstype { .. } => "abstype declarations",
+                        DeclKind::Exception(_) => "exception declarations",
                         DeclKind::Local(..) => "local declarations",
                         DeclKind::Fixity { .. } => "fixity declarations",
                     };

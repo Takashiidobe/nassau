@@ -131,6 +131,9 @@ pub enum DeclKind {
         withtype: Vec<TypeBinding>,
         body: Vec<Decl>,
     },
+    /// `exception E [of ty] and F = E ...`: new exception constructors, or
+    /// replications that give an existing one another name.
+    Exception(Vec<ExceptionBinding>),
     /// `local private in public end`: only `public` is visible afterwards.
     Local(Vec<Decl>, Vec<Decl>),
     Fixity {
@@ -151,6 +154,20 @@ pub struct FunBinding {
 pub struct FunClause {
     pub parameters: Vec<Pat>,
     pub body: Expr,
+}
+
+#[derive(Debug)]
+pub struct ExceptionBinding {
+    pub name: String,
+    pub kind: ExceptionKind,
+}
+
+#[derive(Debug)]
+pub enum ExceptionKind {
+    /// A new exception, carrying a value of the given type if any.
+    Fresh(Option<Ty>),
+    /// `exception F = E`.
+    Copy(String),
 }
 
 #[derive(Debug)]
@@ -447,10 +464,7 @@ impl Parser {
                 "infix" | "infixr" | "nonfix" => self.parse_fixity_decl(&word)?,
                 "datatype" => self.parse_datatype_decl()?,
                 "abstype" => self.parse_abstype_decl()?,
-                "exception" => {
-                    self.index -= 1;
-                    return Err(self.error(ParseErrorKind::Unsupported("exception declarations")));
-                }
+                "exception" => self.parse_exception_decl()?,
                 _ => {
                     self.index -= 1;
                     return Err(self.error(ParseErrorKind::Unsupported("module declarations")));
@@ -718,6 +732,47 @@ impl Parser {
         }
         let (bindings, withtype) = self.parse_datbinds()?;
         Ok(DeclKind::Datatype { bindings, withtype })
+    }
+
+    /// After `exception`: `[op] name [of ty]` or `[op] name = [op] name`, joined by `and`.
+    fn parse_exception_decl(&mut self) -> Result<DeclKind, ParseError> {
+        let mut bindings = Vec::new();
+        loop {
+            if self.at_reserved("op") {
+                self.index += 1;
+            }
+            let name = match self.peek().cloned() {
+                Some(TokenKind::Identifier(name) | TokenKind::SymbolicIdentifier(name)) => name,
+                _ => return Err(self.error(ParseErrorKind::Expect("an exception name".into()))),
+            };
+            self.index += 1;
+            let kind = if self.at_reserved("of") {
+                self.index += 1;
+                ExceptionKind::Fresh(Some(self.parse_ty()?))
+            } else if self.eat(&TokenKind::Equals) {
+                if self.at_reserved("op") {
+                    self.index += 1;
+                }
+                let Some(TokenKind::Identifier(mut original)) = self.peek().cloned() else {
+                    return Err(self.error(ParseErrorKind::Expect("an exception name".into())));
+                };
+                self.index += 1;
+                while self.at(&TokenKind::Dot)
+                    && let Some(TokenKind::Identifier(part)) = self.peek_at(1)
+                {
+                    original = format!("{original}.{part}");
+                    self.index += 2;
+                }
+                ExceptionKind::Copy(original)
+            } else {
+                ExceptionKind::Fresh(None)
+            };
+            bindings.push(ExceptionBinding { name, kind });
+            if !self.at_reserved("and") {
+                return Ok(DeclKind::Exception(bindings));
+            }
+            self.index += 1;
+        }
     }
 
     /// After `abstype`: `datbind [withtype typbind] with decls end`.

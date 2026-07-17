@@ -3,8 +3,8 @@
 //! Spans are left out so the output is stable and easy to assert on.
 
 use crate::parser::{
-    DataBinding, Decl, DeclKind, Expr, ExprKind, FixityKind, Pat, PatKind, Program, Rule, StmtKind,
-    Ty, TyKind,
+    DataBinding, Decl, DeclKind, ExceptionKind, Expr, ExprKind, FixityKind, Pat, PatKind, Program,
+    Rule, StmtKind, Ty, TyKind,
 };
 
 pub fn program(program: &Program) -> String {
@@ -144,6 +144,17 @@ fn decl_text(declaration: &Decl) -> String {
             list("datatype", &parts)
         }
         DeclKind::DatatypeCopy { name, original } => format!("(datatype-copy {name} {original})"),
+        DeclKind::Exception(bindings) => {
+            let bindings = bindings
+                .iter()
+                .map(|binding| match &binding.kind {
+                    ExceptionKind::Fresh(Some(ty)) => format!("({} {})", binding.name, ty_text(ty)),
+                    ExceptionKind::Fresh(None) => format!("({})", binding.name),
+                    ExceptionKind::Copy(original) => format!("({} = {original})", binding.name),
+                })
+                .collect::<Vec<_>>();
+            list("exception", &bindings)
+        }
         DeclKind::Abstype {
             bindings,
             withtype,

@@ -288,8 +288,11 @@ impl Infer {
                 arrow(v[0].clone(), v[2].clone()),
             )
         });
+        self.builtin("before", false, 1, |v| {
+            arrow(tuple(vec![v[0].clone(), unit()]), v[0].clone())
+        });
         self.builtin("ignore", false, 1, |v| arrow(v[0].clone(), unit()));
-        self.builtin("ref", false, 1, |v| {
+        self.builtin("ref", true, 1, |v| {
             arrow(v[0].clone(), reference(v[0].clone()))
         });
         self.builtin("!", false, 1, |v| {
@@ -1262,7 +1265,9 @@ impl Infer {
             ExprKind::Record(fields) => fields.iter().all(|(_, value)| self.nonexpansive(value)),
             ExprKind::Typed(inner, _) => self.nonexpansive(inner),
             ExprKind::Apply(function, argument) => {
-                matches!(&function.value, ExprKind::Variable(name) if self.lookup_constructor(name).is_some())
+                // `ref` is a constructor, but allocating a cell is an effect, so
+                // `ref e` is never generalised.
+                matches!(&function.value, ExprKind::Variable(name) if name != "ref" && self.lookup_constructor(name).is_some())
                     && self.nonexpansive(argument)
             }
             ExprKind::Infix(name, lhs, rhs) => {

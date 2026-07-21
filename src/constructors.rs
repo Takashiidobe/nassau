@@ -56,6 +56,7 @@ impl Constructors {
         let builtin = [
             ("bool", family(&[("true", 0), ("false", 0)])),
             ("list", family(&[("nil", 0), ("::", 2)])),
+            ("ref", family(&[("ref", 1)])),
             ("option", family(&[("NONE", 0), ("SOME", 1)])),
             (
                 "order",

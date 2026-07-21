@@ -110,6 +110,9 @@ fn check_declaration(declaration: &Decl, env: &Constructors, out: &mut Vec<Match
         | DeclKind::Exception(_)
         | DeclKind::Abstype { .. }
         | DeclKind::Local(..)
+        | DeclKind::Structure(_)
+        | DeclKind::Signature(_)
+        | DeclKind::Open(_)
         | DeclKind::Fixity { .. } => {}
     }
 }

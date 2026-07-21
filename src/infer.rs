@@ -12,11 +12,14 @@ use std::collections::HashMap;
 
 use miette::SourceSpan;
 
+mod modules;
+
 use crate::error::ThisError;
 use crate::parser::{
     DataBinding, Decl, DeclKind, ExceptionKind, Expr, ExprKind, Pat, PatKind, Program, Rule,
     StmtKind, Ty as SyntaxTy, TyKind,
 };
+use modules::{Sig, StructEnv};
 
 #[derive(Debug, ThisError)]
 pub enum TypeError {
@@ -50,6 +53,16 @@ pub enum TypeError {
     NotAnException(String),
     #[error("unbound type variable {0} in type declaration")]
     UnboundTypeVariable(String),
+    #[error("unbound structure '{0}'")]
+    UnboundStructure(String),
+    #[error("unbound signature '{0}'")]
+    UnboundSignature(String),
+    #[error("the structure does not provide {0}, which the signature specifies")]
+    MissingSpecification(String),
+    #[error("{name} does not match its specification: {reason}")]
+    SpecificationMismatch { name: String, reason: String },
+    #[error("cannot refine {0}: {1}")]
+    BadRefinement(String, String),
     #[error("integer literal does not fit in i32")]
     IntegerOutOfRange,
     #[error("{0} are not supported yet")]
@@ -115,11 +128,13 @@ struct Entry {
     constructor: bool,
 }
 
+#[derive(Clone)]
 struct Alias {
     params: Vec<usize>,
     body: Type,
 }
 
+#[derive(Clone)]
 enum TypeEntry {
     Alias(Alias),
     Data { tycon: TyCon, arity: usize },
@@ -198,6 +213,10 @@ struct Infer {
     values: Vec<Entry>,
     types: Vec<(String, TypeEntry)>,
     datatypes: HashMap<usize, DataInfo>,
+    structs: Vec<(String, StructEnv)>,
+    signatures: Vec<(String, Sig)>,
+    /// The qualified name (`S.t`) of each type constructor a structure declares.
+    paths: HashMap<usize, String>,
     next_stamp: usize,
     overloaded: Vec<usize>,
     /// Type variables written in annotations, shared within a top-level declaration.
@@ -212,6 +231,9 @@ impl Infer {
             values: Vec::new(),
             types: Vec::new(),
             datatypes: HashMap::new(),
+            structs: Vec::new(),
+            signatures: Vec::new(),
+            paths: HashMap::new(),
             next_stamp: 0,
             overloaded: Vec::new(),
             tyvars: HashMap::new(),
@@ -645,13 +667,14 @@ impl Infer {
 
     // --- environment -----------------------------------------------------
 
-    fn mark(&self) -> (usize, usize) {
-        (self.values.len(), self.types.len())
+    fn mark(&self) -> (usize, usize, usize) {
+        (self.values.len(), self.types.len(), self.structs.len())
     }
 
-    fn release(&mut self, mark: (usize, usize)) {
+    fn release(&mut self, mark: (usize, usize, usize)) {
         self.values.truncate(mark.0);
         self.types.truncate(mark.1);
+        self.structs.truncate(mark.2);
     }
 
     fn push_monomorphic(&mut self, name: String, ty: Type) {
@@ -665,12 +688,62 @@ impl Infer {
         });
     }
 
-    fn lookup(&self, name: &str) -> Option<&Entry> {
-        self.values.iter().rev().find(|entry| entry.name == name)
+    /// A value or constructor, possibly qualified by structure names.
+    fn lookup(&self, name: &str) -> Option<Entry> {
+        match name.rsplit_once('.') {
+            None => self.values.iter().rev().find(|entry| entry.name == name),
+            Some((path, base)) => {
+                let found = self.lookup_struct(path)?;
+                return found
+                    .values
+                    .iter()
+                    .find(|entry| entry.name == base)
+                    .cloned();
+            }
+        }
+        .cloned()
+    }
+
+    /// A type name, possibly qualified.
+    fn lookup_type(&self, name: &str) -> Option<TypeEntry> {
+        match name.rsplit_once('.') {
+            None => self
+                .types
+                .iter()
+                .rev()
+                .find(|(known, _)| known == name)
+                .map(|(_, entry)| entry.clone()),
+            Some((path, base)) => self
+                .lookup_struct(path)?
+                .types
+                .iter()
+                .find(|(known, _)| known == base)
+                .map(|(_, entry)| entry.clone()),
+        }
+    }
+
+    /// A structure, by name or qualified path.
+    fn lookup_struct(&self, path: &str) -> Option<&StructEnv> {
+        let mut parts = path.split('.');
+        let first = parts.next()?;
+        let mut found = self
+            .structs
+            .iter()
+            .rev()
+            .find(|(known, _)| known == first)
+            .map(|(_, env)| env)?;
+        for part in parts {
+            found = found
+                .structs
+                .iter()
+                .find(|(known, _)| known == part)
+                .map(|(_, env)| env)?;
+        }
+        Some(found)
     }
 
     fn lookup_constructor(&self, name: &str) -> Option<Entry> {
-        self.lookup(name).filter(|entry| entry.constructor).cloned()
+        self.lookup(name).filter(|entry| entry.constructor)
     }
 
     // --- printing --------------------------------------------------------
@@ -751,7 +824,12 @@ impl Infer {
                             matches!(entry, TypeEntry::Data { tycon: found, .. } if *found == tycon)
                         });
                 if !accessible {
-                    namer.hidden.push(tycon.stamp);
+                    match self.paths.get(&tycon.stamp) {
+                        Some(path) => {
+                            namer.qualified.insert(tycon.stamp, path.clone());
+                        }
+                        None => namer.hidden.push(tycon.stamp),
+                    }
                 }
                 for arg in &args {
                     self.hide_inaccessible(arg, namer);
@@ -781,6 +859,8 @@ struct Namer {
     tycons: HashMap<String, Vec<usize>>,
     /// Stamps of datatypes that are out of scope.
     hidden: Vec<usize>,
+    /// Type constructors of structures, shown by their qualified names.
+    qualified: HashMap<usize, String>,
 }
 
 impl Namer {
@@ -790,12 +870,16 @@ impl Namer {
             letters: 0,
             tycons: HashMap::new(),
             hidden: Vec::new(),
+            qualified: HashMap::new(),
         }
     }
 
     fn tycon(&mut self, tycon: &TyCon) -> String {
         if self.hidden.contains(&tycon.stamp) {
             return format!("?.{}", tycon.name);
+        }
+        if let Some(path) = self.qualified.get(&tycon.stamp) {
+            return path.clone();
         }
         let stamps = self.tycons.entry(tycon.name.clone()).or_default();
         let index = match stamps.iter().position(|stamp| *stamp == tycon.stamp) {
@@ -858,29 +942,32 @@ impl Infer {
                         ty.source_span(),
                     )
                 };
-                match self
-                    .types
-                    .iter()
-                    .rev()
-                    .find(|(known, _)| known == name)
-                    .map(|(_, entry)| entry)
-                {
+                match self.lookup_type(name) {
                     Some(TypeEntry::Alias(alias)) => {
                         if alias.params.len() != converted.len() {
                             return Err(arity_error(alias.params.len(), converted.len()));
                         }
                         let map: HashMap<usize, Type> =
                             alias.params.iter().copied().zip(converted).collect();
-                        let body = alias.body.clone();
-                        return Ok(self.substitute(&body, &map));
+                        return Ok(self.substitute(&alias.body, &map));
                     }
                     Some(TypeEntry::Data { tycon, arity }) => {
-                        if *arity != converted.len() {
-                            return Err(arity_error(*arity, converted.len()));
+                        if arity != converted.len() {
+                            return Err(arity_error(arity, converted.len()));
                         }
-                        return Ok(Type::Con(tycon.clone(), converted));
+                        return Ok(Type::Con(tycon, converted));
                     }
                     None => {}
+                }
+                if let Some((path, _)) = name.rsplit_once('.') {
+                    return Err((
+                        if self.lookup_struct(path).is_some() {
+                            TypeError::UnboundType(name.clone())
+                        } else {
+                            TypeError::UnboundStructure(path.to_string())
+                        },
+                        ty.source_span(),
+                    ));
                 }
                 match TYPE_CONSTRUCTORS.iter().find(|(known, _)| known == name) {
                     Some((_, arity)) if *arity == converted.len() => {
@@ -932,8 +1019,8 @@ impl Infer {
         Ok(match &pat.value {
             PatKind::Wildcard => self.fresh(),
             PatKind::Variable(name) => {
-                if name.contains('.') {
-                    return Err((TypeError::Unsupported("qualified names in patterns"), span));
+                if name.contains('.') && self.lookup_constructor(name).is_none() {
+                    return Err((TypeError::UnboundConstructor(name.clone()), span));
                 }
                 if let Some(entry) = self.lookup_constructor(name) {
                     let ty = self.instantiate(&entry.scheme);
@@ -1217,8 +1304,12 @@ impl Infer {
 
     fn variable(&mut self, name: &str, span: SourceSpan) -> Res<Type> {
         if let Some(entry) = self.lookup(name) {
-            let scheme = entry.scheme.clone();
-            return Ok(self.instantiate(&scheme));
+            return Ok(self.instantiate(&entry.scheme));
+        }
+        if let Some((path, _)) = name.rsplit_once('.')
+            && self.lookup_struct(path).is_none()
+        {
+            return Err((TypeError::UnboundStructure(path.to_string()), span));
         }
         if name == "mod" {
             let operand = self.overloaded_var(INTEGRAL);
@@ -1408,10 +1499,24 @@ impl Infer {
                 }
                 let values: Vec<Entry> = self.values.drain(visible.0..).collect();
                 let types: Vec<(String, TypeEntry)> = self.types.drain(visible.1..).collect();
+                let structs: Vec<(String, StructEnv)> = self.structs.drain(visible.2..).collect();
                 self.release(mark);
                 self.values.extend(values);
                 self.types.extend(types);
+                self.structs.extend(structs);
                 Ok(bound)
+            }
+            DeclKind::Structure(bindings) => {
+                self.infer_structures(bindings)?;
+                Ok(Vec::new())
+            }
+            DeclKind::Signature(bindings) => {
+                self.infer_signatures(bindings)?;
+                Ok(Vec::new())
+            }
+            DeclKind::Open(paths) => {
+                self.open_structures(paths, decl.source_span())?;
+                Ok(Vec::new())
             }
             DeclKind::Fixity { .. } => Ok(Vec::new()),
         }
@@ -1691,12 +1796,7 @@ impl Infer {
 
     /// `datatype t = datatype u`.
     fn copy_datatype(&mut self, name: &str, original: &str, span: SourceSpan) -> Res<()> {
-        let entry = self
-            .types
-            .iter()
-            .rev()
-            .find(|(known, _)| known == original)
-            .map(|(_, entry)| entry);
+        let entry = self.lookup_type(original);
         let Some(TypeEntry::Data { tycon, arity }) = entry else {
             let error = match TYPE_CONSTRUCTORS
                 .iter()
@@ -1707,7 +1807,6 @@ impl Infer {
             };
             return Err((error, span));
         };
-        let (tycon, arity) = (tycon.clone(), *arity);
         let constructors = self
             .datatypes
             .get(&tycon.stamp)

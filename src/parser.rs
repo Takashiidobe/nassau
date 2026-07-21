@@ -12,6 +12,9 @@ pub type Ty = Span<TyKind>;
 pub type Rule = (Pat, Expr);
 pub type Decl = Span<DeclKind>;
 pub type Constructor = Span<ConstructorKind>;
+pub type StrExp = Span<StrExpKind>;
+pub type SigExp = Span<SigExpKind>;
+pub type Spec = Span<SpecKind>;
 
 #[derive(Debug)]
 pub enum ExprKind {
@@ -134,6 +137,13 @@ pub enum DeclKind {
     /// `exception E [of ty] and F = E ...`: new exception constructors, or
     /// replications that give an existing one another name.
     Exception(Vec<ExceptionBinding>),
+    /// `structure S [: sig] = strexp and ...`; an ascription is folded into
+    /// the body as `strexp : sig`.
+    Structure(Vec<StructBinding>),
+    /// `signature S = sigexp and ...`.
+    Signature(Vec<SigBinding>),
+    /// `open A B.C`: brings the names of structures into scope.
+    Open(Vec<String>),
     /// `local private in public end`: only `public` is visible afterwards.
     Local(Vec<Decl>, Vec<Decl>),
     Fixity {
@@ -154,6 +164,77 @@ pub struct FunBinding {
 pub struct FunClause {
     pub parameters: Vec<Pat>,
     pub body: Expr,
+}
+
+#[derive(Debug)]
+pub struct StructBinding {
+    pub name: String,
+    pub body: StrExp,
+}
+
+#[derive(Debug)]
+pub struct SigBinding {
+    pub name: String,
+    pub body: SigExp,
+}
+
+#[derive(Debug)]
+pub enum StrExpKind {
+    /// `struct decs end`.
+    Struct(Vec<Decl>),
+    /// A structure name, possibly qualified.
+    Name(String),
+    /// `strexp : sigexp` (transparent) or `strexp :> sigexp` (opaque).
+    Ascribed {
+        body: Box<StrExp>,
+        signature: SigExp,
+        opaque: bool,
+    },
+    /// `let decs in strexp end`.
+    Let(Vec<Decl>, Box<StrExp>),
+}
+
+#[derive(Debug)]
+pub enum SigExpKind {
+    /// `sig specs end`.
+    Sig(Vec<Spec>),
+    Name(String),
+    /// `sigexp where type 'a t = ty and type ...`.
+    Where(Box<SigExp>, Vec<WhereType>),
+}
+
+#[derive(Debug)]
+pub struct WhereType {
+    pub parameters: Vec<String>,
+    pub name: String,
+    pub ty: Ty,
+}
+
+#[derive(Debug)]
+pub enum SpecKind {
+    Val(Vec<(String, Ty)>),
+    /// `type 'a t`, `eqtype 'a t` or `type 'a t = ty`.
+    Type(Vec<TypeSpec>),
+    Datatype(Vec<DataBinding>),
+    DatatypeCopy {
+        name: String,
+        original: String,
+    },
+    Exception(Vec<(String, Option<Ty>)>),
+    Structure(Vec<(String, SigExp)>),
+    Include(SigExp),
+    /// `sharing type t1 = t2 = ...`.
+    Sharing(Vec<String>),
+}
+
+#[derive(Debug)]
+pub struct TypeSpec {
+    pub parameters: Vec<String>,
+    pub name: String,
+    /// Declared with `eqtype`.
+    pub equality: bool,
+    /// The definition of `type t = ty`.
+    pub definition: Option<Ty>,
 }
 
 #[derive(Debug)]
@@ -218,6 +299,8 @@ pub struct Parser {
     file: PathBuf,
     /// Precedence and right-associativity of every infix name in scope.
     fixity: std::collections::HashMap<String, (u8, bool)>,
+    /// How many `local`, `let`, `struct` or `abstype` bodies enclose the parser.
+    nesting: usize,
 }
 
 impl Parser {
@@ -228,6 +311,7 @@ impl Parser {
             allow_implicit_val: false,
             file,
             fixity: Self::default_fixity(),
+            nesting: 0,
         }
     }
 
@@ -433,7 +517,6 @@ impl Parser {
                     | "functor"
                     | "open"
                     | "abstype"
-                    | "eqtype"
             ),
             _ => false,
         }
@@ -465,6 +548,15 @@ impl Parser {
                 "datatype" => self.parse_datatype_decl()?,
                 "abstype" => self.parse_abstype_decl()?,
                 "exception" => self.parse_exception_decl()?,
+                "structure" => self.parse_structure_decl()?,
+                "signature" if self.nesting > 0 => {
+                    self.index -= 1;
+                    return Err(self.error(ParseErrorKind::Expect(
+                        "a declaration; signatures can only be declared at the top level".into(),
+                    )));
+                }
+                "signature" => self.parse_signature_decl()?,
+                "open" => self.parse_open_decl()?,
                 _ => {
                     self.index -= 1;
                     return Err(self.error(ParseErrorKind::Unsupported("module declarations")));
@@ -476,6 +568,15 @@ impl Parser {
             }
         };
         Ok(Span::new(start, self.previous_end(), kind))
+    }
+
+    /// The declarations of a `struct`, `let` or `abstype` body, where
+    /// signatures cannot be declared.
+    fn parse_nested_decls(&mut self, terminator: &str) -> Result<Vec<Decl>, ParseError> {
+        self.nesting += 1;
+        let result = self.parse_decls_until(terminator);
+        self.nesting -= 1;
+        result
     }
 
     /// Declarations up to (not including) the reserved word `terminator`.
@@ -724,10 +825,9 @@ impl Parser {
             && matches!(self.peek_at(2), Some(TokenKind::Reserved(word)) if word == "datatype")
         {
             self.index += 3;
-            let Some(TokenKind::Identifier(original)) = self.peek().cloned() else {
+            let Some(original) = self.parse_long_name() else {
                 return Err(self.error(ParseErrorKind::Expect("a datatype name".into())));
             };
-            self.index += 1;
             return Ok(DeclKind::DatatypeCopy { name, original });
         }
         let (bindings, withtype) = self.parse_datbinds()?;
@@ -775,12 +875,377 @@ impl Parser {
         }
     }
 
+    /// An identifier with any `.part` qualifiers: `t`, `S.t`, `A.B.t`.
+    fn parse_long_name(&mut self) -> Option<String> {
+        let Some(TokenKind::Identifier(mut name)) = self.peek().cloned() else {
+            return None;
+        };
+        self.index += 1;
+        while self.at(&TokenKind::Dot)
+            && let Some(TokenKind::Identifier(part)) = self.peek_at(1)
+        {
+            name = format!("{name}.{part}");
+            self.index += 2;
+        }
+        Some(name)
+    }
+
+    /// The name of a value, constructor or structure being declared.
+    fn parse_binder(&mut self, what: &str) -> Result<String, ParseError> {
+        match self.peek().cloned() {
+            Some(TokenKind::Identifier(name) | TokenKind::SymbolicIdentifier(name)) => {
+                self.index += 1;
+                Ok(name)
+            }
+            _ => Err(self.error(ParseErrorKind::Expect(what.into()))),
+        }
+    }
+
+    /// After `structure`: `S [: sigexp | :> sigexp] = strexp {and ...}`.
+    fn parse_structure_decl(&mut self) -> Result<DeclKind, ParseError> {
+        let mut bindings = Vec::new();
+        loop {
+            let name = self.parse_binder("a structure name")?;
+            let ascription = match self.peek() {
+                Some(TokenKind::Colon) => Some(false),
+                Some(TokenKind::OpaqueAscription) => Some(true),
+                _ => None,
+            };
+            let ascribed = match ascription {
+                Some(opaque) => {
+                    self.index += 1;
+                    Some((self.parse_sigexp()?, opaque))
+                }
+                None => None,
+            };
+            self.expect(
+                TokenKind::Equals,
+                ParseErrorKind::Expect("= after the structure name".into()),
+            )?;
+            let mut body = self.parse_strexp()?;
+            if let Some((signature, opaque)) = ascribed {
+                let (start, end) = (body.start.clone(), signature.end.clone());
+                body = Span::new(
+                    start,
+                    end,
+                    StrExpKind::Ascribed {
+                        body: Box::new(body),
+                        signature,
+                        opaque,
+                    },
+                );
+            }
+            bindings.push(StructBinding { name, body });
+            if !self.at_reserved("and") {
+                return Ok(DeclKind::Structure(bindings));
+            }
+            self.index += 1;
+        }
+    }
+
+    /// `struct decs end`, a structure name, `let`, and any ascriptions after them.
+    fn parse_strexp(&mut self) -> Result<StrExp, ParseError> {
+        let Some(token) = self.tokens.get(self.index).cloned() else {
+            return Err(self.error(ParseErrorKind::Expect("a structure expression".into())));
+        };
+        let start = token.start.clone();
+        let mut body = if self.at_reserved("struct") {
+            self.index += 1;
+            let saved = self.fixity.clone();
+            let declarations = self.parse_nested_decls("end")?;
+            self.expect_reserved("end")?;
+            self.fixity = saved;
+            Span::new(
+                start.clone(),
+                self.previous_end(),
+                StrExpKind::Struct(declarations),
+            )
+        } else if self.at_reserved("let") {
+            self.index += 1;
+            let saved = self.fixity.clone();
+            let declarations = self.parse_nested_decls("in")?;
+            self.expect_reserved("in")?;
+            let inner = self.parse_strexp()?;
+            self.expect_reserved("end")?;
+            self.fixity = saved;
+            Span::new(
+                start.clone(),
+                self.previous_end(),
+                StrExpKind::Let(declarations, Box::new(inner)),
+            )
+        } else if let Some(name) = self.parse_long_name() {
+            if self.at(&TokenKind::LeftParen) {
+                return Err(self.error(ParseErrorKind::Unsupported("functor applications")));
+            }
+            Span::new(start.clone(), self.previous_end(), StrExpKind::Name(name))
+        } else {
+            return Err(self.error(ParseErrorKind::Expect("a structure expression".into())));
+        };
+        while matches!(
+            self.peek(),
+            Some(TokenKind::Colon | TokenKind::OpaqueAscription)
+        ) {
+            let opaque = matches!(self.peek(), Some(TokenKind::OpaqueAscription));
+            self.index += 1;
+            let signature = self.parse_sigexp()?;
+            body = Span::new(
+                start.clone(),
+                self.previous_end(),
+                StrExpKind::Ascribed {
+                    body: Box::new(body),
+                    signature,
+                    opaque,
+                },
+            );
+        }
+        Ok(body)
+    }
+
+    /// After `signature`: `S = sigexp {and ...}`.
+    fn parse_signature_decl(&mut self) -> Result<DeclKind, ParseError> {
+        let mut bindings = Vec::new();
+        loop {
+            let name = self.parse_binder("a signature name")?;
+            self.expect(
+                TokenKind::Equals,
+                ParseErrorKind::Expect("= after the signature name".into()),
+            )?;
+            let body = self.parse_sigexp()?;
+            bindings.push(SigBinding { name, body });
+            if !self.at_reserved("and") {
+                return Ok(DeclKind::Signature(bindings));
+            }
+            self.index += 1;
+        }
+    }
+
+    /// After `open`: one or more structure names.
+    fn parse_open_decl(&mut self) -> Result<DeclKind, ParseError> {
+        let mut names = Vec::new();
+        while let Some(name) = self.parse_long_name() {
+            names.push(name);
+        }
+        if names.is_empty() {
+            return Err(self.error(ParseErrorKind::Expect("a structure name".into())));
+        }
+        Ok(DeclKind::Open(names))
+    }
+
+    /// `sig specs end` or a signature name, then any `where type` refinements.
+    fn parse_sigexp(&mut self) -> Result<SigExp, ParseError> {
+        let Some(token) = self.tokens.get(self.index).cloned() else {
+            return Err(self.error(ParseErrorKind::Expect("a signature expression".into())));
+        };
+        let start = token.start.clone();
+        let mut body = if self.at_reserved("sig") {
+            self.index += 1;
+            let specs = self.parse_specs()?;
+            self.expect_reserved("end")?;
+            Span::new(start.clone(), self.previous_end(), SigExpKind::Sig(specs))
+        } else if let Some(name) = self.parse_long_name() {
+            Span::new(start.clone(), self.previous_end(), SigExpKind::Name(name))
+        } else {
+            return Err(self.error(ParseErrorKind::Expect("a signature expression".into())));
+        };
+        while self.at_reserved("where") {
+            self.index += 1;
+            let mut refinements = Vec::new();
+            loop {
+                self.expect_reserved("type")?;
+                let parameters = self.parse_type_parameters()?;
+                let Some(name) = self.parse_long_name() else {
+                    return Err(self.error(ParseErrorKind::Expect("a type name".into())));
+                };
+                self.expect(
+                    TokenKind::Equals,
+                    ParseErrorKind::Expect("= after the type name".into()),
+                )?;
+                let ty = self.parse_ty()?;
+                refinements.push(WhereType {
+                    parameters,
+                    name,
+                    ty,
+                });
+                if !self.at_reserved("and") {
+                    break;
+                }
+                self.index += 1;
+            }
+            body = Span::new(
+                start.clone(),
+                self.previous_end(),
+                SigExpKind::Where(Box::new(body), refinements),
+            );
+        }
+        Ok(body)
+    }
+
+    /// Specifications up to (not including) `end`.
+    fn parse_specs(&mut self) -> Result<Vec<Spec>, ParseError> {
+        let mut specs = Vec::new();
+        loop {
+            if self.eat(&TokenKind::Semicolon) {
+                continue;
+            }
+            if self.at_reserved("end") {
+                return Ok(specs);
+            }
+            specs.push(self.parse_spec()?);
+        }
+    }
+
+    fn parse_spec(&mut self) -> Result<Spec, ParseError> {
+        let Some(token) = self.tokens.get(self.index).cloned() else {
+            return Err(self.error(ParseErrorKind::Expect("a specification".into())));
+        };
+        let start = token.start.clone();
+        let kind = match &token.value {
+            TokenKind::Val => {
+                self.index += 1;
+                let mut values = Vec::new();
+                loop {
+                    if self.at_reserved("op") {
+                        self.index += 1;
+                    }
+                    let name = self.parse_binder("a value name")?;
+                    self.expect(
+                        TokenKind::Colon,
+                        ParseErrorKind::Expect(": after the value name".into()),
+                    )?;
+                    values.push((name, self.parse_ty()?));
+                    if !self.at_reserved("and") {
+                        break;
+                    }
+                    self.index += 1;
+                }
+                SpecKind::Val(values)
+            }
+            TokenKind::Reserved(word) => match word.as_str() {
+                "type" | "eqtype" => {
+                    let equality = word == "eqtype";
+                    self.index += 1;
+                    let mut specs = Vec::new();
+                    loop {
+                        let parameters = self.parse_type_parameters()?;
+                        let name = self.parse_binder("a type name")?;
+                        let definition = if !equality && self.eat(&TokenKind::Equals) {
+                            Some(self.parse_ty()?)
+                        } else {
+                            None
+                        };
+                        specs.push(TypeSpec {
+                            parameters,
+                            name,
+                            equality,
+                            definition,
+                        });
+                        if !self.at_reserved("and") {
+                            break;
+                        }
+                        self.index += 1;
+                    }
+                    SpecKind::Type(specs)
+                }
+                "datatype" => {
+                    self.index += 1;
+                    if let Some(TokenKind::Identifier(name)) = self.peek().cloned()
+                        && matches!(self.peek_at(1), Some(TokenKind::Equals))
+                        && matches!(self.peek_at(2), Some(TokenKind::Reserved(word)) if word == "datatype")
+                    {
+                        self.index += 3;
+                        let Some(original) = self.parse_long_name() else {
+                            return Err(
+                                self.error(ParseErrorKind::Expect("a datatype name".into()))
+                            );
+                        };
+                        SpecKind::DatatypeCopy { name, original }
+                    } else {
+                        let (bindings, withtype) = self.parse_datbinds()?;
+                        if !withtype.is_empty() {
+                            return Err(self
+                                .error(ParseErrorKind::Unsupported("withtype in specifications")));
+                        }
+                        SpecKind::Datatype(bindings)
+                    }
+                }
+                "exception" => {
+                    self.index += 1;
+                    let mut exceptions = Vec::new();
+                    loop {
+                        let name = self.parse_binder("an exception name")?;
+                        let argument = if self.at_reserved("of") {
+                            self.index += 1;
+                            Some(self.parse_ty()?)
+                        } else {
+                            None
+                        };
+                        exceptions.push((name, argument));
+                        if !self.at_reserved("and") {
+                            break;
+                        }
+                        self.index += 1;
+                    }
+                    SpecKind::Exception(exceptions)
+                }
+                "structure" => {
+                    self.index += 1;
+                    let mut structures = Vec::new();
+                    loop {
+                        let name = self.parse_binder("a structure name")?;
+                        self.expect(
+                            TokenKind::Colon,
+                            ParseErrorKind::Expect(": after the structure name".into()),
+                        )?;
+                        structures.push((name, self.parse_sigexp()?));
+                        if !self.at_reserved("and") {
+                            break;
+                        }
+                        self.index += 1;
+                    }
+                    SpecKind::Structure(structures)
+                }
+                "include" => {
+                    self.index += 1;
+                    SpecKind::Include(self.parse_sigexp()?)
+                }
+                "sharing" => {
+                    self.index += 1;
+                    if !self.at_reserved("type") {
+                        return Err(self.error(ParseErrorKind::Unsupported(
+                            "sharing constraints on structures",
+                        )));
+                    }
+                    self.index += 1;
+                    let mut names = Vec::new();
+                    loop {
+                        let Some(name) = self.parse_long_name() else {
+                            return Err(self.error(ParseErrorKind::Expect("a type name".into())));
+                        };
+                        names.push(name);
+                        if !self.eat(&TokenKind::Equals) {
+                            break;
+                        }
+                    }
+                    if names.len() < 2 {
+                        return Err(
+                            self.error(ParseErrorKind::Expect("= and another type name".into()))
+                        );
+                    }
+                    SpecKind::Sharing(names)
+                }
+                _ => return Err(self.error(ParseErrorKind::Expect("a specification".into()))),
+            },
+            _ => return Err(self.error(ParseErrorKind::Expect("a specification".into()))),
+        };
+        Ok(Span::new(start, self.previous_end(), kind))
+    }
+
     /// After `abstype`: `datbind [withtype typbind] with decls end`.
     fn parse_abstype_decl(&mut self) -> Result<DeclKind, ParseError> {
         let (bindings, withtype) = self.parse_datbinds()?;
         self.expect_reserved("with")?;
         let saved = self.fixity.clone();
-        let body = self.parse_decls_until("end")?;
+        let body = self.parse_nested_decls("end")?;
         self.expect_reserved("end")?;
         self.fixity = saved;
         Ok(DeclKind::Abstype {
@@ -1357,7 +1822,7 @@ impl Parser {
     fn parse_let(&mut self, start: crate::span::Loc) -> Result<Expr, ParseError> {
         // Fixity declared inside `let` ends with it.
         let saved = self.fixity.clone();
-        let declarations = self.parse_decls_until("in")?;
+        let declarations = self.parse_nested_decls("in")?;
         self.expect_reserved("in")?;
         let mut body = vec![self.parse_expr()?];
         while self.eat(&TokenKind::Semicolon) {
@@ -1694,11 +2159,19 @@ impl Parser {
             TokenKind::TypeVariable(name) => {
                 Span::new(start.clone(), token.end, TyKind::Variable(name))
             }
-            TokenKind::Identifier(name) => Span::new(
-                start.clone(),
-                self.previous_end(),
-                TyKind::Constructor(name, Vec::new()),
-            ),
+            TokenKind::Identifier(mut name) => {
+                while self.at(&TokenKind::Dot)
+                    && let Some(TokenKind::Identifier(part)) = self.peek_at(1)
+                {
+                    name = format!("{name}.{part}");
+                    self.index += 2;
+                }
+                Span::new(
+                    start.clone(),
+                    self.previous_end(),
+                    TyKind::Constructor(name, Vec::new()),
+                )
+            }
             TokenKind::LeftParen => {
                 let mut items = vec![self.parse_ty()?];
                 while self.eat(&TokenKind::Comma) {
@@ -1711,12 +2184,11 @@ impl Parser {
                 if items.len() == 1 {
                     items.pop().expect("one type")
                 } else {
-                    let Some(TokenKind::Identifier(name)) = self.peek().cloned() else {
+                    let Some(name) = self.parse_long_name() else {
                         return Err(self.error(ParseErrorKind::Expect(
                             "a type constructor after the type arguments".into(),
                         )));
                     };
-                    self.index += 1;
                     Span::new(
                         start.clone(),
                         self.previous_end(),
@@ -1750,8 +2222,7 @@ impl Parser {
                 return Err(self.error(ParseErrorKind::Expect("a type".into())));
             }
         };
-        while let Some(TokenKind::Identifier(name)) = self.peek().cloned() {
-            self.index += 1;
+        while let Some(name) = self.parse_long_name() {
             ty = Span::new(
                 start.clone(),
                 self.previous_end(),

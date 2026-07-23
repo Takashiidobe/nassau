@@ -3,8 +3,9 @@
 //! Spans are left out so the output is stable and easy to assert on.
 
 use crate::parser::{
-    DataBinding, Decl, DeclKind, ExceptionKind, Expr, ExprKind, FixityKind, Pat, PatKind, Program,
-    Rule, SigExp, SigExpKind, Spec, SpecKind, StmtKind, StrExp, StrExpKind, Ty, TyKind,
+    DataBinding, Decl, DeclKind, ExceptionKind, Expr, ExprKind, FixityKind, FunctorParameter, Pat,
+    PatKind, Program, Rule, SigExp, SigExpKind, Spec, SpecKind, StmtKind, StrExp, StrExpKind, Ty,
+    TyKind,
 };
 
 pub fn program(program: &Program) -> String {
@@ -184,6 +185,25 @@ fn decl_text(declaration: &Decl) -> String {
                 .collect();
             list("signature", &bindings)
         }
+        DeclKind::Functor(bindings) => {
+            let bindings: Vec<String> = bindings
+                .iter()
+                .map(|binding| {
+                    let parameter = match &binding.parameter {
+                        FunctorParameter::Named(name, signature) => {
+                            format!("({name} {})", sigexp_text(signature))
+                        }
+                        FunctorParameter::Specs(signature) => sigexp_text(signature),
+                    };
+                    format!(
+                        "({} {parameter} {})",
+                        binding.name,
+                        strexp_text(&binding.body)
+                    )
+                })
+                .collect();
+            list("functor", &bindings)
+        }
         DeclKind::Open(names) => format!("(open {})", names.join(" ")),
         DeclKind::Local(private, public) => {
             let text = |declarations: &[Decl]| {
@@ -233,6 +253,7 @@ fn strexp_text(body: &StrExp) -> String {
                 .join(" "),
             strexp_text(inner)
         ),
+        StrExpKind::Apply(name, argument) => format!("(app {name} {})", strexp_text(argument)),
     }
 }
 
@@ -307,6 +328,7 @@ fn spec_text(spec: &Spec) -> String {
         ),
         SpecKind::Include(signature) => format!("(include {})", sigexp_text(signature)),
         SpecKind::Sharing(names) => format!("(sharing {})", names.join(" ")),
+        SpecKind::SharingStructures(names) => format!("(sharing-structures {})", names.join(" ")),
     }
 }
 

@@ -4,14 +4,19 @@
 
 use std::collections::HashSet;
 
-use crate::constructors::Constructors;
+use crate::constructors::{Constructors, Declared};
 use crate::parser::{
-    Decl, DeclKind, Expr, ExprKind, Program, SigExp, SigExpKind, SpecKind, StmtKind, StrExp,
-    StrExpKind,
+    Decl, DeclKind, Expr, ExprKind, FunctorParameter, Program, SigExp, SigExpKind, SpecKind,
+    StmtKind, StrExp, StrExpKind,
 };
 
-/// The signatures declared so far, latest last.
-type Signatures<'a> = Vec<(&'a str, &'a SigExp)>;
+/// The signatures and functors declared so far, latest last. A functor is
+/// kept as the constructors its body declares, which each application adds.
+#[derive(Default)]
+struct Signatures<'a> {
+    signatures: Vec<(&'a str, &'a SigExp)>,
+    functors: Vec<(&'a str, Declared)>,
+}
 
 #[derive(Clone, Copy)]
 pub enum Node<'a> {
@@ -21,7 +26,7 @@ pub enum Node<'a> {
 
 pub fn walk_program<'a>(program: &'a Program, visit: &mut dyn FnMut(Node<'a>, &Constructors)) {
     let mut env = Constructors::new();
-    let mut sigs = Signatures::new();
+    let mut sigs = Signatures::default();
     for statement in &program.statements {
         match &statement.value {
             StmtKind::Val(_, expr) | StmtKind::Print(expr) | StmtKind::Exit(expr) => {
@@ -89,7 +94,24 @@ fn walk_decl<'a>(
         }
         DeclKind::Signature(bindings) => {
             for binding in bindings {
-                sigs.push((&binding.name, &binding.body));
+                sigs.signatures.push((&binding.name, &binding.body));
+            }
+        }
+        DeclKind::Functor(bindings) => {
+            for binding in bindings {
+                let outer = env.mark();
+                match &binding.parameter {
+                    FunctorParameter::Named(name, signature) => {
+                        declare_signature(signature, sigs, env);
+                        env.qualify_since(outer, name);
+                    }
+                    FunctorParameter::Specs(signature) => declare_signature(signature, sigs, env),
+                }
+                let inner = env.mark();
+                walk_strexp(&binding.body, visit, env, sigs);
+                let result = env.take_since(inner);
+                env.release(outer);
+                sigs.functors.push((&binding.name, result));
             }
         }
         DeclKind::Open(paths) => {
@@ -115,6 +137,20 @@ fn walk_strexp<'a>(
             }
         }
         StrExpKind::Name(path) => env.open(path),
+        StrExpKind::Apply(name, argument) => {
+            let mark = env.mark();
+            walk_strexp(argument, visit, env, sigs);
+            env.release(mark);
+            let found = sigs
+                .functors
+                .iter()
+                .rev()
+                .find(|(known, _)| known == name)
+                .map(|(_, result)| result.clone());
+            if let Some(result) = found {
+                env.restore(result);
+            }
+        }
         StrExpKind::Ascribed {
             body, signature, ..
         } => {
@@ -147,7 +183,12 @@ fn signature_constructors(
 ) {
     match &signature.value {
         SigExpKind::Name(name) => {
-            if let Some((_, found)) = sigs.iter().rev().find(|(known, _)| known == name) {
+            if let Some((_, found)) = sigs
+                .signatures
+                .iter()
+                .rev()
+                .find(|(known, _)| known == name)
+            {
                 signature_constructors(found, sigs, prefix, out);
             }
         }
@@ -178,7 +219,8 @@ fn signature_constructors(
                     SpecKind::DatatypeCopy { .. }
                     | SpecKind::Val(_)
                     | SpecKind::Type(_)
-                    | SpecKind::Sharing(_) => {}
+                    | SpecKind::Sharing(_)
+                    | SpecKind::SharingStructures(_) => {}
                 }
             }
         }
@@ -259,5 +301,45 @@ fn walk_expr<'a>(
         | ExprKind::Word(_)
         | ExprKind::Unit
         | ExprKind::Selector(_) => {}
+    }
+}
+
+/// Declares the constructors a functor parameter's signature specifies.
+fn declare_signature(signature: &SigExp, sigs: &Signatures, env: &mut Constructors) {
+    match &signature.value {
+        SigExpKind::Name(name) => {
+            if let Some((_, found)) = sigs
+                .signatures
+                .iter()
+                .rev()
+                .find(|(known, _)| known == name)
+            {
+                declare_signature(found, sigs, env);
+            }
+        }
+        SigExpKind::Where(inner, _) => declare_signature(inner, sigs, env),
+        SigExpKind::Sig(specs) => {
+            for spec in specs {
+                match &spec.value {
+                    SpecKind::Datatype(bindings) => env.declare_datatypes(bindings),
+                    SpecKind::Exception(exceptions) => {
+                        env.declare_exceptions(exceptions.iter().map(|(name, _)| name.as_str()))
+                    }
+                    SpecKind::Include(inner) => declare_signature(inner, sigs, env),
+                    SpecKind::Structure(structures) => {
+                        for (name, inner) in structures {
+                            let mark = env.mark();
+                            declare_signature(inner, sigs, env);
+                            env.qualify_since(mark, name);
+                        }
+                    }
+                    SpecKind::DatatypeCopy { name, original } => env.declare_copy(name, original),
+                    SpecKind::Val(_)
+                    | SpecKind::Type(_)
+                    | SpecKind::Sharing(_)
+                    | SpecKind::SharingStructures(_) => {}
+                }
+            }
+        }
     }
 }

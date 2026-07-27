@@ -9,6 +9,7 @@
 //! candidate (`int`) when the enclosing top-level declaration ends.
 
 use std::collections::HashMap;
+use std::fmt;
 
 use miette::SourceSpan;
 
@@ -19,6 +20,8 @@ use crate::parser::{
     DataBinding, Decl, DeclKind, ExceptionKind, Expr, ExprKind, Pat, PatKind, Program, Rule,
     StmtKind, Ty as SyntaxTy, TyKind,
 };
+use crate::span::Loc;
+use crate::value;
 use modules::{Functor, Sig, StructEnv};
 
 #[derive(Debug, ThisError)]
@@ -65,7 +68,7 @@ pub enum TypeError {
     UnboundFunctor(String),
     #[error("cannot refine {0}: {1}")]
     BadRefinement(String, String),
-    #[error("integer literal does not fit in i32")]
+    #[error("int constant too large")]
     IntegerOutOfRange,
     #[error("{0} are not supported yet")]
     Unsupported(&'static str),
@@ -78,6 +81,180 @@ type Res<T> = Result<T, Failure>;
 pub struct Binding {
     pub name: String,
     pub ty: String,
+    /// The same type, for code that needs its structure.
+    pub resolved: Ty,
+}
+
+/// A resolved type, as the backend sees it: overloads are defaulted and weak
+/// type variables of top-level bindings are frozen, but polymorphic
+/// variables remain.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Ty {
+    Var {
+        id: usize,
+        equality: bool,
+    },
+    /// A type constructor. Built-in ones (`int`, `list`, ...) have stamp 0.
+    Con {
+        name: String,
+        stamp: usize,
+        args: Vec<Ty>,
+    },
+    Arrow(Box<Ty>, Box<Ty>),
+    /// Labels are sorted as SML sorts them; tuples use `1`, `2`, ...
+    Record(Vec<(String, Ty)>),
+}
+
+impl Ty {
+    /// Whether this is the built-in type constructor `name`.
+    pub fn is(&self, name: &str) -> bool {
+        matches!(self, Ty::Con { name: found, stamp: 0, .. } if found == name)
+    }
+}
+
+impl fmt::Display for Ty {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.show(&mut Vec::new(), 0))
+    }
+}
+
+impl Ty {
+    /// Shows the type, naming its variables consistently with earlier calls
+    /// that shared `names`.
+    pub fn show_named(&self, names: &mut Vec<usize>) -> String {
+        self.show(names, 0)
+    }
+
+    /// Shows the type as SML does, naming its variables `'a`, `'b`, ... in
+    /// order of appearance.
+    fn show(&self, names: &mut Vec<usize>, precedence: u8) -> String {
+        match self {
+            Ty::Var { id, equality } => {
+                let index = names
+                    .iter()
+                    .position(|known| known == id)
+                    .unwrap_or_else(|| {
+                        names.push(*id);
+                        names.len() - 1
+                    });
+                let quote = if *equality { "''" } else { "'" };
+                format!("{quote}{}", var_name(index))
+            }
+            Ty::Con { name, args, .. } => match args.as_slice() {
+                [] => name.clone(),
+                [single] => format!("{} {name}", single.show(names, 2)),
+                many => {
+                    let args: Vec<String> = many.iter().map(|arg| arg.show(names, 0)).collect();
+                    format!("({}) {name}", args.join(","))
+                }
+            },
+            Ty::Arrow(from, to) => {
+                let text = format!("{} -> {}", from.show(names, 1), to.show(names, 0));
+                if precedence >= 1 {
+                    format!("({text})")
+                } else {
+                    text
+                }
+            }
+            Ty::Record(fields) => {
+                let is_tuple = fields.len() > 1
+                    && fields
+                        .iter()
+                        .enumerate()
+                        .all(|(index, (label, _))| *label == (index + 1).to_string());
+                if is_tuple {
+                    let items: Vec<String> =
+                        fields.iter().map(|(_, ty)| ty.show(names, 2)).collect();
+                    let text = items.join(" * ");
+                    if precedence >= 2 {
+                        format!("({text})")
+                    } else {
+                        text
+                    }
+                } else if fields.is_empty() {
+                    "unit".to_string()
+                } else {
+                    let items: Vec<String> = fields
+                        .iter()
+                        .map(|(label, ty)| format!("{label}:{}", ty.show(names, 0)))
+                        .collect();
+                    format!("{{{}}}", items.join(", "))
+                }
+            }
+        }
+    }
+}
+
+/// `a`, `b`, ..., `z`, `a1`, ...
+fn var_name(index: usize) -> String {
+    let letter = (b'a' + (index % 26) as u8) as char;
+    match index / 26 {
+        0 => letter.to_string(),
+        round => format!("{letter}{round}"),
+    }
+}
+
+/// The inferred type of one expression or pattern.
+#[derive(Clone)]
+pub struct Node<T> {
+    /// The node's address: the syntax tree is not moved between type
+    /// checking and code generation.
+    address: usize,
+    pub pattern: bool,
+    pub start: Loc,
+    pub end: Loc,
+    pub ty: T,
+}
+
+/// The inferred type of every expression and pattern of a program.
+#[derive(Default)]
+pub struct TypeTable {
+    nodes: Vec<Node<Ty>>,
+    index: HashMap<(usize, bool), usize>,
+}
+
+#[expect(
+    dead_code,
+    reason = "code generation reads types from here in a later change"
+)]
+impl TypeTable {
+    pub fn expr(&self, expr: &Expr) -> Option<&Ty> {
+        self.get(expr as *const Expr as usize, false)
+    }
+
+    pub fn pat(&self, pat: &Pat) -> Option<&Ty> {
+        self.get(pat as *const Pat as usize, true)
+    }
+
+    fn get(&self, address: usize, pattern: bool) -> Option<&Ty> {
+        let index = self.index.get(&(address, pattern))?;
+        Some(&self.nodes[*index].ty)
+    }
+
+    /// Every typed node once, in source order, outer nodes first.
+    pub fn nodes(&self) -> Vec<&Node<Ty>> {
+        let mut indices: Vec<usize> = self.index.values().copied().collect();
+        // Nodes are recorded after their children, so among nodes with the
+        // same span the later one encloses the earlier.
+        indices.sort_by_key(|index| {
+            let node = &self.nodes[*index];
+            (
+                node.start.offset,
+                std::cmp::Reverse(node.end.offset),
+                std::cmp::Reverse(*index),
+            )
+        });
+        indices
+            .into_iter()
+            .map(|index| &self.nodes[index])
+            .collect()
+    }
+}
+
+/// What checking a program produced.
+pub struct Checked {
+    pub bindings: Vec<Binding>,
+    pub types: TypeTable,
 }
 
 /// A type constructor. Built-in ones have stamp 0; every `datatype` gets its
@@ -110,6 +287,7 @@ enum Type {
     Record(Vec<(String, Type)>),
 }
 
+#[derive(Clone)]
 struct VarInfo {
     link: Option<Type>,
     level: usize,
@@ -143,6 +321,7 @@ enum TypeEntry {
 }
 
 /// What is known about a datatype once it is declared.
+#[derive(Clone)]
 struct DataInfo {
     constructors: Vec<(String, Scheme)>,
     /// Whether some constructor holds a function, `real` or `exn`.
@@ -219,6 +398,7 @@ struct Mark {
     functors: usize,
 }
 
+#[derive(Clone)]
 struct Infer {
     vars: Vec<VarInfo>,
     level: usize,
@@ -234,6 +414,8 @@ struct Infer {
     overloaded: Vec<usize>,
     /// Type variables written in annotations, shared within a top-level declaration.
     tyvars: HashMap<String, Type>,
+    /// The type inferred for each expression and pattern, until resolved.
+    node_types: Vec<Node<Type>>,
 }
 
 impl Infer {
@@ -251,6 +433,7 @@ impl Infer {
             next_stamp: 0,
             overloaded: Vec::new(),
             tyvars: HashMap::new(),
+            node_types: Vec::new(),
         };
         infer.install_builtins();
         infer
@@ -1043,6 +1226,18 @@ impl Infer {
     }
 
     fn infer_pat(&mut self, pat: &Pat, binds: &mut Vec<(String, Type)>) -> Res<Type> {
+        let ty = self.infer_pat_kind(pat, binds)?;
+        self.node_types.push(Node {
+            address: pat as *const Pat as usize,
+            pattern: true,
+            start: pat.start.clone(),
+            end: pat.end.clone(),
+            ty: ty.clone(),
+        });
+        Ok(ty)
+    }
+
+    fn infer_pat_kind(&mut self, pat: &Pat, binds: &mut Vec<(String, Type)>) -> Res<Type> {
         let span = pat.source_span();
         Ok(match &pat.value {
             PatKind::Wildcard => self.fresh(),
@@ -1061,6 +1256,9 @@ impl Infer {
                     binds.push((name.clone(), ty.clone()));
                     ty
                 }
+            }
+            PatKind::Integer(value) if !value::int_fits(*value) => {
+                return Err((TypeError::IntegerOutOfRange, span));
             }
             PatKind::Integer(_) => con("int"),
             PatKind::Word(_) => con("word"),
@@ -1174,11 +1372,24 @@ impl Infer {
     }
 
     fn infer_expr(&mut self, expr: &Expr) -> Res<Type> {
+        let ty = self.infer_expr_kind(expr)?;
+        self.node_types.push(Node {
+            address: expr as *const Expr as usize,
+            pattern: false,
+            start: expr.start.clone(),
+            end: expr.end.clone(),
+            ty: ty.clone(),
+        });
+        Ok(ty)
+    }
+
+    fn infer_expr_kind(&mut self, expr: &Expr) -> Res<Type> {
         let span = expr.source_span();
         match &expr.value {
-            ExprKind::Integer(value) => i32::try_from(*value)
-                .map(|_| con("int"))
-                .map_err(|_| (TypeError::IntegerOutOfRange, span)),
+            ExprKind::Integer(value) if !value::int_fits(*value) => {
+                Err((TypeError::IntegerOutOfRange, span))
+            }
+            ExprKind::Integer(_) => Ok(con("int")),
             ExprKind::Real(_) => Ok(con("real")),
             ExprKind::Boolean(_) => Ok(con("bool")),
             ExprKind::String(_) => Ok(con("string")),
@@ -1930,32 +2141,109 @@ impl Infer {
 
 /// Infers every top-level declaration and returns what each bound, or the
 /// first type error.
-pub fn check_program(program: &Program) -> Result<Vec<Binding>, Failure> {
-    let mut infer = Infer::new();
-    let mut bindings = Vec::new();
-    for statement in &program.statements {
-        infer.tyvars.clear();
-        let bound = match &statement.value {
-            StmtKind::Val(name, expr) => infer.infer_simple_val(name, expr)?,
-            StmtKind::Print(expr) => {
-                let found = infer.infer_expr(expr)?;
-                infer.unify_at(&con("string"), &found, expr.source_span())?;
-                Vec::new()
-            }
-            StmtKind::Exit(expr) => {
-                infer.infer_expr(expr)?;
-                Vec::new()
-            }
-            StmtKind::Declaration(declaration) => infer.infer_decl(declaration)?,
-        };
-        infer.default_overloads();
-        infer.instantiate_dummies(&bound);
-        for (name, scheme) in bound {
-            bindings.push(Binding {
-                ty: infer.show_scheme(&scheme),
-                name,
-            });
+pub fn check_program(program: &Program) -> Result<Checked, Failure> {
+    Session::new().check(program)
+}
+
+/// A type checker that keeps its environment from one program to the next,
+/// as the REPL needs.
+#[derive(Clone)]
+pub struct Session {
+    infer: Infer,
+}
+
+impl Default for Session {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Session {
+    pub fn new() -> Self {
+        Self {
+            infer: Infer::new(),
         }
     }
-    Ok(bindings)
+
+    /// Checks `program` in the environment left by earlier programs. On an
+    /// error the environment is left as it was.
+    pub fn check(&mut self, program: &Program) -> Result<Checked, Failure> {
+        let mut infer = self.infer.clone();
+        let bindings = infer.check_statements(program)?;
+        let nodes: Vec<Node<Ty>> = std::mem::take(&mut infer.node_types)
+            .into_iter()
+            .map(|node| Node {
+                ty: infer.resolve(&node.ty),
+                address: node.address,
+                pattern: node.pattern,
+                start: node.start,
+                end: node.end,
+            })
+            .collect();
+        // A functor body is checked again at each application; the last
+        // check of a node wins.
+        let index = nodes
+            .iter()
+            .enumerate()
+            .map(|(index, node)| ((node.address, node.pattern), index))
+            .collect();
+        let types = TypeTable { nodes, index };
+        self.infer = infer;
+        Ok(Checked { bindings, types })
+    }
+}
+
+impl Infer {
+    fn check_statements(&mut self, program: &Program) -> Result<Vec<Binding>, Failure> {
+        let mut bindings = Vec::new();
+        for statement in &program.statements {
+            self.tyvars.clear();
+            let bound = match &statement.value {
+                StmtKind::Val(name, expr) => self.infer_simple_val(name, expr)?,
+                StmtKind::Print(expr) => {
+                    let found = self.infer_expr(expr)?;
+                    self.unify_at(&con("string"), &found, expr.source_span())?;
+                    Vec::new()
+                }
+                StmtKind::Exit(expr) => {
+                    self.infer_expr(expr)?;
+                    Vec::new()
+                }
+                StmtKind::Declaration(declaration) => self.infer_decl(declaration)?,
+            };
+            self.default_overloads();
+            self.instantiate_dummies(&bound);
+            for (name, scheme) in bound {
+                bindings.push(Binding {
+                    ty: self.show_scheme(&scheme),
+                    resolved: self.resolve(&scheme.ty),
+                    name,
+                });
+            }
+        }
+        Ok(bindings)
+    }
+
+    fn resolve(&self, ty: &Type) -> Ty {
+        match self.prune(ty) {
+            Type::Var(id) => Ty::Var {
+                id,
+                equality: self.vars[id].equality,
+            },
+            Type::Con(tycon, args) => Ty::Con {
+                name: tycon.name,
+                stamp: tycon.stamp,
+                args: args.iter().map(|arg| self.resolve(arg)).collect(),
+            },
+            Type::Arrow(from, to) => {
+                Ty::Arrow(Box::new(self.resolve(&from)), Box::new(self.resolve(&to)))
+            }
+            Type::Record(fields) => Ty::Record(
+                fields
+                    .iter()
+                    .map(|(label, field)| (label.clone(), self.resolve(field)))
+                    .collect(),
+            ),
+        }
+    }
 }

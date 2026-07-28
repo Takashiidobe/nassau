@@ -9,11 +9,6 @@
 //! parameters, so a join point after a conditional is a block whose parameter
 //! is the conditional's value.
 
-#![expect(
-    dead_code,
-    reason = "calls, closures and pattern matching are lowered by later changes"
-)]
-
 use std::fmt::{self, Write};
 
 pub type Var = usize;
@@ -64,8 +59,17 @@ pub enum Prim {
     Unequal,
     /// Whether a value is a pointer to a heap block rather than an immediate.
     IsBoxed,
+    /// Allocates a reference cell holding its argument.
+    Ref,
+    /// `r := v`: stores into a reference cell.
+    Assign,
     /// Prints a string.
     Print,
+    /// `^`.
+    Concat,
+    IntToString,
+    /// A string's length.
+    Size,
     /// `Posix.Process.exit (Word8.fromInt n)`.
     Exit,
 }
@@ -97,7 +101,12 @@ impl Prim {
             Prim::Equal => "equal",
             Prim::Unequal => "unequal",
             Prim::IsBoxed => "is_boxed",
+            Prim::Ref => "ref",
+            Prim::Assign => "assign",
             Prim::Print => "print",
+            Prim::Concat => "concat",
+            Prim::IntToString => "int.to_string",
+            Prim::Size => "size",
             Prim::Exit => "exit",
         }
     }

@@ -96,27 +96,49 @@ fn compare_mlton(fixture: &Path, mlton: &str, valid: bool) {
     let _ = fs::remove_file(executable);
 }
 
-fn smlnj_program_output(output: &[u8], fixture: &Path) -> Vec<u8> {
-    let output = String::from_utf8_lossy(output);
-    if let Some(start) = output.find("[autoloading done]\n") {
-        return output[start + "[autoloading done]\n".len()..]
-            .as_bytes()
-            .to_vec();
+/// Runs a fixture under SML/NJ as tools/update_filecheck.py does: loaded
+/// by base name with the echo of bindings silenced, so stdout is the
+/// program's own output.
+fn smlnj_program(smlnj: &str, fixture: &Path) -> Output {
+    let name = fixture.file_name().expect("fixture has a file name");
+    let wrapper = std::env::temp_dir().join(format!(
+        "nassau-smlnj-{}-{}.sml",
+        std::process::id(),
+        name.to_string_lossy()
+    ));
+    fs::write(
+        &wrapper,
+        format!(
+            "val _ = Control.Print.out := {{say = fn _ => (), flush = fn () => ()}};\nuse \"{}\";\n",
+            name.to_string_lossy()
+        ),
+    )
+    .expect("write SML/NJ wrapper");
+    let mut output = Command::new(smlnj)
+        .arg(&wrapper)
+        .current_dir(fixture.parent().expect("fixture has a parent directory"))
+        .stdin(std::process::Stdio::null())
+        .output()
+        .expect("run SML/NJ");
+    let _ = fs::remove_file(&wrapper);
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    let noise = [
+        "Standard ML of New Jersey",
+        "[opening ",
+        "[autoloading",
+        "[library ",
+        "[scanning ",
+        "[parsing ",
+    ];
+    let mut lines: Vec<&str> = stdout.split('\n').collect();
+    while lines
+        .first()
+        .is_some_and(|line| noise.iter().any(|prefix| line.starts_with(prefix)))
+    {
+        lines.remove(0);
     }
-    let opening = format!("[opening {}]\n", fixture.display());
-    match output.find(&opening) {
-        Some(start) => output[start + opening.len()..].as_bytes().to_vec(),
-        // SML/NJ can fail while compiling, before it announces the file; it
-        // then prints nothing but its banner.
-        None => {
-            assert!(
-                output.lines().count() <= 1,
-                "SML/NJ output did not contain {opening:?} for {}",
-                fixture.display()
-            );
-            Vec::new()
-        }
-    }
+    output.stdout = lines.join("\n").into_bytes();
+    output
 }
 
 fn check_program(fixture: &Path, source: &str, output: &Output) {
@@ -238,9 +260,10 @@ fn compare_fixture(fixture: &Path, smlnj: &str) {
         if is_lists_fixture(fixture) {
             assert!(nassau_output.status.success(), "{}", fixture.display());
         } else {
+            let reference = smlnj_program(smlnj, fixture);
             assert_eq!(
                 nassau_output.stdout,
-                smlnj_program_output(&reference.stdout, fixture),
+                reference.stdout,
                 "stdout differs for {}",
                 fixture.display()
             );

@@ -1,0 +1,14 @@
+fun add x y = x + y;
+val increment = add 1;
+val eleven = increment 10;
+fun pair x y = (x, y);
+val p = pair 1 "one";
+val withTwo = pair 2 : string -> int * string;
+val q = withTwo "two";
+(* CHECK-REPL: val add = fn : int -> int -> int *)
+(* CHECK-REPL-NEXT: val increment = fn : int -> int *)
+(* CHECK-REPL-NEXT: val eleven = 11 : int *)
+(* CHECK-REPL-NEXT: val pair = fn : 'a -> 'b -> 'a * 'b *)
+(* CHECK-REPL-NEXT: val p = (1,"one") : int * string *)
+(* CHECK-REPL-NEXT: val withTwo = fn : string -> int * string *)
+(* CHECK-REPL-NEXT: val q = (2,"two") : int * string *)

@@ -70,6 +70,8 @@ pub enum TypeError {
     BadRefinement(String, String),
     #[error("int constant too large")]
     IntegerOutOfRange,
+    #[error("unresolved flex record (can't tell what fields there are besides {0})")]
+    UnresolvedFlexRecord(String),
     #[error("{0} are not supported yet")]
     Unsupported(&'static str),
 }
@@ -289,6 +291,9 @@ struct VarInfo {
     level: usize,
     equality: bool,
     overload: Option<Vec<&'static str>>,
+    /// A flexible record (`{a, ...}` or the argument of `#a`): the variable
+    /// stands for a record with at least these fields, sorted by label.
+    fields: Option<Vec<(String, Type)>>,
 }
 
 #[derive(Clone, Debug)]
@@ -408,6 +413,8 @@ struct Infer {
     paths: HashMap<usize, String>,
     next_stamp: usize,
     overloaded: Vec<usize>,
+    /// Flexible records not yet known to be resolved.
+    flexible: Vec<usize>,
     /// Type variables written in annotations, shared within a top-level declaration.
     tyvars: HashMap<String, Type>,
     /// The type inferred for each expression and pattern, until resolved.
@@ -428,6 +435,7 @@ impl Infer {
             paths: HashMap::new(),
             next_stamp: 0,
             overloaded: Vec::new(),
+            flexible: Vec::new(),
             tyvars: HashMap::new(),
             node_types: Vec::new(),
         };
@@ -562,8 +570,46 @@ impl Infer {
             level: self.level,
             equality: false,
             overload: None,
+            fields: None,
         });
         Type::Var(self.vars.len() - 1)
+    }
+
+    /// A record with at least `fields`, whose other fields are not known yet.
+    fn flexible_record(&mut self, mut fields: Vec<(String, Type)>) -> Type {
+        sort_labels(&mut fields);
+        let ty = self.fresh();
+        if let Type::Var(id) = &ty {
+            self.vars[*id].fields = Some(fields);
+            self.flexible.push(*id);
+        }
+        ty
+    }
+
+    /// SML/NJ requires every flexible record to be resolved to a known
+    /// record type by the end of the declaration that would generalise it.
+    /// At the end of a top-level declaration (`all`), every flexible record
+    /// must be resolved.
+    fn check_flexible(&mut self, span: SourceSpan, all: bool) -> Res<()> {
+        let mut pending = Vec::new();
+        for id in std::mem::take(&mut self.flexible) {
+            let Type::Var(root) = self.prune(&Type::Var(id)) else {
+                continue;
+            };
+            let Some(fields) = &self.vars[root].fields else {
+                continue;
+            };
+            if all || self.vars[root].level > self.level {
+                let labels: Vec<String> = fields
+                    .iter()
+                    .map(|(label, _)| format!("#{label}"))
+                    .collect();
+                return Err((TypeError::UnresolvedFlexRecord(labels.join(" ")), span));
+            }
+            pending.push(id);
+        }
+        self.flexible = pending;
+        Ok(())
     }
 
     fn fresh_with(&mut self, equality: bool) -> Type {
@@ -642,6 +688,24 @@ impl Infer {
         if overload.as_ref().is_some_and(Vec::is_empty) {
             return Err(UnifyError::NotOverloaded(Type::Var(b)));
         }
+        let fields = match (self.vars[a].fields.clone(), self.vars[b].fields.clone()) {
+            (Some(xs), Some(ys)) => {
+                let mut fields = ys.clone();
+                for (label, x) in xs {
+                    match ys.iter().find(|(known, _)| *known == label) {
+                        Some((_, y)) => self.unify(&x, y)?,
+                        None => fields.push((label, x)),
+                    }
+                }
+                sort_labels(&mut fields);
+                Some(fields)
+            }
+            (x, y) => x.or(y),
+        };
+        if fields.is_some() && overload.is_some() {
+            return Err(UnifyError::Mismatch);
+        }
+        self.vars[b].fields = fields;
         self.vars[b].equality = equality;
         self.vars[b].level = level;
         self.vars[b].overload = overload;
@@ -657,6 +721,17 @@ impl Infer {
         if self.vars[id].equality {
             self.require_equality(ty)?;
         }
+        if let Some(fields) = self.vars[id].fields.clone() {
+            let Type::Record(found) = self.prune(ty) else {
+                return Err(UnifyError::Mismatch);
+            };
+            for (label, field) in &fields {
+                let Some((_, other)) = found.iter().find(|(known, _)| known == label) else {
+                    return Err(UnifyError::Mismatch);
+                };
+                self.unify(field, other)?;
+            }
+        }
         if let Some(candidates) = &self.vars[id].overload
             && !matches!(ty, Type::Con(name, args) if args.is_empty() && name.stamp == 0 && candidates.contains(&name.name.as_str()))
         {
@@ -671,7 +746,12 @@ impl Infer {
             Type::Var(other) if other == id => Err(UnifyError::Circular(id, ty.clone())),
             Type::Var(other) => {
                 self.vars[other].level = self.vars[other].level.min(self.vars[id].level);
-                Ok(())
+                match self.vars[other].fields.clone() {
+                    Some(fields) => fields
+                        .iter()
+                        .try_for_each(|(_, field)| self.check_occurs(id, field)),
+                    None => Ok(()),
+                }
             }
             Type::Con(_, args) => args.iter().try_for_each(|arg| self.check_occurs(id, arg)),
             Type::Arrow(from, to) => {
@@ -761,6 +841,11 @@ impl Infer {
             Type::Var(id) => {
                 if !out.contains(&id) {
                     out.push(id);
+                    if let Some(fields) = &self.vars[id].fields {
+                        for (_, field) in fields {
+                            self.free_vars(field, out);
+                        }
+                    }
                 }
             }
             Type::Con(_, args) => args.iter().for_each(|arg| self.free_vars(arg, out)),
@@ -780,7 +865,7 @@ impl Infer {
         let mut vars = Vec::new();
         for id in free {
             if self.vars[id].level > self.level {
-                if self.vars[id].overload.is_some() {
+                if self.vars[id].overload.is_some() || self.vars[id].fields.is_some() {
                     self.vars[id].level = self.level;
                 } else {
                     vars.push(id);
@@ -1281,8 +1366,12 @@ impl Infer {
                 }
                 list(element)
             }
-            PatKind::Record(_, true) => {
-                return Err((TypeError::Unsupported("flexible record patterns"), span));
+            PatKind::Record(fields, true) => {
+                let mut types = Vec::new();
+                for (label, field) in fields {
+                    types.push((label.clone(), self.infer_pat(field, binds)?));
+                }
+                self.flexible_record(types)
             }
             PatKind::Record(fields, false) => {
                 let mut sorted: Vec<&(String, Pat)> = fields.iter().collect();
@@ -1468,7 +1557,11 @@ impl Infer {
                 sort_labels(&mut types);
                 Ok(Type::Record(types))
             }
-            ExprKind::Selector(_) => Err((TypeError::Unsupported("record selectors"), span)),
+            ExprKind::Selector(label) => {
+                let field = self.fresh();
+                let record = self.flexible_record(vec![(label.clone(), field.clone())]);
+                Ok(arrow(record, field))
+            }
             ExprKind::Apply(function, argument) => {
                 let function_type = self.infer_expr(function)?;
                 let argument_type = self.infer_expr(argument)?;
@@ -1630,6 +1723,7 @@ impl Infer {
         let inferred = self.infer_expr(expr);
         self.level -= 1;
         let ty = inferred?;
+        self.check_flexible(expr.source_span(), false)?;
         let scheme = self.scheme_for(&ty, self.nonexpansive(expr));
         Ok(vec![self.define(name.to_string(), scheme)])
     }
@@ -1648,6 +1742,7 @@ impl Infer {
                     let result = self.infer_val_binding(pattern, expr);
                     self.level -= 1;
                     let binds = result?;
+                    self.check_flexible(decl.source_span(), false)?;
                     let general = self.nonexpansive(expr);
                     for (name, ty) in binds {
                         pending.push((name, self.scheme_for(&ty, general)));
@@ -1666,6 +1761,7 @@ impl Infer {
                 let result = self.infer_val_rec(bindings);
                 self.level -= 1;
                 let binds = result?;
+                self.check_flexible(decl.source_span(), false)?;
                 Ok(binds
                     .into_iter()
                     .map(|(name, ty)| {
@@ -1679,6 +1775,7 @@ impl Infer {
                 let result = self.infer_functions(bindings);
                 self.level -= 1;
                 let functions = result?;
+                self.check_flexible(decl.source_span(), false)?;
                 Ok(functions
                     .into_iter()
                     .map(|(name, ty)| {
@@ -2211,6 +2308,7 @@ impl Infer {
                 }
                 StmtKind::Declaration(declaration) => self.infer_decl(declaration)?,
             };
+            self.check_flexible(statement.source_span(), true)?;
             self.default_overloads();
             self.instantiate_dummies(&bound);
             for (name, scheme) in bound {

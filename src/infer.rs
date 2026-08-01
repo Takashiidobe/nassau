@@ -213,9 +213,17 @@ pub struct Node<T> {
 pub struct TypeTable {
     nodes: Vec<Node<Ty>>,
     index: HashMap<(usize, bool), usize>,
+    /// Each datatype's constructors in declaration order, by stamp, with
+    /// whether each takes an argument.
+    datatypes: HashMap<usize, Vec<(String, bool)>>,
 }
 
 impl TypeTable {
+    /// The constructors of the datatype with `stamp`.
+    pub fn constructors(&self, stamp: usize) -> Option<&[(String, bool)]> {
+        self.datatypes.get(&stamp).map(Vec::as_slice)
+    }
+
     pub fn expr(&self, expr: &Expr) -> Option<&Ty> {
         self.get(expr as *const Expr as usize, false)
     }
@@ -524,6 +532,17 @@ impl Infer {
         self.builtin(":=", false, 1, |v| {
             arrow(tuple(vec![reference(v[0].clone()), v[0].clone()]), unit())
         });
+        // `op =` and `op <>` as values; applied infix, they are operators.
+        for name in ["=", "<>"] {
+            self.builtin(name, false, 1, |v| {
+                arrow(tuple(vec![v[0].clone(), v[0].clone()]), boolean())
+            });
+            if let Some(Entry { scheme, .. }) = self.values.last()
+                && let [var] = scheme.vars[..]
+            {
+                self.vars[var].equality = true;
+            }
+        }
         self.builtin("real", false, 0, |_| arrow(int(), real()));
         self.builtin("floor", false, 0, |_| arrow(real(), int()));
         self.builtin("ord", false, 0, |_| arrow(con("char"), int()));
@@ -2284,7 +2303,26 @@ impl Session {
             .enumerate()
             .map(|(index, node)| ((node.address, node.pattern), index))
             .collect();
-        let types = TypeTable { nodes, index };
+        let datatypes = infer
+            .datatypes
+            .iter()
+            .map(|(stamp, info)| {
+                let constructors = info
+                    .constructors
+                    .iter()
+                    .map(|(name, scheme)| {
+                        let carries = matches!(infer.prune(&scheme.ty), Type::Arrow(..));
+                        (name.clone(), carries)
+                    })
+                    .collect();
+                (*stamp, constructors)
+            })
+            .collect();
+        let types = TypeTable {
+            nodes,
+            index,
+            datatypes,
+        };
         self.infer = infer;
         Ok(Checked { bindings, types })
     }

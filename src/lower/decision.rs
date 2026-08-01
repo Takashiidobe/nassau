@@ -351,7 +351,14 @@ impl Lowerer<'_> {
     fn resolve_pattern(&self, pattern: &Pat) -> Res<Pattern> {
         Ok(match &pattern.value {
             PatKind::Wildcard | PatKind::Unit => Pattern::Any,
-            PatKind::Variable(name) => match self.constructor(name) {
+            PatKind::Variable(name)
+                if self.lookup(name).is_none()
+                    && self.types.pat(pattern).is_some_and(|ty| ty.is("exn"))
+                    && BUILTIN_EXCEPTIONS.contains(&name.as_str()) =>
+            {
+                return Err(unsupported_pattern("exception patterns", pattern));
+            }
+            PatKind::Variable(name) => match self.constructor(name, self.types.pat(pattern)) {
                 Some((test, false)) => Pattern::Test(test, None),
                 Some((_, true)) => return Err(unsupported_pattern("this constructor", pattern)),
                 None => Pattern::Bind(name.clone(), Box::new(Pattern::Any)),
@@ -415,12 +422,14 @@ impl Lowerer<'_> {
                     self.resolve_pattern(tail)?,
                 ]))),
             ),
-            PatKind::Constructor(name, argument) => match self.constructor(name) {
-                Some((test, true)) => {
-                    Pattern::Test(test, Some(Box::new(self.resolve_pattern(argument)?)))
+            PatKind::Constructor(name, argument) => {
+                match self.constructor(name, self.types.pat(pattern)) {
+                    Some((test, true)) => {
+                        Pattern::Test(test, Some(Box::new(self.resolve_pattern(argument)?)))
+                    }
+                    _ => return Err(unsupported_pattern("this constructor", pattern)),
                 }
-                _ => return Err(unsupported_pattern("this constructor", pattern)),
-            },
+            }
             PatKind::Layered(name, _, inner) => {
                 Pattern::Bind(name.clone(), Box::new(self.resolve_pattern(inner)?))
             }
@@ -429,8 +438,46 @@ impl Lowerer<'_> {
     }
 
     /// The test for the constructor `name` and whether it takes an argument,
-    /// or `None` if `name` is a variable.
-    pub(super) fn constructor(&self, name: &str) -> Option<(Test, bool)> {
+    /// or `None` if `name` is a variable. `ty` is the type of the pattern or
+    /// expression that names it: the datatype, or a function returning it.
+    ///
+    /// A datatype's nullary constructors are the immediates `0`, `1`, ... in
+    /// declaration order. Its constructors with an argument are blocks: the
+    /// argument alone when there is one such constructor, else a tag
+    /// `0`, `1`, ... and then the argument.
+    pub(super) fn constructor(&self, name: &str, ty: Option<&Ty>) -> Option<(Test, bool)> {
+        let base = name.rsplit('.').next().unwrap_or(name);
+        let result = match ty {
+            Some(Ty::Arrow(_, result)) => Some(result.as_ref()),
+            ty => ty,
+        };
+        if let Some(Ty::Con { stamp, .. }) = result
+            && *stamp != 0
+            && let Some(constructors) = self.types.constructors(*stamp)
+        {
+            let position = constructors.iter().position(|(known, _)| known == base)?;
+            let carries = constructors[position].1;
+            let span = constructors.len();
+            let before = constructors[..position]
+                .iter()
+                .filter(|(_, other)| *other == carries)
+                .count();
+            let index = i64::try_from(before).expect("a small index");
+            let carriers = constructors.iter().filter(|(_, other)| *other).count();
+            let test = if carries {
+                Test::Boxed {
+                    tag: (carriers > 1).then_some(value::tagged(index)),
+                    mixed: carriers < span,
+                    span,
+                }
+            } else {
+                Test::Word {
+                    word: value::tagged(index),
+                    span: Some(span),
+                }
+            };
+            return Some((test, carries));
+        }
         let nullary = |index: i64, span: usize| {
             Some((
                 Test::Word {
@@ -465,6 +512,9 @@ impl Lowerer<'_> {
         }
     }
 }
+
+/// The basis's exceptions, which a pattern names as constructors.
+const BUILTIN_EXCEPTIONS: &[&str] = &["Div", "Overflow", "Match", "Bind", "Empty", "Subscript"];
 
 fn word(word: i64) -> Pattern {
     Pattern::Test(Test::Word { word, span: None }, None)

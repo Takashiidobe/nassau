@@ -80,37 +80,50 @@ word nassau_int_to_string(word integer) {
     return string_block(text, (size_t)length);
 }
 
+/* Structural equality. Immediates (ints, chars, nullary constructors) are
+ * equal when their words are; blocks of the same kind and length compare
+ * their contents. The last field of a record is compared by looping rather
+ * than recursing, so a long list takes constant stack. */
 static int equal(word lhs, word rhs) {
-    if (lhs == rhs) {
-        return 1;
-    }
-    if (!IS_BOXED(lhs) || !IS_BOXED(rhs)) {
-        return 0;
-    }
-    word header = ((word *)lhs)[0];
-    if (header != ((word *)rhs)[0]) {
-        return 0;
-    }
-    switch (KIND(header)) {
-    case KIND_STRING:
-        return memcmp(string_bytes(lhs), string_bytes(rhs), (size_t)LENGTH(header)) == 0;
-    case KIND_REAL: {
-        double left, right;
-        memcpy(&left, (word *)lhs + 1, sizeof left);
-        memcpy(&right, (word *)rhs + 1, sizeof right);
-        return left == right;
-    }
-    case KIND_RECORD:
-        for (word index = 0; index < LENGTH(header); index++) {
-            if (!equal(FIELD(lhs, index), FIELD(rhs, index))) {
-                return 0;
-            }
+    for (;;) {
+        if (lhs == rhs) {
+            return 1;
         }
-        return 1;
-    default:
-        /* References are equal only when identical; functions have no
-         * equality. */
-        return 0;
+        if (!IS_BOXED(lhs) || !IS_BOXED(rhs)) {
+            return 0;
+        }
+        word header = ((word *)lhs)[0];
+        if (header != ((word *)rhs)[0]) {
+            return 0;
+        }
+        switch (KIND(header)) {
+        case KIND_STRING:
+            return memcmp(string_bytes(lhs), string_bytes(rhs), (size_t)LENGTH(header)) == 0;
+        case KIND_REAL: {
+            double left, right;
+            memcpy(&left, (word *)lhs + 1, sizeof left);
+            memcpy(&right, (word *)rhs + 1, sizeof right);
+            return left == right;
+        }
+        case KIND_RECORD: {
+            word length = LENGTH(header);
+            if (length == 0) {
+                return 1;
+            }
+            for (word index = 0; index + 1 < length; index++) {
+                if (!equal(FIELD(lhs, index), FIELD(rhs, index))) {
+                    return 0;
+                }
+            }
+            lhs = FIELD(lhs, length - 1);
+            rhs = FIELD(rhs, length - 1);
+            continue;
+        }
+        default:
+            /* References are equal only when identical; functions have no
+             * equality. */
+            return 0;
+        }
     }
 }
 

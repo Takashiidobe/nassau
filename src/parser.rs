@@ -1941,7 +1941,14 @@ impl Parser {
         )?;
         let end = self.previous_end();
         Ok(match separator {
-            None => items.pop().expect("one expression"),
+            // The parentheses belong to the expression's span, as SML/NJ
+            // counts them in the positions it reports.
+            None => {
+                let mut expr = items.pop().expect("one expression");
+                expr.start = start;
+                expr.end = end;
+                expr
+            }
             Some(TokenKind::Comma) => Span::new(start, end, ExprKind::Tuple(items)),
             Some(_) => Span::new(start, end, ExprKind::Sequence(items)),
         })

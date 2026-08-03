@@ -16,6 +16,10 @@ pub const fn tagged(value: i64) -> i64 {
 }
 
 /// `nil`, `false`, `unit` and `0` share this word.
+/// What a function returns when it raises an exception instead: neither an
+/// immediate nor a pointer to a block.
+pub const RAISED: i64 = 0;
+
 pub const NIL: i64 = tagged(0);
 pub const FALSE: i64 = tagged(0);
 pub const TRUE: i64 = tagged(1);
@@ -36,4 +40,22 @@ pub const KIND_REF: i64 = 4;
 /// A block's header word: its length above the kind byte.
 pub const fn header(length: i64, kind: i64) -> i64 {
     (length << 8) | kind
+}
+
+/// The basis's exceptions, in the order the runtime numbers them
+/// (`nassau_exception`).
+pub const BUILTIN_EXCEPTIONS: &[&str] = &[
+    "Div",
+    "Overflow",
+    "Match",
+    "Bind",
+    "Fail",
+    "Subscript",
+    "Empty",
+];
+
+/// The index of the built-in exception `name`.
+pub fn builtin_exception(name: &str) -> Option<i64> {
+    let index = BUILTIN_EXCEPTIONS.iter().position(|known| *known == name)?;
+    i64::try_from(index).ok()
 }

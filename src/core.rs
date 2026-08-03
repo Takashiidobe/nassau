@@ -72,6 +72,9 @@ pub enum Prim {
     Size,
     /// `Posix.Process.exit (Word8.fromInt n)`.
     Exit,
+    /// The identity of a built-in exception, by its index in
+    /// `value::BUILTIN_EXCEPTIONS`.
+    BuiltinException,
 }
 
 impl Prim {
@@ -108,6 +111,7 @@ impl Prim {
             Prim::IntToString => "int.to_string",
             Prim::Size => "size",
             Prim::Exit => "exit",
+            Prim::BuiltinException => "exception.builtin",
         }
     }
 }
@@ -163,6 +167,10 @@ pub enum Term {
     TailCall(Callee, Vec<Atom>),
     /// Raises `Match` or `Bind`, reported at the given position.
     Fail(Failure, String),
+    /// Raises an exception value. A raise names the position SML/NJ reports
+    /// it at; a handler passing on an exception it does not match keeps the
+    /// position it was first raised at.
+    Raise(Atom, Option<String>),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -170,6 +178,9 @@ pub struct Block {
     pub params: Vec<Var>,
     pub stmts: Vec<Stmt>,
     pub term: Term,
+    /// The block an exception raised here goes to, taking the exception as
+    /// its parameter; with none, it leaves the function.
+    pub handler: Option<BlockId>,
 }
 
 #[derive(Clone, Debug)]
@@ -254,7 +265,12 @@ impl fmt::Display for Function {
         writeln!(f, "fn f{} {}({}) {{", self.id, self.name, params.join(", "))?;
         for (index, block) in self.blocks.iter().enumerate() {
             let params: Vec<String> = block.params.iter().map(|var| self.var(*var)).collect();
-            writeln!(f, "  b{index}({}):", params.join(", "))?;
+            match block.handler {
+                Some(handler) => {
+                    writeln!(f, "  b{index}({}) handle b{handler}:", params.join(", "))?
+                }
+                None => writeln!(f, "  b{index}({}):", params.join(", "))?,
+            }
             for stmt in &block.stmts {
                 let mut line = String::new();
                 match stmt {
@@ -286,6 +302,10 @@ impl fmt::Display for Function {
                 Term::TailCall(callee, args) => format!("tailcall {callee}({})", atoms(args)),
                 Term::Fail(Failure::Match, location) => format!("fail Match at {location}"),
                 Term::Fail(Failure::Bind, location) => format!("fail Bind at {location}"),
+                Term::Raise(exception, Some(location)) => {
+                    format!("raise {exception} at {location}")
+                }
+                Term::Raise(exception, None) => format!("reraise {exception}"),
             };
             writeln!(f, "    {term}")?;
         }

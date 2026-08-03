@@ -14,7 +14,9 @@ use crate::core::{
 };
 use crate::error::ThisError;
 use crate::infer::{Ty, TypeTable};
-use crate::parser::{Decl, DeclKind, Expr, ExprKind, Pat, PatKind, Program, StmtKind};
+use crate::parser::{
+    Decl, DeclKind, ExceptionKind, Expr, ExprKind, Pat, PatKind, Program, StmtKind,
+};
 use crate::value;
 
 mod decision;
@@ -82,6 +84,12 @@ impl Session {
             .map(|(_, binding)| binding.clone())
     }
 
+    /// Drops the top-level names bound since `earlier`, keeping the
+    /// functions and globals numbered since, which are already compiled.
+    pub fn forget_bindings(&mut self, earlier: &Session) {
+        self.globals.clone_from(&earlier.globals);
+    }
+
     fn function_id(&mut self) -> FnId {
         self.next_function += 1;
         self.next_function - 1
@@ -129,6 +137,9 @@ pub struct Source {
     /// The file name as SML/NJ shows it: without directories.
     pub file: String,
     pub text: String,
+    /// The line `text` starts on: the REPL numbers lines across its whole
+    /// input.
+    pub first_line: usize,
 }
 
 impl Source {
@@ -136,7 +147,7 @@ impl Source {
     /// SML/NJ counts the first line's columns from 2.
     fn position(&self, offset: usize) -> String {
         let before = &self.text[..offset.min(self.text.len())];
-        let line = before.matches('\n').count() + 1;
+        let line = before.matches('\n').count() + self.first_line;
         let mut column = before.len() - before.rfind('\n').map_or(0, |newline| newline + 1) + 1;
         if line == 1 {
             column += 1;
@@ -144,17 +155,32 @@ impl Source {
         format!("{line}.{column}")
     }
 
+    /// The bytes from `start` to `end` as SML/NJ names them: a single
+    /// character by its own position.
+    fn span(&self, start: usize, end: usize) -> String {
+        if end <= start + 1 {
+            format!("{}:{}", self.file, self.position(start))
+        } else {
+            format!(
+                "{}:{}-{}",
+                self.file,
+                self.position(start),
+                self.position(end)
+            )
+        }
+    }
+
     /// Where SML/NJ reports an exception raised by the infix operator `name`
     /// between `lhs` and `rhs`: the operator's own span.
     fn operator(&self, name: &str, lhs: &Expr, rhs: &Expr) -> String {
         let between = &self.text[lhs.end.offset..rhs.start.offset];
         let start = lhs.end.offset + between.find(name).unwrap_or(0);
-        format!(
-            "{}:{}-{}",
-            self.file,
-            self.position(start),
-            self.position(start + name.len())
-        )
+        self.span(start, start + name.len())
+    }
+
+    /// Where SML/NJ reports `raise argument`: the argument's span.
+    fn raised(&self, argument: &Expr) -> String {
+        self.span(argument.start.offset, argument.end.offset)
     }
 
     /// Where a failed match is reported: the end of `expr`.
@@ -163,14 +189,21 @@ impl Source {
     }
 }
 
+/// A block's parameters, statements, terminator once it has one, and
+/// handler.
+type PartialBlock = (Vec<Var>, Vec<Stmt>, Option<Term>, Option<BlockId>);
+
 /// A function whose blocks are being built.
 struct Builder {
     id: FnId,
     name: String,
     params: Vec<Var>,
     vars: Vec<String>,
-    blocks: Vec<(Vec<Var>, Vec<Stmt>, Option<Term>)>,
+    blocks: Vec<PartialBlock>,
     current: BlockId,
+    /// The handlers of the `handle` expressions being lowered, innermost
+    /// last; new blocks raise to the innermost.
+    handlers: Vec<BlockId>,
     /// Loads of captured variables from the environment, run on entry.
     prologue: Vec<Stmt>,
     /// The enclosing functions' variables this one uses, by where they are
@@ -187,8 +220,9 @@ impl Builder {
             name: name.to_string(),
             params: Vec::new(),
             vars: Vec::new(),
-            blocks: vec![(Vec::new(), Vec::new(), None)],
+            blocks: vec![(Vec::new(), Vec::new(), None, None)],
             current: 0,
+            handlers: Vec::new(),
             prologue: Vec::new(),
             captures: Vec::new(),
         };
@@ -205,7 +239,8 @@ impl Builder {
     }
 
     fn block(&mut self, params: Vec<Var>) -> BlockId {
-        self.blocks.push((params, Vec::new(), None));
+        let handler = self.handlers.last().copied();
+        self.blocks.push((params, Vec::new(), None, handler));
         self.blocks.len() - 1
     }
 
@@ -220,10 +255,11 @@ impl Builder {
             blocks: self
                 .blocks
                 .into_iter()
-                .map(|(params, stmts, term)| Block {
+                .map(|(params, stmts, term, handler)| Block {
                     params,
                     stmts,
                     term: term.expect("every block is terminated"),
+                    handler,
                 })
                 .collect(),
         }
@@ -267,6 +303,8 @@ enum Builtin {
     Ignore,
     Equal,
     Unequal,
+    Assign,
+    Before,
 }
 
 fn builtin(name: &str) -> Option<Builtin> {
@@ -281,6 +319,8 @@ fn builtin(name: &str) -> Option<Builtin> {
         "ignore" => Builtin::Ignore,
         "=" => Builtin::Equal,
         "<>" => Builtin::Unequal,
+        ":=" => Builtin::Assign,
+        "before" => Builtin::Before,
         _ => return None,
     })
 }
@@ -470,17 +510,11 @@ impl Lowerer<'_> {
                 }
                 let mut bound = Vec::new();
                 for ((pattern, expr), value) in bindings.iter().zip(values) {
-                    let location = format!(
-                        "{}:{}-{}",
-                        self.source.file,
-                        self.source.position(pattern.start.offset),
-                        self.source.position(expr.end.offset)
-                    );
+                    let location = self.source.span(pattern.start.offset, expr.end.offset);
                     let decided = self.decide(
                         &[value],
                         &[vec![pattern]],
-                        crate::core::Failure::Bind,
-                        &location,
+                        Term::Fail(crate::core::Failure::Bind, location),
                     )?;
                     let (Some(next), names) = decided.into_iter().next().expect("one rule") else {
                         // No value matches: the declaration always raises.
@@ -565,13 +599,46 @@ impl Lowerer<'_> {
             | DeclKind::Datatype { .. }
             | DeclKind::DatatypeCopy { .. } => {}
             DeclKind::Abstype { body, .. } => self.declarations(body, top)?,
-            other => {
-                let what = match other {
-                    DeclKind::Exception(_) => "exception declarations",
-                    _ => "module declarations",
-                };
+            DeclKind::Exception(bindings) => {
+                // Each evaluation of the declaration makes new exceptions:
+                // an exception's identity is a fresh cell holding its name.
+                // A replication shares the identity it names.
+                for binding in bindings {
+                    let identity = match &binding.kind {
+                        ExceptionKind::Fresh(_) => self.bind(
+                            &binding.name,
+                            Op::Prim(Prim::Ref, vec![Atom::String(binding.name.clone())]),
+                        ),
+                        ExceptionKind::Copy(original) => {
+                            let exn = Ty::Con {
+                                name: "exn".to_string(),
+                                stamp: 0,
+                                args: Vec::new(),
+                            };
+                            match self.exception(original, Some(&exn)) {
+                                Some((identity, _)) => identity,
+                                None => {
+                                    return Err((
+                                        LowerError::Unsupported(
+                                            "this exception replication".into(),
+                                        ),
+                                        declaration.source_span(),
+                                    ));
+                                }
+                            }
+                        }
+                    };
+                    let key = format!("exn {}", binding.name);
+                    if top {
+                        self.bind_top(&key, identity, None);
+                    } else {
+                        self.bind_local(&key, identity);
+                    }
+                }
+            }
+            _ => {
                 return Err((
-                    LowerError::Unsupported(what.into()),
+                    LowerError::Unsupported("module declarations".into()),
                     declaration.source_span(),
                 ));
             }
@@ -703,7 +770,7 @@ impl Lowerer<'_> {
             &args,
             &definition.clauses,
             Dest::Return,
-            &definition.location,
+            Term::Fail(crate::core::Failure::Match, definition.location.clone()),
         );
         self.scope.truncate(mark);
         let frame = self.frames.pop().expect("the function's frame");
@@ -756,10 +823,36 @@ impl Lowerer<'_> {
                     .iter()
                     .map(|(pattern, body)| (vec![pattern], body))
                     .collect();
-                let location = self.source.end(expr);
-                self.rules(&[scrutinee], &rules, dest, &location)
+                let miss = Term::Fail(crate::core::Failure::Match, self.source.end(expr));
+                self.rules(&[scrutinee], &rules, dest, miss)
             }
             ExprKind::Typed(inner, _) => self.into(inner, dest),
+            ExprKind::Handle(body, rules) => {
+                // The handler starts with the exception as its parameter. The
+                // body runs in blocks that raise to it, so none of its calls
+                // is a tail call: the handler must outlive them.
+                let exception = self.frame().var("");
+                let handler = self.block(vec![exception]);
+                self.frame().handlers.push(handler);
+                let start = self.block(Vec::new());
+                self.terminate(Term::Jump(start, Vec::new()));
+                self.switch(start);
+                let lowered = match dest {
+                    Dest::Jump(_) => self.into(body, dest),
+                    Dest::Return => self.value(body).map(|value| self.send(value, dest)),
+                };
+                self.frame().handlers.pop();
+                lowered?;
+                self.switch(handler);
+                let rules: Vec<(Vec<&Pat>, &Expr)> = rules
+                    .iter()
+                    .map(|(pattern, body)| (vec![pattern], body))
+                    .collect();
+                // An exception no rule matches goes on to the enclosing
+                // handler.
+                let miss = Term::Raise(Atom::Var(exception), None);
+                self.rules(&[Atom::Var(exception)], &rules, dest, miss)
+            }
             ExprKind::Let(declarations, body) => {
                 let mark = self.scope.len();
                 self.declarations(declarations, false)?;
@@ -821,6 +914,17 @@ impl Lowerer<'_> {
                 Some(word) => Atom::Word(value::tagged(word)),
                 None => return Err(unsupported("this word constant", expr)),
             },
+            ExprKind::Variable(name)
+                if let Some((identity, carries)) =
+                    self.exception(name, self.ty(expr).cloned().as_ref()) =>
+            {
+                let test = Test::Exception { identity, carries };
+                if carries {
+                    self.constructor_closure(name, &test)
+                } else {
+                    self.construct(&test, Atom::Word(value::tagged(0)))
+                }
+            }
             ExprKind::Variable(name) => match self.lookup(name) {
                 Some(binding) => self.load(name, &binding),
                 None => match (self.constructor(name, self.ty(expr)), builtin(name)) {
@@ -875,7 +979,16 @@ impl Lowerer<'_> {
                 }
                 list
             }
-            ExprKind::If(..) | ExprKind::Case(..) => self.joined(expr)?,
+            ExprKind::If(..) | ExprKind::Case(..) | ExprKind::Handle(..) => self.joined(expr)?,
+            ExprKind::Raise(argument) => {
+                let exception = self.value(argument)?;
+                let location = self.source.raised(argument);
+                self.terminate(Term::Raise(exception, Some(location)));
+                // Code after the raise is unreachable, but still lowered.
+                let next = self.block(Vec::new());
+                self.switch(next);
+                Atom::Word(value::tagged(0))
+            }
             ExprKind::AndAlso(lhs, rhs) | ExprKind::OrElse(lhs, rhs) => {
                 let result = self.frame().var("");
                 let join = self.block(vec![result]);
@@ -1078,7 +1191,16 @@ impl Lowerer<'_> {
         let mut function = None;
         if let ExprKind::Variable(name) = &head.value {
             let binding = self.lookup(name);
-            if binding.is_none()
+            let exception = self.exception(name, self.ty(head).cloned().as_ref());
+            if let Some((identity, true)) = exception {
+                let argument = self.value(args[0])?;
+                let test = Test::Exception {
+                    identity,
+                    carries: true,
+                };
+                function = Some(self.construct(&test, argument));
+                rest = &args[1..];
+            } else if binding.is_none()
                 && let Some((test, true)) = self.constructor(name, self.ty(head))
             {
                 let argument = self.value(args[0])?;
@@ -1169,6 +1291,12 @@ impl Lowerer<'_> {
                 };
                 self.bind("", Op::Prim(prim, vec![lhs, rhs]))
             }
+            Builtin::Assign => {
+                let cell = self.bind("", Op::Select(argument.clone(), 0));
+                let value = self.bind("", Op::Select(argument, 1));
+                self.bind("", Op::Prim(Prim::Assign, vec![cell, value]))
+            }
+            Builtin::Before => self.bind("", Op::Select(argument, 0)),
         }
     }
 
@@ -1184,6 +1312,11 @@ impl Lowerer<'_> {
             }
             Test::Word { word, .. } => Atom::Word(*word),
             Test::String(_) => unreachable!("strings are not constructors"),
+            Test::Exception { identity, .. } => {
+                // The last field is where the value is first raised.
+                let unraised = Atom::Word(value::tagged(0));
+                self.bind("", Op::Record(vec![identity.clone(), argument, unraised]))
+            }
         }
     }
 
@@ -1192,11 +1325,25 @@ impl Lowerer<'_> {
         let id = self.session.function_id();
         self.frames.push(Builder::new(id, name, vec!["env", ""]));
         let argument = Atom::Var(self.frame().params[1]);
-        let result = self.construct(test, argument);
+        // An exception's identity is only known at run time, so the closure
+        // holds it.
+        let (test, captured) = match test {
+            Test::Exception { identity, carries } => {
+                let env = Atom::Var(self.frame().params[0]);
+                let inner = self.bind("", Op::Select(env, 1));
+                let test = Test::Exception {
+                    identity: inner,
+                    carries: *carries,
+                };
+                (test, vec![identity.clone()])
+            }
+            test => (test.clone(), Vec::new()),
+        };
+        let result = self.construct(&test, argument);
         self.terminate(Term::Return(result));
         let frame = self.frames.pop().expect("the constructor's frame");
         self.functions.push(frame.finish());
-        self.closure(name, id, Vec::new())
+        self.closure(name, id, captured)
     }
 
     /// A closure for a built-in function used as a value.
@@ -1302,8 +1449,6 @@ fn unsupported_pattern(what: &str, pattern: &Pat) -> Failure {
 fn unsupported_name(kind: &ExprKind) -> &'static str {
     match kind {
         ExprKind::Word(_) => "word literals",
-        ExprKind::Raise(_) => "raise",
-        ExprKind::Handle(..) => "handle",
         _ => "this expression",
     }
 }

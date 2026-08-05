@@ -1,0 +1,165 @@
+#![no_std]
+
+use core::ffi::{c_char, c_int, c_void};
+use core::ptr;
+
+#[path = "../src/value.rs"]
+mod value;
+
+use value::{BUILTIN_EXCEPTIONS, KIND_REF, KIND_STRING, NIL, header};
+
+unsafe extern "C" {
+    fn malloc(size: usize) -> *mut u8;
+    fn fwrite(bytes: *const u8, size: usize, count: usize, stream: *mut c_void) -> usize;
+    fn fflush(stream: *mut c_void) -> c_int;
+    fn fprintf(stream: *mut c_void, format: *const c_char, ...) -> c_int;
+    fn exit(status: c_int) -> !;
+    static mut stdout: *mut c_void;
+    static mut stderr: *mut c_void;
+}
+
+static mut HEAP_NEXT: *mut u8 = ptr::null_mut();
+static mut HEAP_LEFT: usize = 0;
+static mut IDENTITIES: [i64; BUILTIN_EXCEPTIONS.len()] = [0; BUILTIN_EXCEPTIONS.len()];
+static mut RAISED: i64 = 0;
+static mut REPL: bool = false;
+static mut UNCAUGHT: i64 = 0;
+
+#[unsafe(no_mangle)]
+unsafe extern "C" fn nassau_alloc(fields: i64) -> *mut i64 {
+    unsafe {
+        let bytes = (fields as usize).wrapping_add(1).wrapping_mul(8);
+        if HEAP_LEFT < bytes || HEAP_NEXT.is_null() {
+            let size = bytes.max(1 << 20);
+            HEAP_NEXT = malloc(size);
+            if HEAP_NEXT.is_null() {
+                fprintf(stderr, c"nassau: out of memory\n".as_ptr());
+                exit(1);
+            }
+            HEAP_LEFT = size;
+        }
+        let block = HEAP_NEXT.cast();
+        HEAP_NEXT = HEAP_NEXT.add(bytes);
+        HEAP_LEFT -= bytes;
+        block
+    }
+}
+
+unsafe fn string(bytes: &[u8]) -> i64 {
+    unsafe {
+        let block = nassau_alloc((bytes.len() / 8 + 1) as i64);
+        block.write(header(bytes.len() as i64, KIND_STRING));
+        ptr::copy_nonoverlapping(bytes.as_ptr(), block.add(1).cast(), bytes.len());
+        block.add(1).cast::<u8>().add(bytes.len()).write(0);
+        block as i64
+    }
+}
+
+unsafe fn string_bytes(string: i64) -> *const u8 {
+    unsafe { (string as *const i64).add(1).cast() }
+}
+
+unsafe fn string_length(string: i64) -> usize {
+    unsafe { ((string as *const i64).read() >> 8) as usize }
+}
+
+#[unsafe(no_mangle)]
+unsafe extern "C" fn nassau_print(string: i64) -> i64 {
+    unsafe {
+        fwrite(string_bytes(string), 1, string_length(string), stdout);
+        fflush(stdout);
+    }
+    NIL
+}
+
+#[unsafe(no_mangle)]
+unsafe extern "C" fn nassau_exception(index: i64) -> i64 {
+    unsafe {
+        let slot = (index >> 1) as usize;
+        let identity = (&raw mut IDENTITIES).cast::<i64>().add(slot);
+        if identity.read() == 0 {
+            let name = BUILTIN_EXCEPTIONS.get_unchecked(slot);
+            let block = nassau_alloc(1);
+            block.write(header(1, KIND_REF));
+            block.add(1).write(string(name.as_bytes()));
+            identity.write(block as i64);
+        }
+        identity.read()
+    }
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn nassau_raised() -> *mut i64 {
+    &raw mut RAISED
+}
+
+#[unsafe(no_mangle)]
+unsafe extern "C" fn nassau_repl() {
+    unsafe { REPL = true }
+}
+
+#[unsafe(no_mangle)]
+unsafe extern "C" fn nassau_take_uncaught() -> i64 {
+    unsafe {
+        let exception = UNCAUGHT;
+        UNCAUGHT = 0;
+        exception
+    }
+}
+
+#[unsafe(no_mangle)]
+unsafe extern "C" fn nassau_uncaught() -> c_int {
+    unsafe {
+        let exception = RAISED as *const i64;
+        RAISED = 0;
+        if REPL {
+            UNCAUGHT = exception as i64;
+            return 0;
+        }
+        let identity = exception.add(1).read() as *const i64;
+        let name = identity.add(1).read();
+        let argument = exception.add(2).read();
+        let location = exception.add(3).read();
+        fflush(stdout);
+        fprintf(
+            stderr,
+            c"/usr/lib/smlnj/bin/sml: Fatal error -- Uncaught exception %.*s with ".as_ptr(),
+            string_length(name) as c_int,
+            string_bytes(name),
+        );
+        if argument & 1 != 0 {
+            fprintf(
+                stderr,
+                c"%lld\n raised at %.*s\n\n".as_ptr(),
+                argument >> 1,
+                string_length(location) as c_int,
+                string_bytes(location),
+            );
+        } else if (argument as *const i64).read() & 0xff == KIND_STRING {
+            fprintf(
+                stderr,
+                c"\"%.*s\" raised at %.*s\n\n".as_ptr(),
+                string_length(argument) as c_int,
+                string_bytes(argument),
+                string_length(location) as c_int,
+                string_bytes(location),
+            );
+        } else {
+            fprintf(
+                stderr,
+                c"<unknown> raised at %.*s\n\n".as_ptr(),
+                string_length(location) as c_int,
+                string_bytes(location),
+            );
+        }
+        1
+    }
+}
+
+#[unsafe(no_mangle)]
+unsafe extern "C" fn nassau_exit(status: i64) {
+    unsafe {
+        fflush(stdout);
+        exit(((status >> 1) & 0xff) as c_int);
+    }
+}

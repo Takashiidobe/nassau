@@ -134,6 +134,18 @@ def repl_source(source):
     return "\n".join(kept).rstrip("\n") + "\n"
 
 
+def directive(fixture, name):
+    match = re.search(rf"^\(\* {re.escape(name)}: (.+) \*\)$", fixture.read_text(), re.M)
+    return match.group(1) if match else None
+
+
+def uses_mlton(fixture):
+    oracle = directive(fixture, "ORACLE")
+    if oracle not in (None, "mlton"):
+        raise ToolError(f"unknown fixture oracle: {oracle}")
+    return oracle == "mlton"
+
+
 def normalise_repl(text, prompt):
     """Strip prompts and trailing blank lines from a REPL transcript."""
     text = smlnj_strip_noise(text)
@@ -150,9 +162,38 @@ def normalise_repl(text, prompt):
 
 
 class Oracle:
-    def __init__(self, smlnj, nassau):
+    def __init__(self, smlnj, nassau, mlton):
         self.smlnj = smlnj
         self.nassau = nassau
+        self.mlton = mlton
+        result = run(
+            [smlnj],
+            stdin=b'val _ = print ("NASSAU-INT-PRECISION: " ^ (case Int.precision of SOME n => Int.toString n | NONE => "0") ^ "\\n");\n',
+        )
+        match = re.search(r"NASSAU-INT-PRECISION: (\d+)", decode(result.stdout))
+        if result.returncode != 0 or not match:
+            raise ToolError("SML/NJ failed to report Int.precision")
+        self.precision = int(match.group(1))
+
+    def matching_precision(self, fixture):
+        required = directive(fixture, "SMLNJ-INT-PRECISION")
+        return required is None or int(required) == self.precision
+
+    def require_mlton(self):
+        if shutil.which(self.mlton) is None:
+            raise ToolError(f"MLton not found ({self.mlton}); set MLTON or install mlton")
+
+    def program(self, fixture):
+        if not uses_mlton(fixture):
+            return self.smlnj_program(fixture)
+        self.require_mlton()
+        with tempfile.TemporaryDirectory() as directory:
+            executable = Path(directory) / "program"
+            compiled = run([self.mlton, "-output", str(executable), str(fixture)])
+            if compiled.returncode != 0:
+                raise ToolError("MLton rejected a valid fixture:\n" + decode(compiled.stderr))
+            result = run([str(executable)], stdin=b"", cwd=fixture.parent)
+        return decode(result.stdout), decode(result.stderr), result.returncode
 
     def smlnj_program(self, fixture):
         """Run a fixture under SML/NJ with the REPL echo of bindings silenced."""
@@ -170,8 +211,13 @@ class Oracle:
             result.returncode,
         )
 
-    def smlnj_rejects(self, fixture):
-        result = run([self.smlnj, str(fixture)], stdin=b"", cwd=fixture.parent)
+    def rejects(self, fixture):
+        if uses_mlton(fixture):
+            self.require_mlton()
+            command = [self.mlton, "-stop", "tc", str(fixture)]
+        else:
+            command = [self.smlnj, str(fixture)]
+        result = run(command, stdin=b"", cwd=fixture.parent)
         return result.returncode != 0
 
     def nassau_compile(self, fixture, extra=()):
@@ -212,7 +258,36 @@ def classify(path):
 
 
 def generate_run(oracle, fixture, warnings):
-    stdout, stderr, code = oracle.smlnj_program(fixture)
+    if not uses_mlton(fixture) and not oracle.matching_precision(fixture):
+        lines = [line for line in fixture.read_text().splitlines() if GENERATED.match(line)]
+        if not any(line.startswith("(* CHECK-EXIT:") for line in lines):
+            raise ToolError("integer-width fixture needs existing compatible oracle expectations")
+        actual = oracle.nassau_program(fixture)
+        for prefix, stream in zip(
+            ("CHECK-STDOUT", "CHECK-STDERR", "CHECK-EXIT"),
+            (actual[0], actual[1], str(actual[2]) + "\n"),
+        ):
+            checks = [line[3:-3] for line in lines if line.startswith(f"(* {prefix}")]
+            if not checks:
+                if stream:
+                    raise ToolError(f"unexpected {prefix} output: {stream!r}")
+                continue
+            with tempfile.TemporaryDirectory() as directory:
+                check_file = Path(directory) / "checks.txt"
+                check_file.write_text("\n".join(checks) + "\n")
+                result = run(
+                    [os.environ.get("FILECHECK", "FileCheck"), str(check_file),
+                     f"--check-prefix={prefix}", "--match-full-lines", "--allow-empty"],
+                    stdin=stream.encode(),
+                )
+            if result.returncode != 0:
+                raise ToolError("Nassau disagrees with retained expectations:\n" + decode(result.stderr))
+        warnings.append(
+            f"{rel(fixture)}: SML/NJ Int.precision is {oracle.precision}; "
+            "validated and retained compatible integer-width FileCheck expectations"
+        )
+        return lines
+    stdout, stderr, code = oracle.program(fixture)
     lines = [f"(* CHECK-EXIT: {code} *)"]
     if stdout.strip():
         lines += stream_lines("CHECK-STDOUT", stdout)
@@ -221,9 +296,9 @@ def generate_run(oracle, fixture, warnings):
     actual = oracle.nassau_program(fixture)
     if actual != (stdout, stderr, code):
         warnings.append(
-            f"{rel(fixture)}: Nassau disagrees with SML/NJ "
+            f"{rel(fixture)}: Nassau disagrees with the oracle "
             f"(nassau exit {actual[2]}, stdout {actual[0]!r}; "
-            f"SML/NJ exit {code}, stdout {stdout!r})"
+            f"oracle exit {code}, stdout {stdout!r})"
         )
     return lines
 
@@ -241,8 +316,11 @@ def generate_error(oracle, fixture, warnings):
     location = re.search(r"\[[^\]\n]*(:\d+:\d+)\]", stderr)
     if not message or not location:
         raise ToolError("unrecognised Nassau diagnostic:\n" + stderr)
-    if not oracle.smlnj_rejects(fixture):
-        warnings.append(f"{rel(fixture)}: SML/NJ accepts this error/ fixture")
+    if uses_mlton(fixture) or oracle.matching_precision(fixture):
+        if not oracle.rejects(fixture):
+            warnings.append(f"{rel(fixture)}: oracle accepts this error/ fixture")
+    else:
+        warnings.append(f"{rel(fixture)}: SML/NJ Int.precision is {oracle.precision}; checking Nassau's diagnostic only")
     return [
         f"(* CHECK-ERR: × {escape(message.group(1))} *)",
         f"(* CHECK-ERR: {location.group(1)}] *)",
@@ -358,11 +436,12 @@ def find_fixtures(patterns):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    parser = argparse.ArgumentParser(description=(__doc__ or "").split("\n\n")[0])
     parser.add_argument("paths", nargs="*", help="fixture files or globs (default: all)")
     parser.add_argument("--check", action="store_true", help="do not write; exit 1 if stale")
     parser.add_argument("--nassau", default=str(ROOT / "target" / "debug" / "nassau"))
     parser.add_argument("--smlnj", default=os.environ.get("SMLNJ", "smlnj"))
+    parser.add_argument("--mlton", default=os.environ.get("MLTON", "mlton"))
     parser.add_argument("--no-build", action="store_true", help="skip cargo build")
     args = parser.parse_args()
 
@@ -370,7 +449,7 @@ def main():
         raise ToolError(f"SML/NJ not found ({args.smlnj}); set SMLNJ or install smlnj")
     if not args.no_build and args.nassau == str(ROOT / "target" / "debug" / "nassau"):
         subprocess.run(["cargo", "build", "--quiet"], cwd=ROOT, check=True)
-    oracle = Oracle(args.smlnj, args.nassau)
+    oracle = Oracle(args.smlnj, args.nassau, args.mlton)
 
     generators = {
         "run": generate_run,

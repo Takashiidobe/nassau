@@ -1,0 +1,17 @@
+signature COUNTER = sig type t val zero : t val next : t -> t val count : t -> int end
+functor Counter (X : sig val step : int end) :> COUNTER = struct
+  type t = int
+  val zero = 0
+  fun next n = n + X.step
+  fun count n = n
+end
+structure ByOne = Counter (struct val step = 1 end)
+structure ByTwo = Counter (struct val step = 2 end)
+val a = ByOne.count (ByOne.next ByOne.zero)
+val b = ByTwo.next ByTwo.zero
+functor Transparent (X : sig type t val x : t end) : sig type t val x : t end = X
+structure T = Transparent (struct type t = int val x = 5 end)
+val c = T.x + 1
+val () = print (if a = 1 andalso ByTwo.count b = 2 andalso c = 6 then "valid-result-signature\n" else "wrong\n")
+(* CHECK-EXIT: 0 *)
+(* CHECK-STDOUT: valid-result-signature *)

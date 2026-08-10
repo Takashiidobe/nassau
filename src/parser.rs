@@ -99,7 +99,6 @@ pub enum StmtKind {
     Val(String, Expr),
     Print(Expr),
     Exit(Expr),
-    /// Any other declaration; the backend does not handle these yet.
     Declaration(Decl),
 }
 

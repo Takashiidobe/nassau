@@ -9,8 +9,7 @@ in
   structure T = G (struct val y = 4 end)
 end
 val b = T.z
+val () = print (if a = 100 andalso b = 8 then "valid-functor-scope\n" else "wrong\n")
 (* MLTON-SKIP: MLton rejects functors declared inside local *)
-(* CHECK-STDOUT: val base : int *)
-(* CHECK-STDOUT-NEXT: val base : string *)
-(* CHECK-STDOUT-NEXT: val a : int *)
-(* CHECK-STDOUT-NEXT: val b : int *)
+(* CHECK-EXIT: 0 *)
+(* CHECK-STDOUT: valid-functor-scope *)

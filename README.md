@@ -68,6 +68,11 @@ oracle has a different width, the updater validates and retains the existing
 runtime checks from the compatible oracle, and regenerates Nassau diagnostics
 for error fixtures.
 
+The harness also checks module and functor fixtures with MLton when installed.
+`(* MLTON-SKIP: reason *)` excludes an additional MLton comparison for a
+documented dialect difference, such as functors declared inside `local`.
+SML/NJ and FileCheck checks still run for those fixtures.
+
 ## Project documentation
 
 [Language support and grammar](docs/grammar.md) describes what the parser,

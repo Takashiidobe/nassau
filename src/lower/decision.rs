@@ -9,7 +9,7 @@
 //! parameters are the rule's variables; every leaf that selects the rule
 //! jumps there.
 
-use super::{Dest, Lowerer, Res, unsupported_pattern};
+use super::{Binding, Dest, Lowerer, Res, unsupported_pattern};
 use crate::core::{Atom, BlockId, Op, Prim, Term};
 use crate::infer::Ty;
 use crate::parser::{Expr, Pat, PatKind};
@@ -487,7 +487,7 @@ impl Lowerer<'_> {
             return None;
         }
         let base = name.rsplit('.').next().unwrap_or(name);
-        let key = format!("exn {base}");
+        let key = format!("exn {name}");
         let identity = match self.lookup(&key) {
             Some(binding) => self.load(&key, &binding),
             None => {
@@ -513,6 +513,15 @@ impl Lowerer<'_> {
     /// argument alone when there is one such constructor, else a tag
     /// `0`, `1`, ... and then the argument.
     pub(super) fn constructor(&self, name: &str, ty: Option<&Ty>) -> Option<(Test, bool)> {
+        match self.lookup_raw(name) {
+            Some(Binding::Constructor(Some(test))) => return Some(test),
+            Some(Binding::Global(..) | Binding::Local { .. }) => return None,
+            _ => {}
+        }
+        self.constructor_type(name, ty)
+    }
+
+    pub(super) fn constructor_type(&self, name: &str, ty: Option<&Ty>) -> Option<(Test, bool)> {
         let base = name.rsplit('.').next().unwrap_or(name);
         let result = match ty {
             Some(Ty::Arrow(_, result)) => Some(result.as_ref()),

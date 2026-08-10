@@ -756,6 +756,46 @@ impl<M: Module> Translator<'_, M> {
                 let compared = self.builder.ins().icmp(condition, args[0], args[1]);
                 self.boolean(compared)
             }
+            Prim::StringLt | Prim::StringLe | Prim::StringGt | Prim::StringGe => {
+                let left_header =
+                    self.builder
+                        .ins()
+                        .load(types::I64, MemFlagsData::trusted(), args[0], 0);
+                let right_header =
+                    self.builder
+                        .ins()
+                        .load(types::I64, MemFlagsData::trusted(), args[1], 0);
+                let left_length = self.builder.ins().ushr_imm_u(left_header, 8);
+                let right_length = self.builder.ins().ushr_imm_u(right_header, 8);
+                let shorter =
+                    self.builder
+                        .ins()
+                        .icmp(IntCC::UnsignedLessThan, left_length, right_length);
+                let length = self
+                    .builder
+                    .ins()
+                    .select(shorter, left_length, right_length);
+                let left = self.builder.ins().iadd_imm_s(args[0], 8);
+                let right = self.builder.ins().iadd_imm_s(args[1], 8);
+                let compared = self.builder.call_memcmp(
+                    self.target.isa().frontend_config(),
+                    left,
+                    right,
+                    length,
+                );
+                let compared = self.builder.ins().sextend(types::I64, compared);
+                let equal = self.builder.ins().icmp_imm_s(IntCC::Equal, compared, 0);
+                let lengths = self.builder.ins().isub(left_length, right_length);
+                let order = self.builder.ins().select(equal, lengths, compared);
+                let condition = match prim {
+                    Prim::StringLt => IntCC::SignedLessThan,
+                    Prim::StringLe => IntCC::SignedLessThanOrEqual,
+                    Prim::StringGt => IntCC::SignedGreaterThan,
+                    _ => IntCC::SignedGreaterThanOrEqual,
+                };
+                let result = self.builder.ins().icmp_imm_s(condition, order, 0);
+                self.boolean(result)
+            }
             Prim::WordEq | Prim::WordNe => {
                 let condition = if prim == Prim::WordEq {
                     IntCC::Equal

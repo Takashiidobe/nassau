@@ -211,7 +211,9 @@ impl Infer {
     // --- structure expressions ---------------------------------------------
 
     fn elab_strexp(&mut self, exp: &StrExp) -> Res<StructEnv> {
-        match &exp.value {
+        let mut application = None;
+        let mut application_parameter = None;
+        let env = match &exp.value {
             StrExpKind::Struct(declarations) => {
                 let mark = self.mark();
                 for declaration in declarations {
@@ -234,6 +236,7 @@ impl Infer {
                 let actual = self.elab_strexp(argument)?;
                 let parameter =
                     self.ascribe(&actual, &functor.sig, false, argument.source_span())?;
+                application_parameter = Some(Box::new(exports(self, &parameter)));
                 let saved = self.swap_scope(Scope {
                     values: functor.scope.values.clone(),
                     types: functor.scope.types.clone(),
@@ -242,7 +245,9 @@ impl Infer {
                     functors: functor.scope.functors.clone(),
                 });
                 self.bind_parameter(functor.parameter.as_deref(), parameter);
-                let result = self.elab_strexp(&functor.body);
+                let body = Rc::new(functor.body.clone());
+                let result = self.elab_strexp(&body);
+                application = Some(body);
                 self.swap_scope(saved);
                 result
             }
@@ -268,7 +273,32 @@ impl Infer {
                 self.release(mark);
                 Ok(env)
             }
+        }?;
+        fn exports(infer: &Infer, env: &StructEnv) -> super::StructureInfo {
+            super::StructureInfo {
+                values: env
+                    .values
+                    .iter()
+                    .map(|entry| super::Export {
+                        name: entry.name.clone(),
+                        constructor: entry.constructor,
+                        carries: matches!(infer.prune(&entry.scheme.ty), Type::Arrow(..)),
+                    })
+                    .collect(),
+                structures: env
+                    .structs
+                    .iter()
+                    .map(|(name, env)| (name.clone(), exports(infer, env)))
+                    .collect(),
+                application: None,
+                parameter: None,
+            }
         }
+        let mut info = exports(self, &env);
+        info.application = application;
+        info.parameter = application_parameter;
+        self.structure_info.insert(exp as *const _ as usize, info);
+        Ok(env)
     }
 
     /// What was bound since `mark`; a later binding of a name hides earlier ones.

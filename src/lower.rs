@@ -7,6 +7,7 @@
 //! live in globals instead, so they are never captured.
 
 use miette::SourceSpan;
+use std::rc::Rc;
 
 use crate::core::{
     Atom, Block, BlockId, Callee, Closure, FnId, Function, GlobalId, Module, Op, Prim, Stmt, Term,
@@ -15,7 +16,8 @@ use crate::core::{
 use crate::error::ThisError;
 use crate::infer::{Ty, TypeTable};
 use crate::parser::{
-    Decl, DeclKind, ExceptionKind, Expr, ExprKind, Pat, PatKind, Program, StmtKind,
+    Decl, DeclKind, ExceptionKind, Expr, ExprKind, FunctorParameter, Pat, PatKind, Program,
+    StmtKind, StrExp, StrExpKind,
 };
 use crate::value;
 
@@ -44,6 +46,7 @@ struct Known {
 /// What a name stands for.
 #[derive(Clone, Debug)]
 enum Binding {
+    Constructor(Option<(Test, bool)>),
     Global(GlobalId, Option<Known>),
     /// A variable of the function at `depth` in the stack being lowered.
     Local {
@@ -51,6 +54,27 @@ enum Binding {
         var: Var,
         known: Option<Known>,
     },
+}
+
+#[derive(Clone, Default)]
+struct Structure {
+    values: Vec<(String, Binding)>,
+    structures: Vec<(String, Structure)>,
+}
+
+#[derive(Clone)]
+struct Functor {
+    parameter: Option<String>,
+    environment: Environment,
+    source: Source,
+}
+
+#[derive(Clone)]
+struct Environment {
+    globals: Vec<(String, Binding)>,
+    locals: Vec<(String, Binding)>,
+    structures: Vec<(String, Structure)>,
+    functors: Vec<(String, Rc<Functor>)>,
 }
 
 /// What lowering keeps from one program to the next: the REPL lowers each
@@ -61,6 +85,8 @@ pub struct Session {
     next_global: GlobalId,
     /// Top-level names, latest last.
     globals: Vec<(String, Binding)>,
+    structures: Vec<(String, Structure)>,
+    functors: Vec<(String, Rc<Functor>)>,
 }
 
 impl Session {
@@ -72,7 +98,7 @@ impl Session {
     pub fn global(&self, name: &str) -> Option<GlobalId> {
         match self.lookup(name)? {
             Binding::Global(global, _) => Some(global),
-            Binding::Local { .. } => None,
+            Binding::Local { .. } | Binding::Constructor(_) => None,
         }
     }
 
@@ -88,6 +114,8 @@ impl Session {
     /// functions and globals numbered since, which are already compiled.
     pub fn forget_bindings(&mut self, earlier: &Session) {
         self.globals.clone_from(&earlier.globals);
+        self.structures.clone_from(&earlier.structures);
+        self.functors.clone_from(&earlier.functors);
     }
 
     fn function_id(&mut self) -> FnId {
@@ -109,7 +137,7 @@ impl Session {
         let mut lowerer = Lowerer {
             session: &mut session,
             types,
-            source,
+            source: source.clone(),
             new_globals: Vec::new(),
             functions: Vec::new(),
             frames: vec![Builder::new(id, entry, Vec::new())],
@@ -133,6 +161,7 @@ impl Session {
 }
 
 /// The program's source, for the positions SML/NJ reports exceptions at.
+#[derive(Clone)]
 pub struct Source {
     /// The file name as SML/NJ shows it: without directories.
     pub file: String,
@@ -293,6 +322,9 @@ enum Applied {
 /// Built-in functions that are compiled inline when applied.
 #[derive(Clone, Copy)]
 enum Builtin {
+    Length,
+    Map,
+    Foldl,
     Print,
     IntToString,
     Size,
@@ -309,6 +341,9 @@ enum Builtin {
 
 fn builtin(name: &str) -> Option<Builtin> {
     Some(match name {
+        "length" => Builtin::Length,
+        "map" => Builtin::Map,
+        "foldl" => Builtin::Foldl,
         "print" => Builtin::Print,
         "Int.toString" => Builtin::IntToString,
         "size" => Builtin::Size,
@@ -328,7 +363,7 @@ fn builtin(name: &str) -> Option<Builtin> {
 struct Lowerer<'a> {
     session: &'a mut Session,
     types: &'a TypeTable,
-    source: &'a Source,
+    source: Source,
     new_globals: Vec<(GlobalId, String)>,
     /// Finished functions.
     functions: Vec<Function>,
@@ -387,12 +422,235 @@ impl Lowerer<'_> {
     }
 
     fn lookup(&self, name: &str) -> Option<Binding> {
+        self.lookup_raw(name)
+            .filter(|binding| !matches!(binding, Binding::Constructor(_)))
+    }
+
+    fn lookup_raw(&self, name: &str) -> Option<Binding> {
+        if let Some((path, base)) = name.rsplit_once('.') {
+            let (path, key) = match path.strip_prefix("exn ") {
+                Some(path) => (path, format!("exn {base}")),
+                None => (path, base.to_string()),
+            };
+            return self
+                .structure_named(path)?
+                .values
+                .iter()
+                .rev()
+                .find(|(name, _)| name == &key)
+                .map(|(_, binding)| binding.clone());
+        }
         self.scope
             .iter()
             .rev()
             .find(|(known, _)| known == name)
             .map(|(_, binding)| binding.clone())
             .or_else(|| self.session.lookup(name))
+    }
+
+    fn structure_named(&self, path: &str) -> Option<&Structure> {
+        let mut parts = path.split('.');
+        let name = parts.next()?;
+        let mut structure = &self
+            .session
+            .structures
+            .iter()
+            .rev()
+            .find(|(known, _)| known == name)?
+            .1;
+        for name in parts {
+            structure = &structure
+                .structures
+                .iter()
+                .rev()
+                .find(|(known, _)| known == name)?
+                .1;
+        }
+        Some(structure)
+    }
+
+    fn environment(&self) -> Environment {
+        Environment {
+            globals: self.session.globals.clone(),
+            locals: self.scope.clone(),
+            structures: self.session.structures.clone(),
+            functors: self.session.functors.clone(),
+        }
+    }
+
+    fn restore(&mut self, environment: Environment) {
+        self.session.globals = environment.globals;
+        self.scope = environment.locals;
+        self.session.structures = environment.structures;
+        self.session.functors = environment.functors;
+    }
+
+    fn open(&mut self, structure: &Structure, top: bool) {
+        if top {
+            self.session.globals.extend(structure.values.clone());
+        } else {
+            self.scope.extend(structure.values.clone());
+        }
+        self.session.structures.extend(structure.structures.clone());
+    }
+
+    fn structure(&mut self, exp: &StrExp, top: bool) -> Res<Structure> {
+        let saved = self.environment();
+        let result = match &exp.value {
+            StrExpKind::Name(name) => self
+                .structure_named(name)
+                .cloned()
+                .expect("checked structure"),
+            StrExpKind::Struct(declarations) => {
+                self.declarations(declarations, top)?;
+                let values = if top {
+                    self.session.globals[saved.globals.len()..].to_vec()
+                } else {
+                    self.scope[saved.locals.len()..].to_vec()
+                };
+                Structure {
+                    values,
+                    structures: self.session.structures[saved.structures.len()..].to_vec(),
+                }
+            }
+            StrExpKind::Ascribed { body, .. } => self.structure(body, top)?,
+            StrExpKind::Let(declarations, body) => {
+                self.declarations(declarations, top)?;
+                self.structure(body, top)?
+            }
+            StrExpKind::Apply(name, argument) => {
+                let functor = self
+                    .session
+                    .functors
+                    .iter()
+                    .rev()
+                    .find(|(known, _)| known == name)
+                    .map(|(_, functor)| functor.clone())
+                    .expect("checked functor");
+                let argument = self.structure(argument, top)?;
+                let parameter = self
+                    .types
+                    .structure(exp)
+                    .parameter
+                    .as_ref()
+                    .expect("elaborated parameter");
+                let argument = self.restrict(argument, parameter, top)?;
+                self.restore(functor.environment.clone());
+                match &functor.parameter {
+                    Some(name) => self.session.structures.push((name.clone(), argument)),
+                    None => self.open(&argument, top),
+                }
+                let body = self
+                    .types
+                    .structure(exp)
+                    .application
+                    .clone()
+                    .expect("elaborated functor body");
+                let source = std::mem::replace(&mut self.source, functor.source.clone());
+                let result = self.structure(&body, top);
+                self.source = source;
+                result?
+            }
+        };
+        self.restore(saved);
+        self.restrict(result, self.types.structure(exp), top)
+    }
+
+    fn restrict(
+        &mut self,
+        structure: Structure,
+        info: &crate::infer::StructureInfo,
+        top: bool,
+    ) -> Res<Structure> {
+        let mut values = Vec::new();
+        for export in &info.values {
+            let name = &export.name;
+            if let Some((_, binding)) = structure
+                .values
+                .iter()
+                .rev()
+                .find(|(known, _)| known == name)
+            {
+                let binding = if !export.constructor
+                    && let Binding::Constructor(test) = binding
+                {
+                    let (test, carries) = match test {
+                        Some(test) => test.clone(),
+                        None => {
+                            let key = format!("exn {name}");
+                            let identity = &structure
+                                .values
+                                .iter()
+                                .rev()
+                                .find(|(known, _)| known == &key)
+                                .expect("exported exception identity")
+                                .1;
+                            let identity = self.load(&key, identity);
+                            (
+                                Test::Exception {
+                                    identity,
+                                    carries: export.carries,
+                                },
+                                export.carries,
+                            )
+                        }
+                    };
+                    let value = if carries {
+                        self.constructor_closure(name, &test)
+                    } else {
+                        self.construct(&test, Atom::Word(value::tagged(0)))
+                    };
+                    if top {
+                        let global = self.new_global(name, None);
+                        self.emit(Stmt::SetGlobal(global, value));
+                        self.session.globals.pop();
+                        Binding::Global(global, None)
+                    } else {
+                        let var = self.var_for(name, value);
+                        Binding::Local {
+                            depth: self.depth(),
+                            var,
+                            known: None,
+                        }
+                    }
+                } else {
+                    binding.clone()
+                };
+                values.push((name.clone(), binding));
+            } else if export.constructor {
+                values.push((name.clone(), Binding::Constructor(None)));
+            } else {
+                return Err((
+                    LowerError::Unsupported(format!("exported Basis value {name}")),
+                    (0, 0).into(),
+                ));
+            }
+            let key = format!("exn {name}");
+            if let Some((_, binding)) = structure
+                .values
+                .iter()
+                .rev()
+                .find(|(known, _)| known == &key)
+            {
+                values.push((key, binding.clone()));
+            }
+        }
+        let structures = info
+            .structures
+            .iter()
+            .map(|(name, info)| {
+                let inner = structure
+                    .structures
+                    .iter()
+                    .rev()
+                    .find(|(known, _)| known == name)
+                    .expect("checked exported structure")
+                    .1
+                    .clone();
+                Ok((name.clone(), self.restrict(inner, info, top)?))
+            })
+            .collect::<Res<_>>()?;
+        Ok(Structure { values, structures })
     }
 
     /// The variable of the current function that holds variable `var` of the
@@ -425,6 +683,7 @@ impl Lowerer<'_> {
     /// The value of a bound name.
     fn load(&mut self, name: &str, binding: &Binding) -> Atom {
         match binding {
+            Binding::Constructor(_) => unreachable!("constructors have no variable storage"),
             Binding::Global(global, _) => self.bind(name, Op::Global(*global)),
             Binding::Local { depth, var, .. } => Atom::Var(self.access(*depth, *var)),
         }
@@ -574,6 +833,8 @@ impl Lowerer<'_> {
                 self.functions_group(definitions, top)?;
             }
             DeclKind::Local(private, public) => {
+                let structures_before = self.session.structures.len();
+                let functors_before = self.session.functors.len();
                 // The private declarations' names are dropped once the
                 // public ones are lowered; their values live on.
                 let (outer, inner) = if top {
@@ -585,7 +846,15 @@ impl Lowerer<'_> {
                     self.declarations(private, top)?;
                     (outer, self.scope.len())
                 };
+                let structures_private = self.session.structures.len();
+                let functors_private = self.session.functors.len();
                 self.declarations(public, top)?;
+                self.session
+                    .structures
+                    .drain(structures_before..structures_private);
+                self.session
+                    .functors
+                    .drain(functors_before..functors_private);
                 if top {
                     self.session.globals.drain(outer..inner);
                 } else {
@@ -594,11 +863,29 @@ impl Lowerer<'_> {
             }
             // Types have no run-time presence, and constructors are compiled
             // where they are used; fixity only affects parsing.
-            DeclKind::Type(_)
-            | DeclKind::Fixity { .. }
-            | DeclKind::Datatype { .. }
-            | DeclKind::DatatypeCopy { .. } => {}
-            DeclKind::Abstype { body, .. } => self.declarations(body, top)?,
+            DeclKind::Type(_) | DeclKind::Fixity { .. } | DeclKind::Signature(_) => {}
+            DeclKind::Datatype { .. } | DeclKind::DatatypeCopy { .. } => {
+                self.datatype_constructors(declaration, top);
+            }
+            DeclKind::Abstype { body, .. } => {
+                let before = if top {
+                    self.session.globals.len()
+                } else {
+                    self.scope.len()
+                };
+                self.datatype_constructors(declaration, top);
+                let after = if top {
+                    self.session.globals.len()
+                } else {
+                    self.scope.len()
+                };
+                self.declarations(body, top)?;
+                if top {
+                    self.session.globals.drain(before..after);
+                } else {
+                    self.scope.drain(before..after);
+                }
+            }
             DeclKind::Exception(bindings) => {
                 // Each evaluation of the declaration makes new exceptions:
                 // an exception's identity is a fresh cell holding its name.
@@ -629,6 +916,7 @@ impl Lowerer<'_> {
                         }
                     };
                     let key = format!("exn {}", binding.name);
+                    self.bind_constructor(&binding.name, None, top);
                     if top {
                         self.bind_top(&key, identity, None);
                     } else {
@@ -636,11 +924,35 @@ impl Lowerer<'_> {
                     }
                 }
             }
-            _ => {
-                return Err((
-                    LowerError::Unsupported("module declarations".into()),
-                    declaration.source_span(),
-                ));
+            DeclKind::Structure(bindings) => {
+                let mut built = Vec::new();
+                for binding in bindings {
+                    built.push((binding.name.clone(), self.structure(&binding.body, top)?));
+                }
+                self.session.structures.extend(built);
+            }
+            DeclKind::Open(paths) => {
+                for path in paths {
+                    let structure = self.structure_named(path).cloned().expect("checked open");
+                    self.open(&structure, top);
+                }
+            }
+            DeclKind::Functor(bindings) => {
+                let environment = self.environment();
+                for binding in bindings {
+                    let parameter = match &binding.parameter {
+                        FunctorParameter::Named(name, _) => Some(name.clone()),
+                        FunctorParameter::Specs(_) => None,
+                    };
+                    self.session.functors.push((
+                        binding.name.clone(),
+                        Rc::new(Functor {
+                            parameter,
+                            environment: environment.clone(),
+                            source: self.source.clone(),
+                        }),
+                    ));
+                }
             }
         }
         Ok(())
@@ -651,6 +963,29 @@ impl Lowerer<'_> {
             self.declaration(declaration, top)?;
         }
         Ok(())
+    }
+
+    fn bind_constructor(&mut self, name: &str, test: Option<(Test, bool)>, top: bool) {
+        let binding = (name.to_string(), Binding::Constructor(test));
+        if top {
+            self.session.globals.push(binding);
+        } else {
+            self.scope.push(binding);
+        }
+    }
+
+    fn datatype_constructors(&mut self, declaration: &Decl, top: bool) {
+        for (name, stamp) in self.types.declaration_constructors(declaration) {
+            let ty = Ty::Con {
+                name: String::new(),
+                stamp: *stamp,
+                args: Vec::new(),
+            };
+            let test = self
+                .constructor_type(name, Some(&ty))
+                .expect("declared datatype constructor");
+            self.bind_constructor(name, Some(test), top);
+        }
     }
 
     /// Makes names bound by patterns visible: as globals at the top level.
@@ -855,9 +1190,13 @@ impl Lowerer<'_> {
             }
             ExprKind::Let(declarations, body) => {
                 let mark = self.scope.len();
+                let structures = self.session.structures.len();
+                let functors = self.session.functors.len();
                 self.declarations(declarations, false)?;
                 self.into(body, dest)?;
                 self.scope.truncate(mark);
+                self.session.structures.truncate(structures);
+                self.session.functors.truncate(functors);
                 Ok(())
             }
             // A call whose value is returned is a tail call: it reuses the
@@ -1017,9 +1356,13 @@ impl Lowerer<'_> {
             ExprKind::Typed(inner, _) => self.value(inner)?,
             ExprKind::Let(declarations, body) => {
                 let mark = self.scope.len();
+                let structures = self.session.structures.len();
+                let functors = self.session.functors.len();
                 self.declarations(declarations, false)?;
                 let value = self.value(body)?;
                 self.scope.truncate(mark);
+                self.session.structures.truncate(structures);
+                self.session.functors.truncate(functors);
                 value
             }
             ExprKind::Add(lhs, rhs)
@@ -1036,6 +1379,24 @@ impl Lowerer<'_> {
                 }
                 let real = self.is_real(lhs);
                 let prim = match (&expr.value, real) {
+                    (ExprKind::Less(..), _) if self.ty(lhs).is_some_and(|ty| ty.is("string")) => {
+                        Prim::StringLt
+                    }
+                    (ExprKind::LessEqual(..), _)
+                        if self.ty(lhs).is_some_and(|ty| ty.is("string")) =>
+                    {
+                        Prim::StringLe
+                    }
+                    (ExprKind::Greater(..), _)
+                        if self.ty(lhs).is_some_and(|ty| ty.is("string")) =>
+                    {
+                        Prim::StringGt
+                    }
+                    (ExprKind::GreaterEqual(..), _)
+                        if self.ty(lhs).is_some_and(|ty| ty.is("string")) =>
+                    {
+                        Prim::StringGe
+                    }
                     (ExprKind::Add(..), false) => Prim::IntAdd,
                     (ExprKind::Subtract(..), false) => Prim::IntSub,
                     (ExprKind::Multiply(..), false) => Prim::IntMul,
@@ -1137,6 +1498,7 @@ impl Lowerer<'_> {
                 let pair = vec![self.value(lhs)?, self.value(rhs)?];
                 let pair = self.bind("", Op::Record(pair));
                 let known = match &binding {
+                    Binding::Constructor(_) => unreachable!("constructor calls are inlined"),
                     Binding::Global(_, known) | Binding::Local { known, .. } => *known,
                 };
                 let function = self.load(name, &binding);
@@ -1220,6 +1582,7 @@ impl Lowerer<'_> {
                 rest = &args[1..];
             } else if let Some(binding) = binding {
                 let known = match &binding {
+                    Binding::Constructor(_) => unreachable!("constructor calls are inlined"),
                     Binding::Global(_, known) | Binding::Local { known, .. } => *known,
                 };
                 if let Some(known) = known
@@ -1271,6 +1634,9 @@ impl Lowerer<'_> {
 
     fn builtin(&mut self, builtin: Builtin, argument: Atom) -> Atom {
         match builtin {
+            Builtin::Length => self.list_length(argument),
+            Builtin::Map => self.list_function(argument, false),
+            Builtin::Foldl => self.list_function(argument, true),
             Builtin::Print => self.bind("", Op::Prim(Prim::Print, vec![argument])),
             Builtin::IntToString => self.bind("", Op::Prim(Prim::IntToString, vec![argument])),
             Builtin::Size => self.bind("", Op::Prim(Prim::Size, vec![argument])),
@@ -1298,6 +1664,109 @@ impl Lowerer<'_> {
             }
             Builtin::Before => self.bind("", Op::Select(argument, 0)),
         }
+    }
+
+    fn list_length(&mut self, argument: Atom) -> Atom {
+        let list = self.frame().var("list");
+        let count = self.frame().var("count");
+        let loop_block = self.block(vec![list, count]);
+        let done = self.block(Vec::new());
+        let step = self.block(Vec::new());
+        self.terminate(Term::Jump(
+            loop_block,
+            vec![argument, Atom::Word(value::tagged(0))],
+        ));
+        self.switch(loop_block);
+        let empty = self.bind(
+            "",
+            Op::Prim(Prim::WordEq, vec![Atom::Var(list), Atom::Word(value::NIL)]),
+        );
+        self.terminate(Term::If(empty, done, step));
+        self.switch(step);
+        let tail = self.bind("", Op::Select(Atom::Var(list), 1));
+        let next = self.bind(
+            "",
+            Op::Prim(
+                Prim::IntAdd,
+                vec![Atom::Var(count), Atom::Word(value::tagged(1))],
+            ),
+        );
+        self.terminate(Term::Jump(loop_block, vec![tail, next]));
+        self.switch(done);
+        Atom::Var(count)
+    }
+
+    fn list_function(&mut self, function: Atom, fold: bool) -> Atom {
+        let worker = self.session.function_id();
+        let params = if fold {
+            vec!["env", "acc", "list"]
+        } else {
+            vec!["env", "list"]
+        };
+        self.frames.push(Builder::new(
+            worker,
+            if fold { "foldl" } else { "map" },
+            params,
+        ));
+        let env = Atom::Var(self.frame().params[0]);
+        let function_value = self.bind("", Op::Select(env.clone(), 1));
+        let list = Atom::Var(*self.frame().params.last().unwrap());
+        let acc = fold.then(|| Atom::Var(self.frame().params[1]));
+        let empty = self.bind(
+            "",
+            Op::Prim(Prim::WordEq, vec![list.clone(), Atom::Word(value::NIL)]),
+        );
+        let done = self.block(Vec::new());
+        let step = self.block(Vec::new());
+        self.terminate(Term::If(empty, done, step));
+        self.switch(done);
+        self.terminate(Term::Return(acc.clone().unwrap_or(Atom::Word(value::NIL))));
+        self.switch(step);
+        let head = self.bind("", Op::Select(list.clone(), 0));
+        let tail = self.bind("", Op::Select(list, 1));
+        let argument = match acc {
+            Some(acc) => self.bind("", Op::Record(vec![head, acc])),
+            None => head,
+        };
+        let result = self.bind(
+            "",
+            Op::Call(Callee::Closure(function_value), vec![argument]),
+        );
+        if fold {
+            self.terminate(Term::TailCall(
+                Callee::Known(worker, env),
+                vec![result, tail],
+            ));
+        } else {
+            let rest = self.bind("", Op::Call(Callee::Known(worker, env), vec![tail]));
+            let list = self.bind("", Op::Record(vec![result, rest]));
+            self.terminate(Term::Return(list));
+        }
+        let frame = self.frames.pop().unwrap();
+        self.functions.push(frame.finish());
+        if !fold {
+            return self.closure("map", worker, vec![function]);
+        }
+        let adapter = self.session.function_id();
+        self.frames
+            .push(Builder::new(adapter, "foldl.list", vec!["env", "list"]));
+        let env = Atom::Var(self.frame().params[0]);
+        let acc = self.bind("", Op::Select(env.clone(), 2));
+        let list = Atom::Var(self.frame().params[1]);
+        self.terminate(Term::TailCall(Callee::Known(worker, env), vec![acc, list]));
+        let frame = self.frames.pop().unwrap();
+        self.functions.push(frame.finish());
+        let partial = self.session.function_id();
+        self.frames
+            .push(Builder::new(partial, "foldl.acc", vec!["env", "acc"]));
+        let env = Atom::Var(self.frame().params[0]);
+        let function_value = self.bind("", Op::Select(env, 1));
+        let acc = Atom::Var(self.frame().params[1]);
+        let closure = self.closure("foldl.list", adapter, vec![function_value, acc]);
+        self.terminate(Term::Return(closure));
+        let frame = self.frames.pop().unwrap();
+        self.functions.push(frame.finish());
+        self.closure("foldl.acc", partial, vec![function])
     }
 
     /// The value the constructor `test` builds from `argument`.

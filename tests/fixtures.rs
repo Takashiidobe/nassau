@@ -136,7 +136,34 @@ fn is_lists_fixture(fixture: &Path) -> bool {
 }
 
 fn compare_mlton(fixture: &Path, mlton: &str, valid: bool) {
+    if !is_lexer_fixture(fixture)
+        && !in_directory(fixture, "modules")
+        && !in_directory(fixture, "functors")
+    {
+        return;
+    }
+    let source = fs::read_to_string(fixture).expect("read fixture");
+    if uses_mlton(&source) || directive(&source, "MLTON-SKIP").is_some() {
+        return;
+    }
+    if is_types_fixture(fixture) || is_parser_fixture(fixture) || !valid {
+        let result = Command::new(mlton)
+            .args(["-stop", "tc"])
+            .arg(fixture)
+            .output()
+            .expect("type-check MLton module oracle");
+        assert_eq!(
+            result.status.success(),
+            valid,
+            "MLton: {}: {}",
+            fixture.display(),
+            String::from_utf8_lossy(&result.stderr)
+        );
+        return;
+    }
     if !is_lexer_fixture(fixture) {
+        let output = mlton_program(mlton, fixture);
+        check_program(fixture, &source, &output);
         return;
     }
     let executable = std::env::temp_dir().join(format!(

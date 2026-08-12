@@ -135,7 +135,7 @@ bd prime                # Refresh Beads context
 ## Nassau
 
 Nassau is meant to be an SML (Standard Meta Language) implementation. It
-oracle tests against smlnj and mlton, and uses cranelift as its backend.
+oracle tests against smlnj, and uses cranelift as its backend.
 
 There should be **no unit tests**, all tests should be fixtures, either
 in `tests/fixtures` or `tests/repl`.

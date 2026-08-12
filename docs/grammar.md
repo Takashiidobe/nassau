@@ -276,8 +276,8 @@ limits. Fixity is reset when a new input chunk is parsed.
 Nassau's 31-bit `int` model matches the older SML/NJ configuration used by the
 fixtures. Integer-limit fixtures compare with SML/NJ only when its
 `Int.precision` matches, and always check Nassau with FileCheck. The
-exception-values and opaque functor-result fixtures use MLton to avoid bugs
-in SML/NJ 110.99.9. There is no garbage collector yet; heap values remain
+exception-values and opaque functor-result fixtures skip the SML/NJ oracle
+comparison because of bugs in SML/NJ 110.99.9, and retain FileCheck coverage. There is no garbage collector yet; heap values remain
 allocated for the lifetime of the process.
 
 Examples and regression coverage live in [the fixtures](../tests/fixtures)

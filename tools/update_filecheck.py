@@ -20,9 +20,10 @@ Later lines of the same stream use the -NEXT suffix (and -EMPTY for blank
 lines), so the block reads as a full-line match. The test harnesses strip the
 comment wrapper and hand the lines to LLVM's FileCheck.
 
-Expectations come from the oracle where SML/NJ defines the behaviour (program
-stdout/stderr/exit status, REPL transcripts) and from Nassau itself for
-diagnostics, whose wording is Nassau's own. Nassau's actual behaviour is then
+Program stdout and exit status come from Poly/ML. Compiler diagnostics and
+IR dumps come from Nassau. Existing runtime diagnostic and REPL printer
+expectations are validated with FileCheck and retained because their wording
+and layout belong to Nassau. Nassau's actual behaviour is then
 compared with what was written and any disagreement is reported, so a bug is
 never silently baked into a fixture.
 
@@ -51,9 +52,6 @@ GENERATED = re.compile(
     r"^\(\* (?:CHECK-(?:EXIT|STDOUT|STDERR|REPL|ERR)(?:-[A-Z]+)?:.*|exit_code:.*) \*\)\s*$"
 )
 ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
-SMLNJ_NOISE = re.compile(
-    r"^(?:Standard ML of New Jersey|\[opening |\[autoloading|\[library |\[scanning |\[parsing )"
-)
 
 
 class ToolError(Exception):
@@ -122,13 +120,6 @@ def decode(data):
     return data.decode("utf-8", errors="replace").replace("\r\n", "\n")
 
 
-def smlnj_strip_noise(text):
-    lines = text.split("\n")
-    while lines and SMLNJ_NOISE.match(lines[0]):
-        lines.pop(0)
-    return "\n".join(lines)
-
-
 def repl_source(source):
     kept = [line for line in source.split("\n") if not line.lstrip().startswith("(*")]
     return "\n".join(kept).rstrip("\n") + "\n"
@@ -141,7 +132,6 @@ def directive(fixture, name):
 
 def normalise_repl(text, prompt):
     """Strip prompts and trailing blank lines from a REPL transcript."""
-    text = smlnj_strip_noise(text)
     out = []
     for line in text.split("\n"):
         if prompt == "nassau> ":
@@ -155,49 +145,48 @@ def normalise_repl(text, prompt):
 
 
 class Oracle:
-    def __init__(self, smlnj, nassau):
-        self.smlnj = smlnj
+    def __init__(self, polyml, nassau):
+        self.polyml = polyml
         self.nassau = nassau
         result = run(
-            [smlnj],
+            [polyml, "-q"],
             stdin=b'val _ = print ("NASSAU-INT-PRECISION: " ^ (case Int.precision of SOME n => Int.toString n | NONE => "0") ^ "\\n");\n',
         )
         match = re.search(r"NASSAU-INT-PRECISION: (\d+)", decode(result.stdout))
         if result.returncode != 0 or not match:
-            raise ToolError("SML/NJ failed to report Int.precision")
+            raise ToolError("Poly/ML failed to report Int.precision")
         self.precision = int(match.group(1))
 
     def matching_precision(self, fixture):
-        required = directive(fixture, "SMLNJ-INT-PRECISION")
+        required = directive(fixture, "ORACLE-INT-PRECISION")
         return required is None or int(required) == self.precision
 
     def skip_reason(self, fixture):
-        reason = directive(fixture, "SMLNJ-SKIP")
+        reason = directive(fixture, "POLYML-SKIP")
         if reason is not None:
             return reason
         if not self.matching_precision(fixture):
             return f"Int.precision is {self.precision}"
         return None
 
-    def smlnj_program(self, fixture):
-        """Run a fixture under SML/NJ with the REPL echo of bindings silenced."""
-        with tempfile.TemporaryDirectory() as directory:
-            wrapper = Path(directory) / "wrapper.sml"
-            wrapper.write_text(
-                "val _ = Control.Print.out := {say = fn _ => (), flush = fn () => ()};\n"
-                # By base name, so SML/NJ reports positions as `file.sml:1.2`.
-                f'use "{fixture.name}";\n'
-            )
-            result = run([self.smlnj, str(wrapper)], stdin=b"", cwd=fixture.parent)
-        return (
-            smlnj_strip_noise(decode(result.stdout)),
-            decode(result.stderr),
-            result.returncode,
+    def reference(self, fixture, echo=False):
+        env = dict(os.environ, NASSAU_ORACLE_FILE=str(fixture),
+                   NASSAU_ORACLE_ECHO="1" if echo else "0")
+        return subprocess.run(
+            [self.polyml, "-q", "--script", str(ROOT / "tools/polyml_oracle.sml")],
+            input=b"", cwd=fixture.parent, capture_output=True, env=env, timeout=120,
         )
 
+    def polyml_program(self, fixture):
+        result = self.reference(fixture)
+        return decode(result.stdout), decode(result.stderr), result.returncode
+
     def rejects(self, fixture):
-        result = run([self.smlnj, str(fixture)], stdin=b"", cwd=fixture.parent)
-        return result.returncode != 0
+        result = self.reference(fixture)
+        warning = directive(fixture, "POLYML-WARNING")
+        return result.returncode != 0 or (
+            warning is not None and warning in decode(result.stderr)
+        )
 
     def nassau_compile(self, fixture, extra=()):
         return run(
@@ -241,7 +230,7 @@ def generate_run(oracle, fixture, warnings):
     if reason is not None:
         lines = [line for line in fixture.read_text().splitlines() if GENERATED.match(line)]
         if not any(line.startswith("(* CHECK-EXIT:") for line in lines):
-            raise ToolError("fixture excluded from SML/NJ needs existing FileCheck expectations")
+            raise ToolError("fixture excluded from Poly/ML needs existing FileCheck expectations")
         actual = oracle.nassau_program(fixture)
         for prefix, stream in zip(
             ("CHECK-STDOUT", "CHECK-STDERR", "CHECK-EXIT"),
@@ -263,18 +252,17 @@ def generate_run(oracle, fixture, warnings):
             if result.returncode != 0:
                 raise ToolError("Nassau disagrees with retained expectations:\n" + decode(result.stderr))
         warnings.append(
-            f"{rel(fixture)}: skipping SML/NJ ({reason}); "
+            f"{rel(fixture)}: skipping Poly/ML ({reason}); "
             "validated and retained existing FileCheck expectations"
         )
         return lines
-    stdout, stderr, code = oracle.smlnj_program(fixture)
+    stdout, stderr, code = oracle.polyml_program(fixture)
     lines = [f"(* CHECK-EXIT: {code} *)"]
     if stdout.strip():
         lines += stream_lines("CHECK-STDOUT", stdout)
-    if stderr.strip():
-        lines += stream_lines("CHECK-STDERR", stderr)
     actual = oracle.nassau_program(fixture)
-    if actual != (stdout, stderr, code):
+    lines += retained_checks(fixture, "CHECK-STDERR", actual[1])
+    if (actual[0], actual[2]) != (stdout, code):
         warnings.append(
             f"{rel(fixture)}: Nassau disagrees with the oracle "
             f"(nassau exit {actual[2]}, stdout {actual[0]!r}; "
@@ -301,7 +289,7 @@ def generate_error(oracle, fixture, warnings):
         if not oracle.rejects(fixture):
             warnings.append(f"{rel(fixture)}: oracle accepts this error/ fixture")
     else:
-        warnings.append(f"{rel(fixture)}: skipping SML/NJ ({reason}); checking Nassau's diagnostic only")
+        warnings.append(f"{rel(fixture)}: skipping Poly/ML ({reason}); checking Nassau's diagnostic only")
     return [
         f"(* CHECK-ERR: × {escape(message.group(1))} *)",
         f"(* CHECK-ERR: {location.group(1)}] *)",
@@ -309,24 +297,24 @@ def generate_error(oracle, fixture, warnings):
 
 
 def generate_core(oracle, fixture, warnings):
-    """Core IR dump from Nassau; SML/NJ only vouches that the file is valid SML."""
+    """Core IR dump from Nassau; Poly/ML only vouches that the file is valid SML."""
     return generate_parse(oracle, fixture, warnings, "--dump-core")
 
 
 def generate_parse(oracle, fixture, warnings, flag="--dump-ast"):
-    """Syntax-tree dump from Nassau; SML/NJ only vouches that the file is valid SML."""
+    """Syntax-tree dump from Nassau; Poly/ML only vouches that the file is valid SML."""
     result = oracle.nassau_compile(fixture, [flag])
     if result.returncode != 0:
         raise ToolError("Nassau rejected a valid fixture:\n" + decode(result.stderr))
-    reference = run([oracle.smlnj, str(fixture)], stdin=b"", cwd=fixture.parent)
+    reference = oracle.reference(fixture)
     if reference.returncode != 0:
-        warnings.append(f"{rel(fixture)}: SML/NJ rejects this valid fixture")
+        warnings.append(f"{rel(fixture)}: Poly/ML rejects this valid fixture")
     stderr = decode(result.stderr)
-    expected = decode(reference.stdout).count("Warning: match nonexhaustive")
+    expected = decode(reference.stderr).count("not exhaustive")
     actual = stderr.count("warning: match nonexhaustive")
     if actual != expected:
         warnings.append(
-            f"{rel(fixture)}: Nassau reports {actual} non-exhaustive matches, SML/NJ {expected}"
+            f"{rel(fixture)}: Nassau reports {actual} non-exhaustive matches, Poly/ML {expected}"
         )
     lines = stream_lines("CHECK-STDOUT", decode(result.stdout))
     if stderr.strip():
@@ -334,27 +322,27 @@ def generate_parse(oracle, fixture, warnings, flag="--dump-ast"):
     return lines
 
 
-def smlnj_bindings(oracle, fixture):
-    """(name, type) of every binding SML/NJ echoes when it loads the fixture."""
-    result = run([oracle.smlnj], stdin=fixture.read_bytes(), cwd=fixture.parent)
+def polyml_bindings(oracle, fixture):
+    """(name, type) of every binding Poly/ML echoes when it loads the fixture."""
+    result = oracle.reference(fixture, echo=True)
     bindings = []
-    for line in smlnj_strip_noise(decode(result.stdout)).split("\n"):
+    for line in decode(result.stdout).split("\n"):
         line = re.sub(r"^(?:[-=] )+", "", line)
         match = re.match(r"val (\S+) = (.*)$", line)
-        if match and " : " in match.group(2):
-            bindings.append((match.group(1), match.group(2).rsplit(" : ", 1)[1].strip()))
+        if match and ": " in match.group(2):
+            bindings.append((match.group(1), match.group(2).rsplit(": ", 1)[1].strip()))
     return bindings
 
 
 def generate_types(oracle, fixture, warnings):
-    """Inferred types from Nassau, cross-checked against what SML/NJ echoes."""
+    """Inferred types from Nassau, cross-checked against what Poly/ML echoes."""
     result = oracle.nassau_compile(fixture, ["--dump-types"])
     if result.returncode != 0:
         raise ToolError("Nassau rejected a valid fixture:\n" + decode(result.stderr))
     stdout = decode(result.stdout)
     ours = [tuple(line[4:].split(" : ", 1)) for line in stdout.splitlines()]
-    if ours != smlnj_bindings(oracle, fixture):
-        warnings.append(f"{rel(fixture)}: Nassau's inferred types differ from SML/NJ")
+    if ours != polyml_bindings(oracle, fixture):
+        warnings.append(f"{rel(fixture)}: Nassau's printed type signatures differ from Poly/ML")
     lines = stream_lines("CHECK-STDOUT", stdout)
     stderr = decode(result.stderr)
     if stderr.strip():
@@ -363,24 +351,42 @@ def generate_types(oracle, fixture, warnings):
 
 
 def generate_nodes(oracle, fixture, warnings):
-    """The type of every expression and pattern; SML/NJ only vouches that the file is valid."""
+    """The type of every expression and pattern; Poly/ML only vouches that the file is valid."""
     result = oracle.nassau_compile(fixture, ["--dump-expr-types"])
     if result.returncode != 0:
         raise ToolError("Nassau rejected a valid fixture:\n" + decode(result.stderr))
-    if not smlnj_bindings(oracle, fixture):
-        warnings.append(f"{rel(fixture)}: SML/NJ bound nothing in this fixture")
+    if not polyml_bindings(oracle, fixture):
+        warnings.append(f"{rel(fixture)}: Poly/ML bound nothing in this fixture")
     return stream_lines("CHECK-STDOUT", decode(result.stdout))
 
 
+def retained_checks(fixture, prefix, stream):
+    lines = [line for line in fixture.read_text().splitlines()
+             if line.startswith(f"(* {prefix}")]
+    if not lines:
+        if stream:
+            raise ToolError(f"missing {prefix} expectations for Nassau output")
+        return []
+    with tempfile.TemporaryDirectory() as directory:
+        check_file = Path(directory) / "checks.txt"
+        check_file.write_text("\n".join(line[3:-3] for line in lines) + "\n")
+        result = run([os.environ.get("FILECHECK", "FileCheck"), str(check_file),
+                      f"--check-prefix={prefix}", "--match-full-lines", "--allow-empty"],
+                     stdin=stream.encode())
+    if result.returncode != 0:
+        raise ToolError("Nassau disagrees with retained expectations:\n" + decode(result.stderr))
+    return lines
+
+
 def generate_repl(oracle, fixture, warnings):
-    source = fixture.read_text()
-    stdin = repl_source(source).encode()
-    reference = run([oracle.smlnj], stdin=stdin, cwd=fixture.parent)
-    expected = normalise_repl(decode(reference.stdout), "- ")
+    reference = oracle.reference(fixture)
+    expected_exit = int(directive(fixture, "ORACLE-EXIT") or "0")
+    if reference.returncode != expected_exit or "Static Errors" in decode(reference.stderr):
+        raise ToolError("Poly/ML disagrees with this REPL fixture:\n" + decode(reference.stderr))
+    stdin = repl_source(fixture.read_text()).encode()
     actual = run([oracle.nassau], stdin=stdin, cwd=fixture.parent)
-    if normalise_repl(decode(actual.stdout), "nassau> ") != expected:
-        warnings.append(f"{rel(fixture)}: Nassau's REPL transcript differs from SML/NJ")
-    return stream_lines("CHECK-REPL", expected)
+    return retained_checks(fixture, "CHECK-REPL",
+                           normalise_repl(decode(actual.stdout), "nassau> "))
 
 
 def rewrite(path, block):
@@ -421,15 +427,15 @@ def main():
     parser.add_argument("paths", nargs="*", help="fixture files or globs (default: all)")
     parser.add_argument("--check", action="store_true", help="do not write; exit 1 if stale")
     parser.add_argument("--nassau", default=str(ROOT / "target" / "debug" / "nassau"))
-    parser.add_argument("--smlnj", default=os.environ.get("SMLNJ", "smlnj"))
+    parser.add_argument("--polyml", default=os.environ.get("POLYML", "poly"))
     parser.add_argument("--no-build", action="store_true", help="skip cargo build")
     args = parser.parse_args()
 
-    if shutil.which(args.smlnj) is None:
-        raise ToolError(f"SML/NJ not found ({args.smlnj}); set SMLNJ or install smlnj")
+    if shutil.which(args.polyml) is None:
+        raise ToolError(f"Poly/ML not found ({args.polyml}); set POLYML or install polyml")
     if not args.no_build and args.nassau == str(ROOT / "target" / "debug" / "nassau"):
         subprocess.run(["cargo", "build", "--quiet"], cwd=ROOT, check=True)
-    oracle = Oracle(args.smlnj, args.nassau)
+    oracle = Oracle(args.polyml, args.nassau)
 
     generators = {
         "run": generate_run,

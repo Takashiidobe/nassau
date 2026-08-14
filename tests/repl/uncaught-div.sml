@@ -1,6 +1,7 @@
 (* The basis's exceptions describe themselves when uncaught. *)
 val a = 7;
 val b = a div 0;
+(* ORACLE-EXIT: 1 *)
 (* CHECK-REPL: val a = 7 : int *)
 (* CHECK-REPL-EMPTY: *)
 (* CHECK-REPL-NEXT: uncaught exception Div [divide by zero] *)

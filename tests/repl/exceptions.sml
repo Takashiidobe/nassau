@@ -5,6 +5,7 @@ fun check n = if n > 3 then raise Fail "too big" else n;
 val handled = check 7 handle Fail m => size m;
 val zero = 1 div 0 handle Div => 0;
 val _ = (print "before\n"; check 9);
+(* ORACLE-EXIT: 1 *)
 (* CHECK-REPL: val check = fn : int -> int *)
 (* CHECK-REPL-NEXT: val handled = 7 : int *)
 (* CHECK-REPL-NEXT: val zero = 0 : int *)

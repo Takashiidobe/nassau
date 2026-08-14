@@ -211,10 +211,12 @@ status. [tests/repl.rs](../tests/repl.rs) runs complete REPL transcripts.
 Expected output lives beside the input as FileCheck directives, except for
 lexer token snapshots. [tests/common/mod.rs](../tests/common/mod.rs) runs the
 checks, and [tools/update_filecheck.py](../tools/update_filecheck.py) regenerates
-expectations from SML/NJ. The harness also compares against SML/NJ. Module
+program stdout and exit expectations from Poly/ML. Nassau-specific REPL
+printing and runtime diagnostics retain validated FileCheck expectations.
+The harness compares against Poly/ML through a shared SML driver. Module
 runtime fixtures cover every valid module and functor type fixture, plus
 scope, effect, representation, and exception-identity cases. Integer
-fixtures declare the oracle precision they require. Known SML/NJ bugs carry
+fixtures declare the oracle precision they require. Known Poly/ML bugs carry
 an explicit oracle exclusion; Nassau's FileCheck checks still run.
 
 Beads stores implementation work and durable project notes in the local Dolt

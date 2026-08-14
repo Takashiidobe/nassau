@@ -16,12 +16,10 @@ structure Two = F (struct val step = 2 end)
 val () = print (Int.toString (!state) ^ " " ^ Int.toString (One.value + Two.value) ^ "\n")
 val () = print ((One.fail 4 handle Two.E _ => "wrong" | One.E n => Int.toString n) ^ "\n")
 val () = print (Int.toString (One.get (One.B 5) + Two.get (Two.B 6)) ^ "\n")
-local
-  structure Impl = struct val n = 7 end
-  functor Private (X : sig end) = struct val n = Impl.n end
-in
-  functor Public (X : sig end) = Private (X)
-end
+structure Impl = struct val n = 7 end
+functor Private (X : sig end) = struct val n = Impl.n end
+functor Public (X : sig end) = Private (X)
+structure Impl = struct val n = 700 end
 structure P = Public (struct end)
 val () = print (Int.toString P.n ^ "\n")
 (* CHECK-EXIT: 0 *)

@@ -25,10 +25,6 @@ fn repl_source(source: &str) -> String {
         + "\n"
 }
 
-fn smlnj_source(source: &str) -> String {
-    repl_source(source)
-}
-
 /// `(* XFAIL: reason *)` marks a fixture whose REPL output is known to differ.
 fn has_xfail(source: &str) -> bool {
     source
@@ -46,7 +42,7 @@ fn run_with_input(command: &mut Command, input: &str) -> std::io::Result<Output>
     child.wait_with_output()
 }
 
-fn compare_repl(fixture: &Path, smlnj: &str) {
+fn compare_repl(fixture: &Path, polyml: &str) {
     let source = fs::read_to_string(fixture).expect("read fixture");
     let input = repl_source(&source);
     let directory = fixture.parent().unwrap();
@@ -55,15 +51,39 @@ fn compare_repl(fixture: &Path, smlnj: &str) {
         &input,
     )
     .expect("run Nassau REPL");
-    let reference = run_with_input(
-        Command::new(smlnj).current_dir(directory),
-        &smlnj_source(&source),
-    )
-    .unwrap_or_else(|error| panic!("run SML/NJ ({smlnj}) for {}: {error}", fixture.display()));
+    let reference = Command::new(polyml)
+        .args(["-q", "--script"])
+        .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("tools/polyml_oracle.sml"))
+        .env("NASSAU_ORACLE_FILE", fixture)
+        .current_dir(directory)
+        .stdin(Stdio::null())
+        .output()
+        .unwrap_or_else(|error| {
+            panic!("run Poly/ML ({polyml}) for {}: {error}", fixture.display())
+        });
     assert!(nassau.status.success(), "{}", fixture.display());
-    assert!(reference.status.success(), "{}", fixture.display());
+    let expected_exit = source
+        .lines()
+        .find_map(|line| {
+            line.strip_prefix("(* ORACLE-EXIT: ")?
+                .strip_suffix(" *)")?
+                .parse::<i32>()
+                .ok()
+        })
+        .unwrap_or(0);
+    assert_eq!(
+        reference.status.code(),
+        Some(expected_exit),
+        "{}: {}",
+        fixture.display(),
+        String::from_utf8_lossy(&reference.stderr)
+    );
+    assert!(
+        !String::from_utf8_lossy(&reference.stderr).contains("Static Errors"),
+        "{}: Poly/ML rejected the REPL input",
+        fixture.display()
+    );
 
-    // Drop the prompts so the transcript compares like SML/NJ's.
     let transcript = String::from_utf8_lossy(&nassau.stdout)
         .replace("nassau> ", "")
         .trim_end()
@@ -81,18 +101,18 @@ fn compare_repl(fixture: &Path, smlnj: &str) {
 }
 
 #[test]
-fn repl_matches_smlnj() {
-    let explicit_smlnj = std::env::var("SMLNJ").ok();
-    let smlnj = explicit_smlnj.as_deref().unwrap_or("smlnj");
-    if let Err(error) = Command::new(smlnj).stdin(Stdio::null()).output() {
-        if error.kind() == std::io::ErrorKind::NotFound && explicit_smlnj.is_none() {
-            eprintln!("skipping SML/NJ REPL comparison: set SMLNJ or install `smlnj`");
+fn repl_matches_polyml() {
+    let explicit_polyml = std::env::var("POLYML").ok();
+    let polyml = explicit_polyml.as_deref().unwrap_or("poly");
+    if let Err(error) = Command::new(polyml).arg("--help").output() {
+        if error.kind() == std::io::ErrorKind::NotFound && explicit_polyml.is_none() {
+            eprintln!("skipping Poly/ML REPL comparison: set POLYML or install `polyml`");
             return;
         }
-        panic!("could not start SML/NJ ({smlnj}): {error}");
+        panic!("could not start Poly/ML ({polyml}): {error}");
     }
 
     for fixture in fixtures() {
-        compare_repl(&fixture, smlnj);
+        compare_repl(&fixture, polyml);
     }
 }

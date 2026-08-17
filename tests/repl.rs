@@ -42,6 +42,43 @@ fn run_with_input(command: &mut Command, input: &str) -> std::io::Result<Output>
     child.wait_with_output()
 }
 
+fn value_echoes(transcript: &str) -> Vec<String> {
+    let mut bindings = Vec::<String>::new();
+    let mut binding = None;
+    for line in transcript.lines() {
+        if line.starts_with("val ") {
+            bindings.push(line.to_string());
+            binding = Some(bindings.len() - 1);
+        } else if line.starts_with(char::is_whitespace) {
+            if let Some(index) = binding {
+                bindings[index].push_str(line);
+            }
+        } else {
+            binding = None;
+        }
+    }
+    bindings
+        .iter()
+        .map(|line| {
+            let mut quoted = false;
+            let mut escaped = false;
+            line.chars()
+                .filter(|&ch| {
+                    let keep = quoted || !ch.is_whitespace();
+                    if escaped {
+                        escaped = false;
+                    } else if ch == '\\' {
+                        escaped = true;
+                    } else if ch == '"' {
+                        quoted = !quoted;
+                    }
+                    keep
+                })
+                .collect()
+        })
+        .collect()
+}
+
 fn compare_repl(fixture: &Path, polyml: &str) {
     let source = fs::read_to_string(fixture).expect("read fixture");
     let input = repl_source(&source);
@@ -55,6 +92,14 @@ fn compare_repl(fixture: &Path, polyml: &str) {
         .args(["-q", "--script"])
         .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("tools/polyml_oracle.sml"))
         .env("NASSAU_ORACLE_FILE", fixture)
+        .env(
+            "NASSAU_ORACLE_ECHO",
+            if source.contains("(* ORACLE-VALUES *)") {
+                "1"
+            } else {
+                "0"
+            },
+        )
         .current_dir(directory)
         .stdin(Stdio::null())
         .output()
@@ -89,6 +134,14 @@ fn compare_repl(fixture: &Path, polyml: &str) {
         .trim_end()
         .to_owned()
         + "\n";
+    if source.contains("(* ORACLE-VALUES *)") {
+        assert_eq!(
+            value_echoes(&transcript),
+            value_echoes(&String::from_utf8_lossy(&reference.stdout)),
+            "{}: binding values differ from Poly/ML",
+            fixture.display()
+        );
+    }
     if source.contains("(* CHECK-STDOUT:") {
         for stream in [transcript.as_bytes(), reference.stdout.as_slice()] {
             common::check_stream(fixture, &source, "CHECK-STDOUT", stream, true)

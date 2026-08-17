@@ -243,7 +243,12 @@ impl<'a> Lexer<'a> {
                     }
                     None => return Err(self.error(start, LexerErrorKind::UnterminatedStringEscape)),
                 },
-                Some(ch) => value.push(ch),
+                Some(ch) => {
+                    let mut bytes = [0; 4];
+                    for &byte in ch.encode_utf8(&mut bytes).as_bytes() {
+                        value.push(char::from(byte));
+                    }
+                }
                 None => return Err(self.error(start, LexerErrorKind::UnterminatedString)),
             }
         }

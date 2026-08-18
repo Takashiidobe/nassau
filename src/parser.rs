@@ -312,10 +312,12 @@ pub struct Parser {
     allow_implicit_val: bool,
     file: PathBuf,
     /// Precedence and right-associativity of every infix name in scope.
-    fixity: std::collections::HashMap<String, (u8, bool)>,
+    fixity: Fixity,
     /// How many `local`, `let`, `struct` or `abstype` bodies enclose the parser.
     nesting: usize,
 }
+
+pub type Fixity = std::collections::HashMap<String, (u8, bool)>;
 
 impl Parser {
     fn with_file(tokens: Vec<Token>, file: PathBuf) -> Self {
@@ -407,6 +409,30 @@ impl Parser {
     }
 
     pub fn parse(mut self) -> Result<Program, ParseError> {
+        self.parse_program()
+    }
+
+    pub fn with_fixity(mut self, fixity: Option<&Fixity>) -> Self {
+        if let Some(fixity) = fixity {
+            self.fixity.clone_from(fixity);
+        }
+        self
+    }
+
+    pub fn repl_chunk(&mut self) -> Result<Option<(Program, Fixity)>, ParseError> {
+        while self.eat(&TokenKind::Semicolon) {}
+        if self.index == self.tokens.len() {
+            return Ok(None);
+        }
+        let program = self.parse_program_until(true)?;
+        Ok(Some((program, self.fixity.clone())))
+    }
+
+    fn parse_program(&mut self) -> Result<Program, ParseError> {
+        self.parse_program_until(false)
+    }
+
+    fn parse_program_until(&mut self, stop: bool) -> Result<Program, ParseError> {
         if self.tokens.len() == 1
             && let TokenKind::Integer(ref literal) = self.tokens[0].value
         {
@@ -416,6 +442,7 @@ impl Parser {
                 return Err(self.error_kind(ParseErrorKind::IntegerOutOfRange));
             }
             let result = value as i32;
+            self.index = self.tokens.len();
             return Ok(Program {
                 statements: Vec::new(),
                 result,
@@ -424,6 +451,9 @@ impl Parser {
         let mut statements = Vec::new();
         while self.index < self.tokens.len() {
             if self.eat(&TokenKind::Semicolon) {
+                if stop && !statements.is_empty() {
+                    break;
+                }
                 continue;
             }
             let declaration = if self.starts_decl() {
@@ -556,8 +586,8 @@ impl Parser {
                     self.expect_reserved("in")?;
                     let public = self.parse_decls_until("end")?;
                     self.expect_reserved("end")?;
-                    // Fixity set in the private part scopes over the public part only.
                     self.fixity = saved;
+                    self.export_fixity(&public);
                     DeclKind::Local(private, public)
                 }
                 "infix" | "infixr" | "nonfix" => self.parse_fixity_decl(&word)?,
@@ -1445,6 +1475,31 @@ impl Parser {
             self.previous_end(),
             ConstructorKind { name, argument },
         ))
+    }
+
+    fn export_fixity(&mut self, declarations: &[Decl]) {
+        for declaration in declarations {
+            match &declaration.value {
+                DeclKind::Fixity {
+                    kind,
+                    precedence,
+                    names,
+                } => {
+                    for name in names {
+                        if *kind == FixityKind::Nonfix {
+                            self.fixity.remove(name);
+                        } else {
+                            self.fixity
+                                .insert(name.clone(), (*precedence, *kind == FixityKind::Infixr));
+                        }
+                    }
+                }
+                DeclKind::Local(_, public) | DeclKind::Abstype { body: public, .. } => {
+                    self.export_fixity(public)
+                }
+                _ => {}
+            }
+        }
     }
 
     fn parse_fixity_decl(&mut self, word: &str) -> Result<DeclKind, ParseError> {

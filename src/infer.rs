@@ -8,12 +8,13 @@
 //! candidate types; it is never generalised and defaults to the first
 //! candidate (`int`) when the enclosing top-level declaration ends.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 
 use miette::SourceSpan;
 
 mod modules;
+mod printing;
 
 use crate::error::ThisError;
 use crate::parser::{
@@ -218,6 +219,7 @@ pub struct TypeTable {
     datatypes: HashMap<usize, Vec<(String, bool)>>,
     structures: HashMap<usize, StructureInfo>,
     declaration_constructors: HashMap<usize, Vec<(String, usize)>>,
+    exception_arguments: HashMap<usize, Vec<Option<Ty>>>,
 }
 
 #[derive(Clone, Default)]
@@ -238,6 +240,13 @@ pub struct Export {
 impl TypeTable {
     pub fn structure(&self, exp: &crate::parser::StrExp) -> &StructureInfo {
         &self.structures[&(exp as *const _ as usize)]
+    }
+
+    pub fn exception_argument(&self, decl: &Decl, index: usize) -> Option<&Ty> {
+        self.exception_arguments
+            .get(&(decl as *const _ as usize))?
+            .get(index)?
+            .as_ref()
     }
 
     pub fn declaration_constructors(&self, decl: &Decl) -> &[(String, usize)] {
@@ -283,9 +292,12 @@ impl TypeTable {
     }
 }
 
+type Echoes = Vec<(usize, String)>;
+
 /// What checking a program produced.
 pub struct Checked {
     pub bindings: Vec<Binding>,
+    pub echoes: Echoes,
     pub types: TypeTable,
 }
 
@@ -455,6 +467,8 @@ struct Infer {
     node_types: Vec<Node<Type>>,
     structure_info: HashMap<usize, StructureInfo>,
     declaration_constructors: HashMap<usize, Vec<(String, usize)>>,
+    exception_arguments: HashMap<usize, Vec<Option<Ty>>>,
+    abstract_datatypes: HashSet<usize>,
 }
 
 impl Infer {
@@ -476,6 +490,8 @@ impl Infer {
             node_types: Vec::new(),
             structure_info: HashMap::new(),
             declaration_constructors: HashMap::new(),
+            exception_arguments: HashMap::new(),
+            abstract_datatypes: HashSet::new(),
         };
         infer.install_builtins();
         infer
@@ -1856,6 +1872,18 @@ impl Infer {
             }
             DeclKind::Exception(bindings) => {
                 self.infer_exceptions(bindings, decl.source_span())?;
+                let arguments = bindings
+                    .iter()
+                    .map(|binding| {
+                        let entry = self.lookup(&binding.name).expect("checked exception");
+                        match self.resolve(&entry.scheme.ty) {
+                            Ty::Arrow(argument, _) => Some(*argument),
+                            _ => None,
+                        }
+                    })
+                    .collect();
+                self.exception_arguments
+                    .insert(decl as *const _ as usize, arguments);
                 Ok(Vec::new())
             }
             DeclKind::DatatypeCopy { name, original } => {
@@ -1908,6 +1936,7 @@ impl Infer {
                 // the type is abstract: no equality.
                 self.values.drain(before..after);
                 for tycon in tycons {
+                    self.abstract_datatypes.insert(tycon.stamp);
                     if let Some(info) = self.datatypes.get_mut(&tycon.stamp) {
                         info.never_equal = true;
                     }
@@ -1954,7 +1983,18 @@ impl Infer {
             }
             DeclKind::Open(paths) => {
                 self.open_structures(paths, decl.source_span())?;
-                Ok(Vec::new())
+                let mut bound = Vec::new();
+                for path in paths {
+                    if let Some(env) = self.lookup_struct(path) {
+                        bound.extend(
+                            env.values
+                                .iter()
+                                .filter(|entry| !entry.constructor)
+                                .map(|entry| (entry.name.clone(), entry.scheme.clone())),
+                        );
+                    }
+                }
+                Ok(bound)
             }
             DeclKind::Fixity { .. } => Ok(Vec::new()),
         }
@@ -2353,19 +2393,44 @@ impl Session {
         }
     }
 
+    pub fn binding_type(&self, ty: &Ty) -> Ty {
+        match ty {
+            Ty::Con { name, stamp, args } => {
+                let mut shown = name.clone();
+                if *stamp != 0 {
+                    let mut seen = HashSet::new();
+                    if let Some((name, _)) = self.infer.types.iter().rev().find(|(name, entry)| {
+                        seen.insert(name.clone()) && matches!(entry, TypeEntry::Data { tycon, .. } if tycon.stamp == *stamp)
+                    }) { shown = name.clone(); }
+                    else if let Some(path) = self.infer.paths.get(stamp) { shown = path.clone(); }
+                    else { shown = name.clone(); }
+                }
+                Ty::Con {
+                    name: shown,
+                    stamp: *stamp,
+                    args: args.iter().map(|ty| self.binding_type(ty)).collect(),
+                }
+            }
+            Ty::Arrow(from, to) => Ty::Arrow(
+                Box::new(self.binding_type(from)),
+                Box::new(self.binding_type(to)),
+            ),
+            Ty::Record(fields) => Ty::Record(
+                fields
+                    .iter()
+                    .map(|(name, ty)| (name.clone(), self.binding_type(ty)))
+                    .collect(),
+            ),
+            ty => ty.clone(),
+        }
+    }
+
     pub fn constructors(&self, ty: &Ty) -> Option<Vec<(String, Option<Ty>)>> {
         let Ty::Con { stamp, args, .. } = ty else {
             return None;
         };
         let info = self.infer.datatypes.get(stamp)?;
-        let visible = self.infer.values.iter().any(|entry| {
-            entry.constructor && match self.infer.prune(&entry.scheme.ty) {
-                Type::Con(con, _) => con.stamp == *stamp,
-                Type::Arrow(_, result) => matches!(self.infer.prune(&result), Type::Con(con, _) if con.stamp == *stamp),
-                _ => false,
-            }
-        }) || self.infer.paths.contains_key(stamp);
-        if !visible {
+        if self.infer.abstract_datatypes.contains(stamp) {
             return None;
         }
         Some(
@@ -2382,53 +2447,11 @@ impl Session {
         )
     }
 
-    pub fn exceptions(&self) -> Vec<(String, Option<Ty>)> {
-        fn collect(
-            infer: &Infer,
-            values: &[Entry],
-            structs: &[(String, StructEnv)],
-            prefix: &str,
-            out: &mut Vec<(String, Option<Ty>)>,
-        ) {
-            for entry in values {
-                if !entry.constructor {
-                    continue;
-                }
-                let ty = infer.resolve(&entry.scheme.ty);
-                let (result, argument) = match ty {
-                    Ty::Arrow(argument, result) => (*result, Some(*argument)),
-                    ty => (ty, None),
-                };
-                if result.is("exn") {
-                    out.push((format!("{prefix}{}", entry.name), argument));
-                }
-            }
-            for (name, structure) in structs {
-                collect(
-                    infer,
-                    &structure.values,
-                    &structure.structs,
-                    &format!("{prefix}{name}."),
-                    out,
-                );
-            }
-        }
-        let mut out = Vec::new();
-        collect(
-            &self.infer,
-            &self.infer.values,
-            &self.infer.structs,
-            "",
-            &mut out,
-        );
-        out
-    }
-
     /// Checks `program` in the environment left by earlier programs. On an
     /// error the environment is left as it was.
     pub fn check(&mut self, program: &Program) -> Result<Checked, Failure> {
         let mut infer = self.infer.clone();
-        let bindings = infer.check_statements(program)?;
+        let (bindings, echoes) = infer.check_statements(program)?;
         let nodes: Vec<Node<Ty>> = std::mem::take(&mut infer.node_types)
             .into_iter()
             .map(|node| Node {
@@ -2467,15 +2490,21 @@ impl Session {
             datatypes,
             structures: std::mem::take(&mut infer.structure_info),
             declaration_constructors: std::mem::take(&mut infer.declaration_constructors),
+            exception_arguments: std::mem::take(&mut infer.exception_arguments),
         };
         self.infer = infer;
-        Ok(Checked { bindings, types })
+        Ok(Checked {
+            bindings,
+            types,
+            echoes,
+        })
     }
 }
 
 impl Infer {
-    fn check_statements(&mut self, program: &Program) -> Result<Vec<Binding>, Failure> {
+    fn check_statements(&mut self, program: &Program) -> Result<(Vec<Binding>, Echoes), Failure> {
         let mut bindings = Vec::new();
+        let mut echoes = Vec::new();
         for statement in &program.statements {
             self.tyvars.clear();
             let bound = match &statement.value {
@@ -2494,6 +2523,13 @@ impl Infer {
             self.check_flexible(statement.source_span(), true)?;
             self.default_overloads();
             self.instantiate_dummies(&bound);
+            if let StmtKind::Declaration(decl) = &statement.value {
+                echoes.extend(
+                    self.declaration_echo(decl)
+                        .into_iter()
+                        .map(|echo| (bindings.len(), echo)),
+                );
+            }
             for (name, scheme) in bound {
                 bindings.push(Binding {
                     ty: self.show_scheme(&scheme),
@@ -2501,8 +2537,24 @@ impl Infer {
                     name,
                 });
             }
+            if let StmtKind::Declaration(Decl {
+                value: DeclKind::Open(paths),
+                ..
+            }) = &statement.value
+            {
+                for path in paths {
+                    if let Some(env) = self.lookup_struct(path) {
+                        echoes.extend(
+                            self.structure_items(env)
+                                .into_iter()
+                                .filter(|(_, echo)| echo.starts_with("exception "))
+                                .map(|(_, echo)| (bindings.len(), echo)),
+                        );
+                    }
+                }
+            }
         }
-        Ok(bindings)
+        Ok((bindings, echoes))
     }
 
     fn resolve(&self, ty: &Type) -> Ty {

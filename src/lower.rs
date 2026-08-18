@@ -82,6 +82,7 @@ struct Environment {
 #[derive(Clone, Default)]
 pub struct Session {
     next_function: FnId,
+    printing: bool,
     next_global: GlobalId,
     /// Top-level names, latest last.
     globals: Vec<(String, Binding)>,
@@ -92,6 +93,13 @@ pub struct Session {
 impl Session {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn new_repl() -> Self {
+        Self {
+            printing: true,
+            ..Self::default()
+        }
     }
 
     /// The global that holds the top-level binding `name`.
@@ -890,12 +898,24 @@ impl Lowerer<'_> {
                 // Each evaluation of the declaration makes new exceptions:
                 // an exception's identity is a fresh cell holding its name.
                 // A replication shares the identity it names.
-                for binding in bindings {
+                for (index, binding) in bindings.iter().enumerate() {
                     let identity = match &binding.kind {
-                        ExceptionKind::Fresh(_) => self.bind(
+                        ExceptionKind::Fresh(_) if !self.session.printing => self.bind(
                             &binding.name,
                             Op::Prim(Prim::Ref, vec![Atom::String(binding.name.clone())]),
                         ),
+                        ExceptionKind::Fresh(_) => {
+                            let descriptor = self
+                                .types
+                                .exception_argument(declaration, index)
+                                .cloned()
+                                .map(|ty| self.type_descriptor(&ty))
+                                .unwrap_or(Atom::Word(value::NIL));
+                            self.bind(
+                                &binding.name,
+                                Op::Record(vec![Atom::String(binding.name.clone()), descriptor]),
+                            )
+                        }
                         ExceptionKind::Copy(original) => {
                             let exn = Ty::Con {
                                 name: "exn".to_string(),
@@ -956,6 +976,35 @@ impl Lowerer<'_> {
             }
         }
         Ok(())
+    }
+
+    fn type_descriptor(&mut self, ty: &Ty) -> Atom {
+        let fields = match ty {
+            Ty::Con { name, stamp, args } => {
+                let args: Vec<_> = args.iter().map(|ty| self.type_descriptor(ty)).collect();
+                let args = self.bind("", Op::Record(args));
+                vec![
+                    Atom::Word(value::tagged(0)),
+                    Atom::String(name.clone()),
+                    Atom::Word(value::tagged(*stamp as i64)),
+                    args,
+                ]
+            }
+            Ty::Record(fields) => {
+                let fields: Vec<_> = fields
+                    .iter()
+                    .map(|(name, ty)| {
+                        let ty = self.type_descriptor(ty);
+                        self.bind("", Op::Record(vec![Atom::String(name.clone()), ty]))
+                    })
+                    .collect();
+                let fields = self.bind("", Op::Record(fields));
+                vec![Atom::Word(value::tagged(1)), fields]
+            }
+            Ty::Arrow(..) => vec![Atom::Word(value::tagged(2))],
+            Ty::Var { .. } => vec![Atom::Word(value::tagged(3))],
+        };
+        self.bind("", Op::Record(fields))
     }
 
     fn declarations(&mut self, declarations: &[Decl], top: bool) -> Res<()> {

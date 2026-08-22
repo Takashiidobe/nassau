@@ -28,3 +28,4 @@ val mixed = let val r = ref 1.5 in (r := !r * 2.0; !r) end
 (* CHECK-STDOUT-NEXT: val tick : int ref -> int *)
 (* CHECK-STDOUT-NEXT: val total : int *)
 (* CHECK-STDOUT-NEXT: val mixed : real *)
+(* CHECK-RUN-EXIT: 0 *)

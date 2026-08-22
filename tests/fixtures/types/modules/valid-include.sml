@@ -10,3 +10,4 @@ structure B : MORE = struct type t = bool val x = true val z = 3 end
 val b = B.z
 (* CHECK-STDOUT: val a : A.t list *)
 (* CHECK-STDOUT-NEXT: val b : int *)
+(* CHECK-RUN-EXIT: 0 *)

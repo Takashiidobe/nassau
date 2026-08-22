@@ -6,3 +6,4 @@ structure Nested = Inc (Twice (struct val n = 10 end))
 val b = Nested.n
 (* CHECK-STDOUT: val a : int *)
 (* CHECK-STDOUT-NEXT: val b : int *)
+(* CHECK-RUN-EXIT: 0 *)

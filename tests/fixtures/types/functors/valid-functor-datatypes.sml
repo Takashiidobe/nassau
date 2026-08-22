@@ -19,3 +19,4 @@ val m = leftmost t
 (* CHECK-STDOUT-NEXT: val n : int *)
 (* CHECK-STDOUT-NEXT: val leftmost : IntTree.tree -> int option *)
 (* CHECK-STDOUT-NEXT: val m : int option *)
+(* CHECK-RUN-EXIT: 0 *)

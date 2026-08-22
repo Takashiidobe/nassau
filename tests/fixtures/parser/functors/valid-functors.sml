@@ -12,3 +12,4 @@ functor A (X : ORD) = struct end and B (Y : ORD) = struct end
 (* CHECK-STDOUT-NEXT: (functor (Specs (sig (type (t ())) (val (x t))) (struct (val y x)))) *)
 (* CHECK-STDOUT-NEXT: (functor (Empty (sig) (struct))) *)
 (* CHECK-STDOUT-NEXT: (functor (A (X ORD) (struct)) (B (Y ORD) (struct))) *)
+(* CHECK-RUN-EXIT: 0 *)

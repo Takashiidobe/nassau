@@ -20,3 +20,4 @@ val cell = ref []
 (* CHECK-STDOUT-NEXT: (val g :=) *)
 (* CHECK-STDOUT-NEXT: (val mapped (app (app map ref) (list 1 2 3))) *)
 (* CHECK-STDOUT-NEXT: (val cell (app ref (list))) *)
+(* CHECK-RUN-EXIT: 0 *)

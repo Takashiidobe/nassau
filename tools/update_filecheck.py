@@ -14,6 +14,9 @@ as SML comment lines at the end of the file:
     (* CHECK-STDOUT: val f : 'a -> 'a *)    inferred types (--dump-types) for tests/fixtures/types
     (* CHECK-STDOUT: 1:9-1:10 exp x : int *) every node's type (--dump-expr-types) for
                                            tests/fixtures/types/nodes
+    (* CHECK-RUN-EXIT: 0 *)               native execution of a valid dump fixture
+    (* CHECK-RUN-STDOUT: verified *)      program output, separate from its dump
+    (* CHECK-RUN-ERR: × unsupported ... *) checked RUNTIME-SKIP rejection
     (* CHECK-REPL: val x = 1 : int *)       REPL transcript for tests/repl fixtures
 
 Later lines of the same stream use the -NEXT suffix (and -EMPTY for blank
@@ -49,7 +52,7 @@ TESTS = ROOT / "tests"
 
 # Lines this tool owns: generated CHECK lines and the retired exit_code note.
 GENERATED = re.compile(
-    r"^\(\* (?:CHECK-(?:EXIT|STDOUT|STDERR|REPL|ERR)(?:-[A-Z]+)?:.*|exit_code:.*) \*\)\s*$"
+    r"^\(\* (?:CHECK-(?:RUN-)?(?:EXIT|STDOUT|STDERR|REPL|ERR)(?:-[A-Z]+)?:.*|exit_code:.*) \*\)\s*$"
 )
 ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 
@@ -225,15 +228,15 @@ def classify(path):
     return "run"
 
 
-def generate_run(oracle, fixture, warnings):
+def generate_run(oracle, fixture, warnings, prefix="CHECK"):
     reason = oracle.skip_reason(fixture)
     if reason is not None:
-        lines = [line for line in fixture.read_text().splitlines() if GENERATED.match(line)]
-        if not any(line.startswith("(* CHECK-EXIT:") for line in lines):
+        lines = [line for line in fixture.read_text().splitlines() if line.startswith(f"(* {prefix}-") and GENERATED.match(line)]
+        if not any(line.startswith(f"(* {prefix}-EXIT:") for line in lines):
             raise ToolError("fixture excluded from Poly/ML needs existing FileCheck expectations")
         actual = oracle.nassau_program(fixture)
         for prefix, stream in zip(
-            ("CHECK-STDOUT", "CHECK-STDERR", "CHECK-EXIT"),
+            (f"{prefix}-STDOUT", f"{prefix}-STDERR", f"{prefix}-EXIT"),
             (actual[0], actual[1], str(actual[2]) + "\n"),
         ):
             checks = [line[3:-3] for line in lines if line.startswith(f"(* {prefix}")]
@@ -257,11 +260,11 @@ def generate_run(oracle, fixture, warnings):
         )
         return lines
     stdout, stderr, code = oracle.polyml_program(fixture)
-    lines = [f"(* CHECK-EXIT: {code} *)"]
+    lines = [f"(* {prefix}-EXIT: {code} *)"]
     if stdout.strip():
-        lines += stream_lines("CHECK-STDOUT", stdout)
+        lines += stream_lines(f"{prefix}-STDOUT", stdout)
     actual = oracle.nassau_program(fixture)
-    lines += retained_checks(fixture, "CHECK-STDERR", actual[1])
+    lines += retained_checks(fixture, f"{prefix}-STDERR", actual[1])
     if (actual[0], actual[2]) != (stdout, code):
         warnings.append(
             f"{rel(fixture)}: Nassau disagrees with the oracle "
@@ -269,6 +272,20 @@ def generate_run(oracle, fixture, warnings):
             f"oracle exit {code}, stdout {stdout!r})"
         )
     return lines
+
+
+def generate_runtime(oracle, fixture, warnings):
+    reason = directive(fixture, "RUNTIME-SKIP")
+    if reason is None:
+        return generate_run(oracle, fixture, warnings, "CHECK-RUN")
+    compiled = oracle.nassau_compile(fixture, ["--verify"])
+    if compiled.returncode == 0:
+        fixture.with_suffix("").unlink(missing_ok=True)
+        raise ToolError(f"fixture now compiles; remove RUNTIME-SKIP ({reason})")
+    checks = retained_checks(fixture, "CHECK-RUN-ERR", decode(compiled.stderr), full_lines=False)
+    if not checks:
+        raise ToolError("RUNTIME-SKIP requires CHECK-RUN-ERR compiler diagnostics")
+    return checks
 
 
 def generate_error(oracle, fixture, warnings):
@@ -360,7 +377,7 @@ def generate_nodes(oracle, fixture, warnings):
     return stream_lines("CHECK-STDOUT", decode(result.stdout))
 
 
-def retained_checks(fixture, prefix, stream):
+def retained_checks(fixture, prefix, stream, full_lines=True):
     lines = [line for line in fixture.read_text().splitlines()
              if line.startswith(f"(* {prefix}")]
     if not lines:
@@ -370,9 +387,11 @@ def retained_checks(fixture, prefix, stream):
     with tempfile.TemporaryDirectory() as directory:
         check_file = Path(directory) / "checks.txt"
         check_file.write_text("\n".join(line[3:-3] for line in lines) + "\n")
-        result = run([os.environ.get("FILECHECK", "FileCheck"), str(check_file),
-                      f"--check-prefix={prefix}", "--match-full-lines", "--allow-empty"],
-                     stdin=stream.encode())
+        command = [os.environ.get("FILECHECK", "FileCheck"), str(check_file),
+                   f"--check-prefix={prefix}", "--allow-empty"]
+        if full_lines:
+            command.append("--match-full-lines")
+        result = run(command, stdin=stream.encode())
     if result.returncode != 0:
         raise ToolError("Nassau disagrees with retained expectations:\n" + decode(result.stderr))
     return lines
@@ -385,8 +404,14 @@ def generate_repl(oracle, fixture, warnings):
         raise ToolError("Poly/ML disagrees with this REPL fixture:\n" + decode(reference.stderr))
     stdin = repl_source(fixture.read_text()).encode()
     actual = run([oracle.nassau], stdin=stdin, cwd=fixture.parent)
-    return retained_checks(fixture, "CHECK-REPL",
-                           normalise_repl(decode(actual.stdout), "nassau> "))
+    if actual.returncode != 0:
+        raise ToolError("Nassau REPL failed:\n" + decode(actual.stderr))
+    transcript = normalise_repl(decode(actual.stdout), "nassau> ")
+    checks = retained_checks(fixture, "CHECK-REPL", transcript)
+    if "(* CHECK-STDOUT:" in fixture.read_text():
+        checks += retained_checks(fixture, "CHECK-STDOUT", transcript)
+        retained_checks(fixture, "CHECK-STDOUT", decode(reference.stdout))
+    return checks
 
 
 def rewrite(path, block):
@@ -453,6 +478,8 @@ def main():
             continue
         try:
             block = generators[kind](oracle, fixture, warnings)
+            if kind in {"parse", "core", "types", "nodes"}:
+                block += generate_runtime(oracle, fixture, warnings)
         except ToolError as error:
             failed.append(f"{rel(fixture)}: {error}")
             continue

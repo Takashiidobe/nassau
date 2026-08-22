@@ -8,3 +8,4 @@ val c = Same.x + 1
 (* CHECK-STDOUT: val a : A.t list *)
 (* CHECK-STDOUT-NEXT: val b : B.t list *)
 (* CHECK-STDOUT-NEXT: val c : int *)
+(* CHECK-RUN-EXIT: 0 *)

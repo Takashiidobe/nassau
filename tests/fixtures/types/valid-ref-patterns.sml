@@ -19,3 +19,4 @@ val poly = fn (ref x) => x
 (* CHECK-STDOUT-NEXT: val layered : 'a ref -> 'a ref * 'a *)
 (* CHECK-STDOUT-NEXT: val pair : int ref * int ref -> int *)
 (* CHECK-STDOUT-NEXT: val poly : 'a ref -> 'a *)
+(* CHECK-RUN-EXIT: 0 *)

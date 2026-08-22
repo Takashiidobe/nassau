@@ -40,3 +40,4 @@ val empty_record = fn {} => 1
 (* CHECK-STDOUT-NEXT: (val row_layered (app (fn ((record (a a) (b (as b (tuple c d)))) (+ (+ a c) d))) (record (a 1) (b (tuple 2 3))))) *)
 (* CHECK-STDOUT-NEXT: (val numbered (fn ((record (1 a) (2 b)) (+ a b)))) *)
 (* CHECK-STDOUT-NEXT: (val empty_record (fn (() 1))) *)
+(* CHECK-RUN-EXIT: 0 *)

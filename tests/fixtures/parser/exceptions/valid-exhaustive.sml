@@ -18,3 +18,4 @@ val six = fn (A, B n) => n
 (* CHECK-STDERR-NEXT: warning: match nonexhaustive at 4:11 *)
 (* CHECK-STDERR-NEXT: warning: match nonexhaustive at 7:12 *)
 (* CHECK-STDERR-NEXT: warning: match nonexhaustive at 8:11 *)
+(* CHECK-RUN-EXIT: 0 *)

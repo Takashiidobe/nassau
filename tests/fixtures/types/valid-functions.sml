@@ -17,6 +17,7 @@ fun typed (x : int) : int = x
 fun annotated (f : 'a -> 'b) (x : 'a) : 'b = f x
 fun fib n = if n < 2 then n else fib (n - 1) + fib (n - 2)
 val total = fact 5 + len [1, 2]
+val _ = print (if total = 122 andalso fib 8 = 21 andalso even 10 andalso not (odd 10) andalso loop 4 = "done" andalso ones 3 = [1,1,1] andalso app (fn x => x + 1) [1,2] = [2,3] andalso zip ([1,2], ["a","b"]) = [(1,"a"),(2,"b")] andalso curried 1 "a" true = (1,"a",true) then "functions verified\n" else raise Fail "functions")
 (* CHECK-STDOUT: val fact : int -> int *)
 (* CHECK-STDOUT-NEXT: val len : 'a list -> int *)
 (* CHECK-STDOUT-NEXT: val app : ('a -> 'b) -> 'a list -> 'b list *)
@@ -30,3 +31,5 @@ val total = fact 5 + len [1, 2]
 (* CHECK-STDOUT-NEXT: val annotated : ('a -> 'b) -> 'a -> 'b *)
 (* CHECK-STDOUT-NEXT: val fib : int -> int *)
 (* CHECK-STDOUT-NEXT: val total : int *)
+(* CHECK-RUN-EXIT: 0 *)
+(* CHECK-RUN-STDOUT: functions verified *)

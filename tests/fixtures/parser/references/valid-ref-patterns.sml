@@ -19,3 +19,4 @@ val pair = fn (ref a, ref b) => a + b
 (* CHECK-STDOUT-NEXT: (val layered (fn ((as c (con ref v)) (tuple c v)))) *)
 (* CHECK-STDOUT-NEXT: (val pair (fn ((tuple (con ref a) (con ref b)) (+ a b)))) *)
 (* CHECK-STDERR: warning: match nonexhaustive at 6:15 *)
+(* CHECK-RUN-EXIT: 0 *)

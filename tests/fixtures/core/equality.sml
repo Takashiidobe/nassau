@@ -57,3 +57,4 @@ fun poly (a, b) = a = b
 (* CHECK-STDOUT-NEXT:     g3 := v3 *)
 (* CHECK-STDOUT-NEXT:     return #0 *)
 (* CHECK-STDOUT-NEXT: } *)
+(* CHECK-RUN-EXIT: 0 *)

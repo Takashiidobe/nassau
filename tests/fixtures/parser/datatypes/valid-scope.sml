@@ -21,3 +21,4 @@ fun old A = 1
 (* CHECK-STDOUT-NEXT: (fun (shadow ((B) 1) ((C) 2))) *)
 (* CHECK-STDOUT-NEXT: (fun (old ((A) 1))) *)
 (* CHECK-STDERR: warning: match nonexhaustive at 14:9 *)
+(* CHECK-RUN-EXIT: 0 *)

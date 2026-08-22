@@ -5,6 +5,7 @@ val nested = List.length (List.map (fn x => x) xs)
 val tight = List.length xs + List.length xs * 2
 val negated = ~ 3 + 1
 val selected = #1 (1, "a") + 2
+(* RUNTIME-SKIP: unbound structure 'List' *)
 (* CHECK-STDOUT: (val xs (list 1 2 3)) *)
 (* CHECK-STDOUT-NEXT: (val size (app List.length xs)) *)
 (* CHECK-STDOUT-NEXT: (val curried (app (app List.map (fn (x (+ x 1)))) xs)) *)
@@ -12,3 +13,5 @@ val selected = #1 (1, "a") + 2
 (* CHECK-STDOUT-NEXT: (val tight (+ (app List.length xs) {{[(]}}* (app List.length xs) 2))) *)
 (* CHECK-STDOUT-NEXT: (val negated (+ (app ~ 3) 1)) *)
 (* CHECK-STDOUT-NEXT: (val selected (+ (app (# 1) (tuple 1 "a")) 2)) *)
+(* CHECK-RUN-ERR: × unbound structure 'List' *)
+(* CHECK-RUN-ERR: :2:12] *)

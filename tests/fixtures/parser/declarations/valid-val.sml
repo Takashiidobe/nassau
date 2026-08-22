@@ -30,3 +30,4 @@ val SOME t = SOME 4
 (* CHECK-STDOUT-NEXT: (val (list q r) (list 1 2)) *)
 (* CHECK-STDOUT-NEXT: (val (:: s rest) (list 1 2 3)) *)
 (* CHECK-STDOUT-NEXT: (val (con SOME t) (app SOME 4)) *)
+(* CHECK-RUN-EXIT: 0 *)

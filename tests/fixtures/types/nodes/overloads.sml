@@ -37,3 +37,4 @@ val words = map (fn s => s ^ "!") ["a", "b"]
 (* CHECK-STDOUT-NEXT: 6:35-6:45 exp ["a", "b"] : string list *)
 (* CHECK-STDOUT-NEXT: 6:36-6:39 exp "a" : string *)
 (* CHECK-STDOUT-NEXT: 6:41-6:44 exp "b" : string *)
+(* CHECK-RUN-EXIT: 0 *)

@@ -10,3 +10,4 @@ signature T = sig
 end
 (* CHECK-STDOUT: (signature (S (sig (structure (A (sig (type (t ()))))) (structure (B (sig (type (t ())) (type (u ()))))) (sharing-structures A B)))) *)
 (* CHECK-STDOUT-NEXT: (signature (T (sig (structure (C (sig (structure (D (sig (type (v ())))))))) (structure (E (sig (structure (D (sig (type (v ())))))))) (sharing-structures C.D E.D)))) *)
+(* CHECK-RUN-EXIT: 0 *)

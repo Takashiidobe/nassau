@@ -20,3 +20,4 @@ val out = unbox boxed
 (* CHECK-STDOUT-NEXT: val two : int *)
 (* CHECK-STDOUT-NEXT: val boxed : string box *)
 (* CHECK-STDOUT-NEXT: val out : string *)
+(* CHECK-RUN-EXIT: 0 *)

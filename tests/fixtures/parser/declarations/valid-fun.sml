@@ -26,3 +26,4 @@ fun constant_result x = if x > 0 then "positive" else "other"
 (* CHECK-STDOUT-NEXT: (fun (record_parameter (((record (a a) (b b))) (+ a b)))) *)
 (* CHECK-STDOUT-NEXT: (fun (unit_parameter ((()) 1))) *)
 (* CHECK-STDOUT-NEXT: (fun (constant_result ((x) (if (> x 0) "positive" "other")))) *)
+(* CHECK-RUN-EXIT: 0 *)

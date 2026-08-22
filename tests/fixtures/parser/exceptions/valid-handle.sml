@@ -18,3 +18,4 @@ val h = g true handle Worse => 0
 (* CHECK-STDOUT-NEXT: (val f (handle (raise (app Bad 2)) ((con Bad 1) 1) ((con Bad n) n))) *)
 (* CHECK-STDOUT-NEXT: (fun (g ((x) (if x (raise Worse) 1)))) *)
 (* CHECK-STDOUT-NEXT: (val h (handle (app g true) (Worse 0))) *)
+(* CHECK-RUN-EXIT: 0 *)

@@ -10,3 +10,4 @@ fun h M.C = 1
 (* CHECK-STDOUT-NEXT: (fun (g ((M.C) 1) ((M.D) 2))) *)
 (* CHECK-STDOUT-NEXT: (fun (h ((M.C) 1))) *)
 (* CHECK-STDERR: warning: match nonexhaustive at 7:7 *)
+(* CHECK-RUN-EXIT: 0 *)

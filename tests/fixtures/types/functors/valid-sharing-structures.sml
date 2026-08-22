@@ -10,3 +10,4 @@ structure J = Join (struct
 end)
 val a = J.both
 (* CHECK-STDOUT: val a : int list *)
+(* CHECK-RUN-EXIT: 0 *)

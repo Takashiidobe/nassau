@@ -9,3 +9,4 @@ val x = 1
 (* CHECK-STDOUT-NEXT: (structure (T (: (struct (datatype (d () (A) (B)))) (sig (type (d ())))))) *)
 (* CHECK-STDOUT-NEXT: (val x 1) *)
 (* CHECK-STDERR: warning: match nonexhaustive at 3:7 *)
+(* CHECK-RUN-EXIT: 0 *)

@@ -18,3 +18,4 @@ val multiple = fn 0 => "zero" | _ => "other"
 (* CHECK-STDOUT-NEXT: (val anonymous (fn (x (+ x 1)))) *)
 (* CHECK-STDOUT-NEXT: (val typed_argument (fn ((: x int) x))) *)
 (* CHECK-STDOUT-NEXT: (val multiple (fn (0 "zero") (_ "other"))) *)
+(* CHECK-RUN-EXIT: 0 *)

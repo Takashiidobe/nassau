@@ -15,3 +15,4 @@ val c = T.x + 1
 (* CHECK-STDOUT: val a : int *)
 (* CHECK-STDOUT-NEXT: val b : ByTwo.t *)
 (* CHECK-STDOUT-NEXT: val c : int *)
+(* CHECK-RUN-EXIT: 0 *)

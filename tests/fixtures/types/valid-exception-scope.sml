@@ -21,3 +21,4 @@ val g = Outer
 (* CHECK-STDOUT-NEXT: val e : int *)
 (* CHECK-STDOUT-NEXT: val f : int *)
 (* CHECK-STDOUT-NEXT: val g : int -> exn *)
+(* CHECK-RUN-EXIT: 0 *)

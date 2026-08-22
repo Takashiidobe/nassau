@@ -85,17 +85,17 @@ fn is_lexer_fixture(fixture: &Path) -> bool {
     in_directory(fixture, "lexer")
 }
 
-/// Parser fixtures are checked through `--dump-ast`, not compiled and run.
+/// Parser snapshots use `--dump-ast`; runtime trials compile the same source.
 fn is_parser_fixture(fixture: &Path) -> bool {
     in_directory(fixture, "parser")
 }
 
-/// Core fixtures are checked through `--dump-core`, not compiled and run.
+/// Core snapshots use `--dump-core`; runtime trials compile the same source.
 fn is_core_fixture(fixture: &Path) -> bool {
     in_directory(fixture, "core")
 }
 
-/// Type fixtures are checked through `--dump-types`, not compiled and run.
+/// Type snapshots use dumps; runtime trials compile the same source.
 fn is_types_fixture(fixture: &Path) -> bool {
     in_directory(fixture, "types")
 }
@@ -115,14 +115,14 @@ fn polyml_program(polyml: &str, fixture: &Path) -> Output {
         .expect("run Poly/ML fixture oracle")
 }
 
-fn check_program(fixture: &Path, source: &str, output: &Output) {
+fn check_program(fixture: &Path, source: &str, output: &Output, prefix: &str) {
     let code = output.status.code();
-    if source.contains("(* CHECK-EXIT") {
+    if source.contains(&format!("(* {prefix}-EXIT")) {
         let code = code.map_or_else(|| "signal".to_owned(), |code| code.to_string());
         common::check_stream(
             fixture,
             source,
-            "CHECK-EXIT",
+            &format!("{prefix}-EXIT"),
             format!("{code}\n").as_bytes(),
             true,
         )
@@ -135,10 +135,22 @@ fn check_program(fixture: &Path, source: &str, output: &Output) {
             fixture.display()
         );
     }
-    common::check_stream(fixture, source, "CHECK-STDOUT", &output.stdout, true)
-        .unwrap_or_else(|error| panic!("{error}"));
-    common::check_stream(fixture, source, "CHECK-STDERR", &output.stderr, true)
-        .unwrap_or_else(|error| panic!("{error}"));
+    common::check_stream(
+        fixture,
+        source,
+        &format!("{prefix}-STDOUT"),
+        &output.stdout,
+        true,
+    )
+    .unwrap_or_else(|error| panic!("{error}"));
+    common::check_stream(
+        fixture,
+        source,
+        &format!("{prefix}-STDERR"),
+        &output.stderr,
+        true,
+    )
+    .unwrap_or_else(|error| panic!("{error}"));
 }
 
 fn compare_fixture(fixture: &Path, polyml: &str, precision: u32) {
@@ -244,7 +256,7 @@ fn compare_fixture(fixture: &Path, polyml: &str, precision: u32) {
             .output()
             .expect("run Nassau output");
         let _ = fs::remove_file(&executable);
-        check_program(fixture, &source, &nassau_output);
+        check_program(fixture, &source, &nassau_output, "CHECK");
         if is_lists_fixture(fixture) {
             assert!(nassau_output.status.success(), "{}", fixture.display());
         } else if compare_oracle {
@@ -265,6 +277,60 @@ fn compare_fixture(fixture: &Path, polyml: &str, precision: u32) {
     }
 }
 
+fn runtime_fixture(fixture: &Path, polyml: &str, precision: u32) {
+    let source = fs::read_to_string(fixture).expect("read fixture");
+    let directory = fixture.parent().expect("fixture parent");
+    let compiled = Command::new(env!("CARGO_BIN_EXE_nassau"))
+        .arg("--verify")
+        .arg(fixture)
+        .current_dir(directory)
+        .output()
+        .expect("compile runtime fixture");
+    if let Some(reason) = directive(&source, "RUNTIME-SKIP") {
+        if compiled.status.success() {
+            let _ = fs::remove_file(fixture.with_extension(""));
+            panic!(
+                "{} now compiles; remove RUNTIME-SKIP ({reason}) and generate runtime checks",
+                fixture.display()
+            );
+        }
+        common::check_stream(fixture, &source, "CHECK-RUN-ERR", &compiled.stderr, false)
+            .unwrap_or_else(|error| panic!("{error}"));
+        return;
+    }
+    assert!(
+        compiled.status.success(),
+        "{}: runtime compilation failed: {}",
+        fixture.display(),
+        String::from_utf8_lossy(&compiled.stderr)
+    );
+    let executable = fixture.with_extension("");
+    let output = Command::new(&executable).current_dir(directory).output();
+    let _ = fs::remove_file(&executable);
+    let output = output.expect("run runtime fixture");
+    assert!(
+        source.contains("(* CHECK-RUN-EXIT:"),
+        "{}: missing runtime expectations; run tools/update_filecheck.py",
+        fixture.display()
+    );
+    check_program(fixture, &source, &output, "CHECK-RUN");
+    if directive(&source, "POLYML-SKIP").is_none() && matching_precision(&source, precision) {
+        let reference = polyml_program(polyml, fixture);
+        assert_eq!(
+            output.stdout,
+            reference.stdout,
+            "runtime stdout differs for {}",
+            fixture.display()
+        );
+        assert_eq!(
+            output.status.code(),
+            reference.status.code(),
+            "runtime exit differs for {}",
+            fixture.display()
+        );
+    }
+}
+
 fn main() {
     let arguments = Arguments::from_args();
     let explicit_polyml = std::env::var_os("POLYML").is_some();
@@ -280,23 +346,40 @@ fn main() {
         0
     };
     let fixtures_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
-    let trials = fixtures()
-        .into_iter()
-        .map(|fixture| {
-            let name = fixture
-                .strip_prefix(&fixtures_root)
-                .expect("fixture is under tests/fixtures")
-                .display()
-                .to_string();
-            let polyml = polyml.clone();
-            Trial::ignorable_test(name, move || {
-                if !polyml_available {
-                    return Ok(Completion::ignored_with("Poly/ML is not installed"));
-                }
-                compare_fixture(&fixture, &polyml, precision);
-                Ok(Completion::Completed)
-            })
-        })
-        .collect();
+    let mut trials = Vec::new();
+    for fixture in fixtures() {
+        let name = fixture
+            .strip_prefix(&fixtures_root)
+            .expect("fixture root")
+            .display()
+            .to_string();
+        if expected_valid(&fixture)
+            && (is_types_fixture(&fixture)
+                || is_parser_fixture(&fixture)
+                || is_core_fixture(&fixture))
+        {
+            let runtime_path = fixture.clone();
+            let runtime_polyml = polyml.clone();
+            trials.push(Trial::ignorable_test(
+                format!("runtime/{name}"),
+                move || {
+                    if !polyml_available {
+                        return Ok(Completion::ignored_with("Poly/ML is not installed"));
+                    }
+                    runtime_fixture(&runtime_path, &runtime_polyml, precision);
+                    Ok(Completion::Completed)
+                },
+            ));
+        }
+        let polyml = polyml.clone();
+        trials.push(Trial::ignorable_test(name, move || {
+            if !polyml_available {
+                return Ok(Completion::ignored_with("Poly/ML is not installed"));
+            }
+            compare_fixture(&fixture, &polyml, precision);
+            Ok(Completion::Completed)
+        }));
+    }
+
     libtest_mimic::run(&arguments, trials).exit();
 }

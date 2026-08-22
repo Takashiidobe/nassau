@@ -17,3 +17,4 @@ val r = ref Red = ref Green
 (* CHECK-STDOUT-NEXT: val has : ''a * ''a tree -> bool *)
 (* CHECK-STDOUT-NEXT: val d : bool *)
 (* CHECK-STDOUT-NEXT: val r : bool *)
+(* CHECK-RUN-EXIT: 0 *)

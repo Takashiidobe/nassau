@@ -19,3 +19,4 @@ val four = double 2
 (* CHECK-STDOUT-NEXT:     g1 := v2 *)
 (* CHECK-STDOUT-NEXT:     return #0 *)
 (* CHECK-STDOUT-NEXT: } *)
+(* CHECK-RUN-EXIT: 0 *)

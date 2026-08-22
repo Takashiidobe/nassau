@@ -21,6 +21,7 @@ val differ = ref 1 <> ref 2
 val eq_poly = fn (a, b) => a = b
 val list_ref = ref [1, 2]
 val pushed = (list_ref := 0 :: !list_ref; !list_ref)
+val _ = (set (r,9); swap (r, #1 pair); print (if get r = 1 andalso !(#1 pair) = 9 andalso inner = "s" andalso stored = 6 andalso same andalso differ andalso pushed = [0,1,2] then "references verified\n" else raise Fail "references"))
 (* CHECK-STDOUT: val r : int ref *)
 (* CHECK-STDOUT-NEXT: val cell : ?.X1 list ref *)
 (* CHECK-STDOUT-NEXT: val id_ref : (?.X1 -> ?.X1) ref *)
@@ -44,3 +45,5 @@ val pushed = (list_ref := 0 :: !list_ref; !list_ref)
 (* CHECK-STDOUT-NEXT: val eq_poly : ''a * ''a -> bool *)
 (* CHECK-STDOUT-NEXT: val list_ref : int list ref *)
 (* CHECK-STDOUT-NEXT: val pushed : int list *)
+(* CHECK-RUN-EXIT: 0 *)
+(* CHECK-RUN-STDOUT: references verified *)

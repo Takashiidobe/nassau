@@ -10,3 +10,4 @@ signature W = sig type (*a*) 'a t end where type 'a t = 'a list
 (* CHECK-STDOUT-NEXT: (signature (V (where (where S (type () t int)) (type () u bool)))) *)
 (* CHECK-STDOUT-NEXT: (structure (A (:> (struct (type (t () bool)) (type (u () int)) (val x (tuple true 1))) (where S (type () u int))))) *)
 (* CHECK-STDOUT-NEXT: (signature (W (where (sig (type (t ('a)))) (type ('a) t (tycon list 'a))))) *)
+(* CHECK-RUN-EXIT: 0 *)

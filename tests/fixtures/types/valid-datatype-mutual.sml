@@ -15,3 +15,4 @@ val n = count small
 (* CHECK-STDOUT-NEXT: val small : tree *)
 (* CHECK-STDOUT-NEXT: val sum : expr *)
 (* CHECK-STDOUT-NEXT: val n : int *)
+(* CHECK-RUN-EXIT: 0 *)

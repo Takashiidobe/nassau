@@ -21,3 +21,4 @@ val counted = size poly + size ints
 (* CHECK-STDOUT-NEXT: val pair : 'a stack * 'b stack *)
 (* CHECK-STDOUT-NEXT: val counted : int *)
 (* CHECK-STDERR: warning: match nonexhaustive at 3:10 *)
+(* CHECK-RUN-EXIT: 0 *)

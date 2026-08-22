@@ -19,3 +19,4 @@ val S.B g = S.B 1
 (* CHECK-STDOUT-NEXT: val d : int *)
 (* CHECK-STDOUT-NEXT: val e : S.d -> int *)
 (* CHECK-STDOUT-NEXT: val g : int *)
+(* CHECK-RUN-EXIT: 0 *)

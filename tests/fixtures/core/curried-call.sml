@@ -36,3 +36,4 @@ val increment = add 1
 (* CHECK-STDOUT-NEXT:     g2 := v4 *)
 (* CHECK-STDOUT-NEXT:     return #0 *)
 (* CHECK-STDOUT-NEXT: } *)
+(* CHECK-RUN-EXIT: 0 *)

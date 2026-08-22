@@ -13,3 +13,4 @@ val c = IntSort.min (1, 2) + 1
 (* CHECK-STDOUT: val a : int list *)
 (* CHECK-STDOUT-NEXT: val b : string *)
 (* CHECK-STDOUT-NEXT: val c : int *)
+(* CHECK-RUN-EXIT: 0 *)

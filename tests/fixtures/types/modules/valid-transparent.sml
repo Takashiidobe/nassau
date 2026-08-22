@@ -20,3 +20,4 @@ val e = C.x + 1
 (* CHECK-STDOUT-NEXT: val c : bool *)
 (* CHECK-STDOUT-NEXT: val d : int *)
 (* CHECK-STDOUT-NEXT: val e : int *)
+(* CHECK-RUN-EXIT: 0 *)

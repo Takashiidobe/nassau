@@ -24,3 +24,4 @@ val f = S.v
 (* CHECK-STDOUT-NEXT: val d : int *)
 (* CHECK-STDOUT-NEXT: val e : int *)
 (* CHECK-STDOUT-NEXT: val f : int list *)
+(* CHECK-RUN-EXIT: 0 *)

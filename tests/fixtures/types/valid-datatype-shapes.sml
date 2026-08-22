@@ -18,3 +18,4 @@ val only = Only
 (* CHECK-STDOUT-NEXT: val total : real *)
 (* CHECK-STDOUT-NEXT: val boxed : fn_box *)
 (* CHECK-STDOUT-NEXT: val only : unit_like *)
+(* CHECK-RUN-EXIT: 0 *)

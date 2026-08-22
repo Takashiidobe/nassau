@@ -22,3 +22,4 @@ val g : M.d -> int = f
 (* CHECK-STDOUT-NEXT: (fun (f ((M.A) 0) (((con M.B n)) n))) *)
 (* CHECK-STDOUT-NEXT: (type (t () M.d)) *)
 (* CHECK-STDOUT-NEXT: (val (: g (-> M.d int)) f) *)
+(* CHECK-RUN-EXIT: 0 *)

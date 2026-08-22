@@ -14,3 +14,4 @@ val d = U.one
 (* CHECK-STDOUT-NEXT: val b : int *)
 (* CHECK-STDOUT-NEXT: val c : string list *)
 (* CHECK-STDOUT-NEXT: val d : int *)
+(* CHECK-RUN-EXIT: 0 *)

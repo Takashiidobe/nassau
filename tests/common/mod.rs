@@ -89,3 +89,15 @@ pub fn check_stream(
         ))
     }
 }
+
+pub fn configure_gc(command: &mut Command, source: &str) {
+    for option in ["PLAN", "HEAP", "STRESS"] {
+        let prefix = format!("(* GC-{option}: ");
+        if let Some(value) = source
+            .lines()
+            .find_map(|line| line.trim().strip_prefix(&prefix)?.strip_suffix(" *)"))
+        {
+            command.env(format!("NASSAU_GC_{option}"), value);
+        }
+    }
+}

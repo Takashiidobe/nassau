@@ -1,15 +1,18 @@
-#![no_std]
-
 use core::ffi::{c_char, c_int, c_void};
 use core::ptr;
 
+mod gc;
+
+#[expect(
+    dead_code,
+    reason = "the shared value layout also defines compiler-only helpers"
+)]
 #[path = "../src/value.rs"]
 mod value;
 
 use value::{BUILTIN_EXCEPTIONS, KIND_REF, KIND_STRING, NIL, header};
 
 unsafe extern "C" {
-    fn malloc(size: usize) -> *mut u8;
     fn fwrite(bytes: *const u8, size: usize, count: usize, stream: *mut c_void) -> usize;
     fn fflush(stream: *mut c_void) -> c_int;
     fn fprintf(stream: *mut c_void, format: *const c_char, ...) -> c_int;
@@ -18,37 +21,27 @@ unsafe extern "C" {
     static mut stderr: *mut c_void;
 }
 
-static mut HEAP_NEXT: *mut u8 = ptr::null_mut();
-static mut HEAP_LEFT: usize = 0;
 static mut IDENTITIES: [i64; BUILTIN_EXCEPTIONS.len()] = [0; BUILTIN_EXCEPTIONS.len()];
 static mut RAISED: i64 = 0;
 static mut REPL: bool = false;
 static mut UNCAUGHT: i64 = 0;
 
 #[unsafe(no_mangle)]
-unsafe extern "C" fn nassau_alloc(fields: i64) -> *mut i64 {
+pub unsafe extern "C" fn nassau_alloc(length: i64, kind: i64) -> *mut i64 {
+    let bytes = gc::physical_size(length, kind).unwrap_or_else(|| out_of_memory());
+    gc::allocate(bytes, header(length, kind))
+}
+
+fn out_of_memory() -> ! {
     unsafe {
-        let bytes = (fields as usize).wrapping_add(1).wrapping_mul(8);
-        if HEAP_LEFT < bytes || HEAP_NEXT.is_null() {
-            let size = bytes.max(1 << 20);
-            HEAP_NEXT = malloc(size);
-            if HEAP_NEXT.is_null() {
-                fprintf(stderr, c"nassau: out of memory\n".as_ptr());
-                exit(1);
-            }
-            HEAP_LEFT = size;
-        }
-        let block = HEAP_NEXT.cast();
-        HEAP_NEXT = HEAP_NEXT.add(bytes);
-        HEAP_LEFT -= bytes;
-        block
+        fprintf(stderr, c"nassau: out of memory\n".as_ptr());
+        exit(1);
     }
 }
 
 unsafe fn string(bytes: &[u8]) -> i64 {
     unsafe {
-        let block = nassau_alloc((bytes.len() / 8 + 1) as i64);
-        block.write(header(bytes.len() as i64, KIND_STRING));
+        let block = nassau_alloc(bytes.len() as i64, KIND_STRING);
         ptr::copy_nonoverlapping(bytes.as_ptr(), block.add(1).cast(), bytes.len());
         block.add(1).cast::<u8>().add(bytes.len()).write(0);
         block as i64
@@ -64,7 +57,7 @@ unsafe fn string_length(string: i64) -> usize {
 }
 
 #[unsafe(no_mangle)]
-unsafe extern "C" fn nassau_print(string: i64) -> i64 {
+pub unsafe extern "C" fn nassau_print(string: i64) -> i64 {
     unsafe {
         fwrite(string_bytes(string), 1, string_length(string), stdout);
         fflush(stdout);
@@ -73,15 +66,16 @@ unsafe extern "C" fn nassau_print(string: i64) -> i64 {
 }
 
 #[unsafe(no_mangle)]
-unsafe extern "C" fn nassau_exception(index: i64) -> i64 {
+pub unsafe extern "C" fn nassau_exception(index: i64) -> i64 {
     unsafe {
         let slot = (index >> 1) as usize;
         let identity = (&raw mut IDENTITIES).cast::<i64>().add(slot);
         if identity.read() == 0 {
             let name = BUILTIN_EXCEPTIONS.get_unchecked(slot);
-            let block = nassau_alloc(1);
-            block.write(header(1, KIND_REF));
-            block.add(1).write(string(name.as_bytes()));
+            let block = nassau_alloc(1, KIND_REF);
+            gc::with_roots([block as usize], || {
+                block.add(1).write(string(name.as_bytes()))
+            });
             identity.write(block as i64);
         }
         identity.read()
@@ -89,17 +83,17 @@ unsafe extern "C" fn nassau_exception(index: i64) -> i64 {
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn nassau_raised() -> *mut i64 {
+pub extern "C" fn nassau_raised() -> *mut i64 {
     &raw mut RAISED
 }
 
 #[unsafe(no_mangle)]
-unsafe extern "C" fn nassau_repl() {
+pub unsafe extern "C" fn nassau_repl() {
     unsafe { REPL = true }
 }
 
 #[unsafe(no_mangle)]
-unsafe extern "C" fn nassau_take_uncaught() -> i64 {
+pub unsafe extern "C" fn nassau_take_uncaught() -> i64 {
     unsafe {
         let exception = UNCAUGHT;
         UNCAUGHT = 0;
@@ -108,7 +102,7 @@ unsafe extern "C" fn nassau_take_uncaught() -> i64 {
 }
 
 #[unsafe(no_mangle)]
-unsafe extern "C" fn nassau_uncaught() -> c_int {
+pub unsafe extern "C" fn nassau_uncaught() -> c_int {
     unsafe {
         let exception = RAISED as *const i64;
         RAISED = 0;
@@ -157,9 +151,37 @@ unsafe extern "C" fn nassau_uncaught() -> c_int {
 }
 
 #[unsafe(no_mangle)]
-unsafe extern "C" fn nassau_exit(status: i64) {
+pub unsafe extern "C" fn nassau_exit(status: i64) {
     unsafe {
         fflush(stdout);
         exit(((status >> 1) & 0xff) as c_int);
     }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nassau_roots_push(frame: *mut usize, count: usize, code: usize) {
+    unsafe { gc::push_roots(frame, count, code) }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nassau_roots_pop(frame: *mut usize) {
+    unsafe { gc::pop_roots(frame) }
+}
+
+pub fn with_root<T>(value: i64, f: impl FnOnce() -> T) -> T {
+    gc::with_roots([value as usize], f)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn nassau_global_root(address: usize) {
+    gc::register_global(address);
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn nassau_code_global(code: usize, address: usize) {
+    gc::register_code_global(code, address);
+}
+
+pub fn replace_global_roots(addresses: &[usize]) {
+    gc::replace_globals(addresses);
 }

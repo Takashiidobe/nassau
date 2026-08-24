@@ -90,6 +90,49 @@ pub struct Session {
     functors: Vec<(String, Rc<Functor>)>,
 }
 
+fn visible<T>(values: &[(String, T)]) -> impl Iterator<Item = &T> {
+    let mut names = std::collections::BTreeSet::new();
+    values
+        .iter()
+        .rev()
+        .filter_map(move |(name, value)| names.insert(name).then_some(value))
+}
+
+fn environment_roots(
+    globals: &[(String, Binding)],
+    structures: &[(String, Structure)],
+    functors: &[(String, Rc<Functor>)],
+    roots: &mut std::collections::BTreeSet<GlobalId>,
+    visited: &mut std::collections::BTreeSet<usize>,
+) {
+    for binding in visible(globals) {
+        if let Binding::Global(global, _) = binding {
+            roots.insert(*global);
+        }
+    }
+    for structure in visible(structures) {
+        environment_roots(
+            &structure.values,
+            &structure.structures,
+            &[],
+            roots,
+            visited,
+        );
+    }
+    for functor in visible(functors) {
+        if visited.insert(Rc::as_ptr(functor) as usize) {
+            let environment = &functor.environment;
+            environment_roots(
+                &environment.globals,
+                &environment.structures,
+                &environment.functors,
+                roots,
+                visited,
+            );
+        }
+    }
+}
+
 impl Session {
     pub fn new() -> Self {
         Self::default()
@@ -100,6 +143,19 @@ impl Session {
             printing: true,
             ..Self::default()
         }
+    }
+
+    pub fn root_globals(&self) -> std::collections::BTreeSet<GlobalId> {
+        let mut roots = std::collections::BTreeSet::new();
+        let mut visited = std::collections::BTreeSet::new();
+        environment_roots(
+            &self.globals,
+            &self.structures,
+            &self.functors,
+            &mut roots,
+            &mut visited,
+        );
+        roots
     }
 
     /// The global that holds the top-level binding `name`.

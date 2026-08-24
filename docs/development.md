@@ -91,3 +91,130 @@ diagnostics and IR dumps from Nassau. Runtime diagnostic wording and REPL value
 printing are Nassau-specific: the updater validates their existing FileCheck
 checks and retains them. Edit these checks explicitly when changing the printer. REPL fixtures with an
 uncaught exception declare `(* ORACLE-EXIT: 1 *)`.
+
+## MMTk runtime
+
+`runtime` is a Cargo workspace crate, shared as an rlib by the compiler/JIT
+and as a staticlib by generated native programs. MMTk is pinned to 0.33.0
+with default features disabled and `vo_bit` enabled (which enables eager
+sweeping). The runtime requires `std`; it no longer provides a separate
+`no_std` allocator or panic handler. The native archive is built in a separate
+Cargo target directory with `panic=abort`, includes its Rust dependencies, and
+is embedded in the compiler. The JIT links only the rlib. `build.rs` obtains
+required system libraries from rustc's `--print=native-static-libs` output;
+native linking still honors `NASSAU_CC`. Build errors retain Cargo diagnostics.
+The tested platform is x86_64 Linux with rustc 1.100.0-nightly
+(5a2be9f5f, 2026-09-06); other platforms are not verified.
+
+The default production plan is non-moving MarkSweep, using a 32 MiB fixed
+heap and one worker. `NASSAU_GC_PLAN=NoGC` selects the allocation-only plan;
+`NASSAU_GC_HEAP=8m` changes the heap size. `NASSAU_GC_STRESS=N` requests
+a collection before every Nth allocation (0 disables forced collections).
+These are Nassau options; other MMTk environment options are not imported.
+A process has one lazily initialized MMTk instance and a thread-local bound
+mutator, shared by successive REPL chunks. Thread exit flushes and destroys
+the mutator. SML runtime globals assume one SML execution thread. Exhaustion
+prints `nassau: out of memory` and exits with status 1. NoGC proves allocation
+and linkage, not bounded memory.
+
+The allocation ABI is `nassau_alloc(length, kind)`, where length counts bytes
+for strings and fields for other kinds. It checks header representability,
+physical size, and object kind before allocating at 8-byte alignment. Allocations
+above the plan's default-allocator limit use large-object semantics for both
+`alloc` and `post_alloc`. A string
+uses `8 + 8 * (length / 8 + 1)` bytes, including its terminator and padding;
+other objects use `8 * (length + 1)`. Before `post_alloc`, the runtime writes
+the header and zeros the entire payload. Generated code then fills fields.
+There is no safepoint during these stores; nested allocations require the
+in-progress object and allocation operands to be rooted. The generated shadow
+stack and runtime scopes provide these roots (`nassau-949.9.4`). Zeroed fields
+remain non-reference sentinels if an object is scanned while nested
+initialization is in progress.
+
+The object reference is the aligned header address. Mark bits, forwarding
+status and large-object mark/nursery bits use MMTk side metadata. The forwarding
+pointer specification reserves the header only for unsupported moving plans;
+MarkSweep does not overwrite it. Object scanning visits records and refs,
+and closure captures after the raw code field. Strings and reals have no
+reference fields. Tagged slots reject zero, misaligned words, static data and
+addresses without valid-object metadata before constructing object references;
+valid-object bits remain available during tracing. Writable slots use atomic
+word loads and stores. This does not enable moving collectors.
+
+Static language objects emitted by `Translator::data` are exclusively
+string and real literals, so they contain no managed children. Writable JIT
+globals are separate root slots, not static language objects; their lifetime
+management is tracked in `nassau-949.9.5`. Exception objects and REPL type
+descriptors are ordinary managed record/ref graphs and follow those scanning
+rules. Nassau has no weak-reference or finalizer objects.
+
+Run allocation and object-model fixtures with:
+
+```sh
+cargo test --test fixtures mmtk-nogc
+cargo test --test repl
+cargo test -p nassau-runtime --test object-model
+```
+
+The object-model fixture checks size/alignment, initialized payloads, rejected
+slots and precise field visitation, then launches a separate process with a
+controlled MarkSweep binding using the production object model and scanner.
+Two forced collections retain shared cyclic records/refs/closure captures,
+reclaim unreachable cycles, and reject pointer-shaped closure code, real and
+string payloads. This fixture supplies explicit roots and mutator coordination;
+its graph checks complement production native/REPL collection fixtures.
+The native collecting fixture allocates a million iterations of unreachable
+cycles under an 8 MiB heap while preserving a shared live graph. The REPL
+history fixture shadows 40 large strings under that heap and verifies that
+a saved closure still accesses its earlier global after collection.
+
+Generated functions publish precise shadow-stack frames. A backward fixed-point
+analysis computes tagged variables live across each statement and terminator,
+including handler paths. Publication clears stale slots and spills the live
+values; allocated objects and runtime-call results occupy temporary slots until
+the next statement. Closure groups therefore root their members during mutual
+initialization. Helpers root their arguments, and all normal/exception returns
+and tail transfers pop their frame. A tail transfer has no allocation between
+popping the caller and publishing the callee frame. The collector runs only
+while the single SML mutator is parked. This fallback avoids a platform-specific
+frame walker and native/JIT stack-map relocation requirements.
+
+Runtime `with_roots` scopes use the same linked-frame layout. Built-in exception
+construction roots its partially filled ref across string allocation; REPL
+value/uncaught printing roots host-held objects across built-in exception
+initialization. The collector scans exception identities and raised/uncaught
+state in addition to published frames. The isolated fixture forces collection
+with objects reachable exclusively through nested stack and host scopes, then
+verifies reclamation after those scopes are removed.
+
+Generated entry functions register their module's global cells and function
+dependencies before allocation. Each function's registered dependencies include
+its global reads/stores and the transitive dependencies of statically called
+functions and created closures. A frame records its code address; root scanning
+visits the corresponding global cells. When scanning a live closure, its raw
+code address selects the same dependency metadata without treating the address
+as a heap reference. This keeps globals used by old callable code alive without
+rooting every historical module. JIT code and dependency metadata are retained
+for the executable code's lifetime; code unloading remains outside the scope.
+
+After a successful REPL phrase and its printing, persistent roots become the
+visible globals, visible structure exports and captured lexical environments
+of visible functors. A failed phrase restores the earlier environment before
+updating roots. Functor environments currently retain their visible lexical
+bindings conservatively; pruning unused functor captures remains part of
+`nassau-949.9.5`. Native global registrations last for the executable's lifetime.
+
+Fixture comments `GC-PLAN`, `GC-HEAP`, and `GC-STRESS` set the corresponding
+runtime options only for Nassau execution. Poly/ML still checks the same SML
+behavior. `mmtk-nogc.sml` explicitly exercises NoGC; `mmtk-collecting.sml`,
+`mmtk-history.sml` and `mmtk-exhaustion.sml` exercise production collection and
+configured exhaustion. Run the complete suite with periodic forced collection using:
+
+```sh
+NASSAU_GC_STRESS=1000 NASSAU_GC_HEAP=32m cargo test --workspace
+```
+
+The short `mmtk-safepoints.sml` fixtures force collection at every allocation.
+Using that interval for growing long-list fixtures makes GC work quadratic;
+the full suite uses a larger interval and a heap large enough for its live
+graphs. The collecting/history fixtures independently enforce their 8 MiB heap.

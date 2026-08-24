@@ -251,7 +251,9 @@ fn compare_fixture(fixture: &Path, polyml: &str, precision: u32) {
 
     if valid {
         let executable = fixture.with_extension("");
-        let nassau_output = Command::new(&executable)
+        let mut command = Command::new(&executable);
+        common::configure_gc(&mut command, &source);
+        let nassau_output = command
             .current_dir(directory)
             .output()
             .expect("run Nassau output");
@@ -305,7 +307,9 @@ fn runtime_fixture(fixture: &Path, polyml: &str, precision: u32) {
         String::from_utf8_lossy(&compiled.stderr)
     );
     let executable = fixture.with_extension("");
-    let output = Command::new(&executable).current_dir(directory).output();
+    let mut command = Command::new(&executable);
+    common::configure_gc(&mut command, &source);
+    let output = command.current_dir(directory).output();
     let _ = fs::remove_file(&executable);
     let output = output.expect("run runtime fixture");
     assert!(

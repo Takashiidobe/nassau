@@ -1,25 +1,24 @@
-//! The runtime library (runtime/nassau_runtime.rs), which build.rs compiles to a native archive.
-//! Compiled programs link the archive; the JIT calls the copy linked into
-//! the compiler.
+//! The shared runtime, linked as a Rust library for JIT calls and an archive for native code.
+
+use nassau_runtime::{
+    nassau_alloc, nassau_code_global, nassau_exception, nassau_exit, nassau_global_root,
+    nassau_print, nassau_raised, nassau_repl, nassau_roots_pop, nassau_roots_push,
+    nassau_take_uncaught, nassau_uncaught,
+};
 
 /// The runtime archive, written next to the object file when linking.
 pub const ARCHIVE: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/libnassau_runtime.a"));
 
-unsafe extern "C" {
-    fn nassau_alloc(fields: i64) -> *mut i64;
-    fn nassau_print(string: i64) -> i64;
-    fn nassau_exit(status: i64);
-    fn nassau_exception(index: i64) -> i64;
-    fn nassau_raised() -> *mut i64;
-    fn nassau_uncaught() -> i32;
-    fn nassau_repl();
-    fn nassau_take_uncaught() -> i64;
-}
+pub const NATIVE_LIBS: &str = env!("NASSAU_RUNTIME_NATIVE_LIBS");
 
 /// Runtime entry points called by generated code, for the JIT's symbol table.
-pub fn symbols() -> [(&'static str, *const u8); 6] {
+pub fn symbols() -> [(&'static str, *const u8); 10] {
     [
         ("nassau_alloc", nassau_alloc as *const u8),
+        ("nassau_global_root", nassau_global_root as *const u8),
+        ("nassau_code_global", nassau_code_global as *const u8),
+        ("nassau_roots_push", nassau_roots_push as *const u8),
+        ("nassau_roots_pop", nassau_roots_pop as *const u8),
         ("nassau_print", nassau_print as *const u8),
         ("nassau_exit", nassau_exit as *const u8),
         ("nassau_exception", nassau_exception as *const u8),
@@ -46,4 +45,12 @@ pub fn take_uncaught() -> Option<i64> {
 pub fn builtin_exception(index: i64) -> i64 {
     // SAFETY: the index names one of the runtime's built-in exceptions.
     unsafe { nassau_exception(crate::value::tagged(index)) }
+}
+
+pub fn with_root<T>(value: i64, f: impl FnOnce() -> T) -> T {
+    nassau_runtime::with_root(value, f)
+}
+
+pub fn replace_global_roots(addresses: &[usize]) {
+    nassau_runtime::replace_global_roots(addresses);
 }

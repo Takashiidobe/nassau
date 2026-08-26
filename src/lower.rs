@@ -22,6 +22,7 @@ use crate::parser::{
 use crate::value;
 
 mod decision;
+mod functor_roots;
 
 use decision::Test;
 
@@ -65,6 +66,7 @@ struct Structure {
 #[derive(Clone)]
 struct Functor {
     parameter: Option<String>,
+    roots: std::collections::BTreeSet<GlobalId>,
     environment: Environment,
     source: Source,
 }
@@ -103,7 +105,6 @@ fn environment_roots(
     structures: &[(String, Structure)],
     functors: &[(String, Rc<Functor>)],
     roots: &mut std::collections::BTreeSet<GlobalId>,
-    visited: &mut std::collections::BTreeSet<usize>,
 ) {
     for binding in visible(globals) {
         if let Binding::Global(global, _) = binding {
@@ -111,25 +112,10 @@ fn environment_roots(
         }
     }
     for structure in visible(structures) {
-        environment_roots(
-            &structure.values,
-            &structure.structures,
-            &[],
-            roots,
-            visited,
-        );
+        environment_roots(&structure.values, &structure.structures, &[], roots);
     }
     for functor in visible(functors) {
-        if visited.insert(Rc::as_ptr(functor) as usize) {
-            let environment = &functor.environment;
-            environment_roots(
-                &environment.globals,
-                &environment.structures,
-                &environment.functors,
-                roots,
-                visited,
-            );
-        }
+        roots.extend(&functor.roots);
     }
 }
 
@@ -147,14 +133,7 @@ impl Session {
 
     pub fn root_globals(&self) -> std::collections::BTreeSet<GlobalId> {
         let mut roots = std::collections::BTreeSet::new();
-        let mut visited = std::collections::BTreeSet::new();
-        environment_roots(
-            &self.globals,
-            &self.structures,
-            &self.functors,
-            &mut roots,
-            &mut visited,
-        );
+        environment_roots(&self.globals, &self.structures, &self.functors, &mut roots);
         roots
     }
 
@@ -1024,6 +1003,14 @@ impl Lowerer<'_> {
                         binding.name.clone(),
                         Rc::new(Functor {
                             parameter,
+                            roots: functor_roots::roots(
+                                &crate::span::Span::new(
+                                    declaration.start.clone(),
+                                    declaration.end.clone(),
+                                    DeclKind::Functor(vec![binding.clone()]),
+                                ),
+                                &environment,
+                            ),
                             environment: environment.clone(),
                             source: self.source.clone(),
                         }),

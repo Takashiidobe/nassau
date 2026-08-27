@@ -19,6 +19,7 @@ flowchart TD
     checks --> infer["infer.rs: types and bindings"]
     infer --> lower["lower.rs: core IR"]
     lower --> codegen["codegen.rs: Cranelift IR and machine code"]
+    lower --> interpreter["interpreter.rs: portable Rust execution"]
     codegen --> object["ObjectModule: object file"]
     object --> linker["system linker + Rust runtime archive"]
     linker --> executable["native executable"]
@@ -107,6 +108,41 @@ an object file for file compilation. `JITModule` keeps code and global cells
 inside the compiler process for the REPL. The translator is generic over the
 module interface, so both paths compile the same core operations.
 
+### Executing core IR in Rust
+
+[interpreter.rs](../src/interpreter.rs) executes the same core IR directly.
+`cargo run -- --interpret input.sml` uses this backend for a source file.
+`cargo run -- --interpret` starts a persistent interpreter REPL.
+The library exports the frontend, shared session and printer, interpreter,
+core IR and shared value constants for other hosts.
+
+An explicit frame stack holds block positions, variables and call results.
+Tail calls replace the current frame; exceptions enter a block's handler or
+remove frames until a handler is found. Neither operation uses Rust recursion.
+The result distinguishes normal return, an uncaught SML exception and process
+exit. Printed bytes accumulate in the interpreter's output buffer.
+
+Interpreter values are tagged immediates or typed `boa_gc::Gc` objects, rather
+than native machine words. `GcRefCell` supports mutable fields and recursive
+closure initialization. The collector traces iteratively, including long
+lists and cyclic references; the interpreter implements no collector or
+unsafe tracing code. Structural equality also uses an explicit work list.
+
+Globals are GC-managed cells. Closures retain cells used by their code,
+including dependencies of statically called functions and created closures.
+A host can call `retain_globals` with its current lowering-session roots to
+drop historical bindings while preserving globals needed by saved closures.
+Function IR and dependency metadata remain for the interpreter's lifetime;
+dropping the interpreter releases its heap roots and code. Collection is
+thread local, so a browser host should keep a session in one worker.
+
+The portable library builds with `--no-default-features`; the `native` feature
+enables Cranelift, CLI dependencies and native runtime archive generation.
+The `web` feature exports a `wasm-bindgen` `BrowserRepl` wrapping the shared
+session. [www](../www/README.md) packages it for `wasm32-unknown-unknown`
+with local editor assets and a worker that owns the session. Stop and reset
+replace the worker, releasing its code and heap.
+
 ## Values, memory, and the runtime
 
 Every SML value crossing a function boundary occupies one 64-bit word. Its low
@@ -160,11 +196,12 @@ or native stack unwinding machinery.
 
 ## What the REPL keeps
 
-[repl.rs](../src/repl.rs) owns a `JITModule`, a code-generation symbol table, an
-inference session, and a lowering session. The sessions preserve type and name
-environments; the JIT and symbol table preserve code addresses and global
-cells. That is how a closure or reference created in one input remains usable
-in the next.
+[session.rs](../src/session.rs) owns the persistent inference and lowering
+environments, fixity and phrase transactions. Its backend supplies execution,
+global values and root retention. [repl.rs](../src/repl.rs) supplies the native
+JIT backend and terminal input; `--interpret` selects the portable backend.
+Both preserve closures and references across submissions and use the shared
+[printing.rs](../src/printing.rs) value printer.
 
 A chunk is checked and lowered against copies of the environments. Those
 copies become current after compilation succeeds. If execution raises an
@@ -172,8 +209,8 @@ uncaught exception, the REPL restores the earlier type environment and forgets
 the new names, while keeping the already allocated function and global IDs.
 Effects on existing references and output already printed are not rolled back.
 
-The REPL prints bindings by reading their compiled global cells and decoding
-values according to their resolved types. Inference supplies declaration
+The REPL prints bindings by reading backend globals and decoding values
+according to their resolved types. Inference supplies declaration
 echoes and constructor payload types. JIT exception identities also carry a
 heap type descriptor, so local and generative exceptions remain printable
 outside their declaring scope. Native compilation keeps the smaller identity

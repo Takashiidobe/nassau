@@ -68,10 +68,6 @@ pub enum MatchErrorKind {
 }
 
 #[derive(Clone, Debug, ThisError)]
-#[expect(
-    clippy::enum_variant_names,
-    reason = "each variant names what was declared twice"
-)]
 pub enum ScopeErrorKind {
     #[error("duplicate variable '{0}' in pattern")]
     DuplicateVariable(String),

@@ -433,7 +433,8 @@ impl Parser {
     }
 
     fn parse_program_until(&mut self, stop: bool) -> Result<Program, ParseError> {
-        if self.tokens.len() == 1
+        if !self.allow_implicit_val
+            && self.tokens.len() == 1
             && let TokenKind::Integer(ref literal) = self.tokens[0].value
         {
             let value = Self::integer_value(literal)
@@ -460,7 +461,17 @@ impl Parser {
                 self.parse_decl()?
             } else if self.allow_implicit_val {
                 let start = self.tokens[self.index].start.clone();
-                self.parse_val_decl(start)?
+                let expr = self.parse_expr()?;
+                let end = expr.end.clone();
+                let pattern = Span::new(start.clone(), end.clone(), PatKind::Variable("it".into()));
+                Span::new(
+                    start,
+                    end,
+                    DeclKind::Val {
+                        recursive: false,
+                        bindings: vec![(pattern, expr)],
+                    },
+                )
             } else {
                 return Err(self.error(ParseErrorKind::Expect("a declaration".into())));
             };

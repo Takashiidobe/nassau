@@ -46,6 +46,17 @@ not installed. SML/NJ and MLton are not required.
 
 ## Fixture expectations
 
+The `interpreter/<fixture>` trials execute accepted programs with `--interpret`
+and check the same runtime expectations and Poly/ML oracle. Native MMTk
+fixtures and constructs rejected by shared lowering remain excluded. The
+standalone session fixture checks historical closure globals and reclamation
+of unreachable cycles with `boa_gc` weak references:
+
+```sh
+cargo test --test fixtures interpreter/
+cargo test --test interpreter-session
+```
+
 Fixtures carry their expected output as FileCheck comments at the end of the
 file (`CHECK-EXIT`, `CHECK-STDOUT`, `CHECK-STDERR` for compiled programs,
 `CHECK-ERR` for fixtures under an `error/` directory, `CHECK-STDOUT` for the inferred types of `tests/fixtures/types` (every node's under `types/nodes`) and the core IR of `tests/fixtures/core`, and `CHECK-REPL` for `tests/repl`). LLVM's
@@ -225,3 +236,12 @@ The short `mmtk-safepoints.sml` fixtures force collection at every allocation.
 Using that interval for growing long-list fixtures makes GC work quadratic;
 the full suite uses a larger interval and a heap large enough for its live
 graphs. The collecting/history fixtures independently enforce their 8 MiB heap.
+
+The REPL fixture harness runs transcripts through both the native JIT and
+`--interpret`; native GC-plan fixtures remain specific to the JIT. The standalone
+`interpreter-session` fixture also checks separate submissions, error recovery,
+exception effects, process exit, reset and historical closure collection.
+
+REPL fixtures marked `(* REPL-COMMANDS *)` exercise Nassau host commands
+without a Poly/ML comparison. They check terminal clearing and fresh bindings
+after reset against both backends.

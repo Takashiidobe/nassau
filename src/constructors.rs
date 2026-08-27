@@ -69,6 +69,12 @@ fn rename(family: &Family, strip: &str, add: &str) -> Family {
     )
 }
 
+impl Default for Constructors {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Constructors {
     /// The constructors of the initial basis.
     pub fn new() -> Self {

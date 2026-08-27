@@ -486,6 +486,11 @@ pub fn replace_globals(addresses: &[usize]) {
     *GLOBAL_ROOTS.lock().unwrap() = addresses.iter().copied().collect();
 }
 
+pub fn reset_repl_roots() {
+    GLOBAL_ROOTS.lock().unwrap().clear();
+    CODE_ROOTS.lock().unwrap().clear();
+}
+
 pub fn register_code_global(code: usize, address: usize) {
     CODE_ROOTS
         .lock()

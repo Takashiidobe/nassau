@@ -54,3 +54,7 @@ pub fn with_root<T>(value: i64, f: impl FnOnce() -> T) -> T {
 pub fn replace_global_roots(addresses: &[usize]) {
     nassau_runtime::replace_global_roots(addresses);
 }
+
+pub fn reset_repl_roots() {
+    nassau_runtime::reset_repl_roots();
+}

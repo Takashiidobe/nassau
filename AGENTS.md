@@ -84,20 +84,37 @@ The managed Beads block is task-tracking guidance, not permission to override re
 - **Minimal**: Keep tool instruction files as pointers to `bd prime`; follow the same task-end commit policy.
 - **Team-maintainer**: Agents may close beads, run quality gates, and create one concise, one-line commit at task completion. Never push or synchronize Beads data to a remote. A current "do not commit" instruction still wins.
 
+## Navigating code
+
+Always use the LSP (rust-analyzer) to navigate Rust: `hover`,
+`goToDefinition`, `findReferences`, `workspaceSymbol`, and `documentSymbol`
+for an enum's variants or a file's outline. Use grep only for text outside
+Rust, such as the wiki, fixtures, and C sources. Right after startup,
+rust-analyzer may still be indexing and return nothing. Retry before you fall
+back to grep.
+
+## Shell
+
+The shell is fish: write Python scripts instead of bash scripts.
+
+## Wiki
+
+`wiki/` is shared by both crates: `wiki/concepts/` holds durable design and
+decision docs, and `wiki/log/` holds point-in-time entries. Use
+`llog search "<query>"` before re-deriving a decision that may already be
+recorded.
+
 ## Session Completion
 
-This protocol applies when ending a Beads implementation workflow. It is subordinate to explicit user, repository, and orchestrator instructions.
-
-1. **File issues for remaining work** - Create beads for anything that needs follow-up
-2. **Run quality gates** (if code changed) - Tests, linters, builds
-3. **Update issue status** - Close finished work, update in-progress items
-4. **Handle git/sync by active profile**:
-   ```bash
-   git status
-   # At task completion, one concise, one-line commit is allowed.
-   # Never run git push or bd dolt push/pull.
-   ```
-5. **Hand off** - Summarize changes, validation, issue status, and any blocked sync/commit/push step
+1. **File issues for remaining work** - Create beads for anything that needs follow-up.
+2. **Run quality gates** (only if Rust changed):
+   - `cargo clippy -p <crate> --allow-dirty --fix` for each changed crate, to apply what can be fixed automatically
+   - `cargo fmt`
+   - `cargo nextest r --release`
+3. **Update issue status** - Close finished work, update in-progress items.
+4. **Log every change** - `llog new`, summarizing the change in no more than 30 lines.
+5. **Commit** - `git commit -m ...` with a one-line message summarizing the task.
+6. **Hand off** - Summarize changes, validation, issue status, and the commit.
 
 **Critical rules:**
 

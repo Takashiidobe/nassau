@@ -1,0 +1,5 @@
+(* SML'97 grammar, pattern: flex record let (nassau-ugc.21). *)
+fun pi n = print (Int.toString n ^ "\n")
+val _ = pi (let fun f {a, ...} = a in f {a = 1, b = 2} end)
+(* CHECK-EXIT: 0 *)
+(* CHECK-STDOUT: 1 *)

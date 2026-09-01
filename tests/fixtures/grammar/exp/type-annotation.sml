@@ -1,0 +1,6 @@
+(* SML'97 grammar, expression: type annotation. *)
+fun pi n = print (Int.toString n ^ "\n")
+val _ = pi (3 : int) val f = (fn x => x) : int -> int val _ = pi (f 1)
+(* CHECK-EXIT: 0 *)
+(* CHECK-STDOUT: 3 *)
+(* CHECK-STDOUT-NEXT: 1 *)

@@ -1,0 +1,5 @@
+(* SML'97 grammar, identifier: alphanumeric. *)
+fun pi n = print (Int.toString n ^ "\n")
+val x'_1 = 1 val Foo'' = 2 val _ = pi (x'_1 + Foo'')
+(* CHECK-EXIT: 0 *)
+(* CHECK-STDOUT: 3 *)

@@ -1,0 +1,5 @@
+(* SML'97 grammar, declaration: structure. *)
+fun pi n = print (Int.toString n ^ "\n")
+structure A = struct val x = 1 end and B = struct val y = 2 end val _ = pi (A.x + B.y)
+(* CHECK-EXIT: 0 *)
+(* CHECK-STDOUT: 3 *)

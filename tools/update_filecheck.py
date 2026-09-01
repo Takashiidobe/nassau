@@ -8,6 +8,8 @@ as SML comment lines at the end of the file:
     (* CHECK-STDOUT: hello, world *)        stdout of the compiled program
     (* CHECK-STDERR: ... *)                 stderr of the compiled program
     (* CHECK-ERR: × expected int, ... *)    compiler diagnostic for fixtures under an error/ directory
+                                           (fixtures under a *.unsupported/ directory get only
+                                           Poly/ML's CHECK-EXIT and CHECK-STDOUT)
     (* CHECK-STDOUT: (val x (+ 1 2)) *)    syntax tree (--dump-ast) for tests/fixtures/parser,
                                            with CHECK-STDERR for its match warnings
     (* CHECK-STDOUT: fn f0 main() { *)      core IR (--dump-core) for tests/fixtures/core
@@ -214,6 +216,8 @@ def classify(path):
     parts = path.relative_to(TESTS).parts
     if parts[0] == "repl":
         return "repl"
+    if any(part.endswith(".unsupported") for part in parts[:-1]):
+        return "unsupported"
     if "error" in parts[:-1]:
         return "error"
     # Valid lexer fixtures are token snapshots (.tokens), not FileCheck.
@@ -271,6 +275,17 @@ def generate_run(oracle, fixture, warnings, prefix="CHECK"):
             f"(nassau exit {actual[2]}, stdout {actual[0]!r}; "
             f"oracle exit {code}, stdout {stdout!r})"
         )
+    return lines
+
+
+def generate_unsupported(oracle, fixture, warnings):
+    """Poly/ML's output only; Nassau is expected to fail until the fixture moves."""
+    stdout, stderr, code = oracle.polyml_program(fixture)
+    if code != 0:
+        raise ToolError("Poly/ML rejects this unsupported fixture:\n" + stderr)
+    lines = [f"(* CHECK-EXIT: {code} *)"]
+    if stdout.strip():
+        lines += stream_lines("CHECK-STDOUT", stdout)
     return lines
 
 
@@ -465,6 +480,7 @@ def main():
     generators = {
         "run": generate_run,
         "error": generate_error,
+        "unsupported": generate_unsupported,
         "parse": generate_parse,
         "core": generate_core,
         "types": generate_types,

@@ -82,6 +82,14 @@ regeneration of runtime checks. The seven remaining exclusions are tracked in
 `nassau-949.12`: infix datatype constructors, list append, word arithmetic,
 first-class Basis functions, and `List` applications.
 
+`tests/fixtures/grammar` holds one fixture per production of the SML'97
+grammar. Productions Nassau does not handle yet live in
+`tests/fixtures/grammar.unsupported`, where each header names the tracking
+bead. Poly/ML must accept them and Nassau must still fail (by rejecting them,
+or by producing different output natively or in the interpreter). Once one
+passes, its trial fails and prints the `git mv` that moves it into
+`tests/fixtures/grammar`. The same applies to any `*.unsupported/` directory.
+
 A `(* XFAIL: reason *)` line marks a REPL fixture whose output is known to
 differ from the expected Nassau transcript; it fails the suite once it starts passing.
 

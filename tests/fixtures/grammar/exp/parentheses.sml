@@ -1,0 +1,5 @@
+(* SML'97 grammar, expression: parentheses. *)
+fun pi n = print (Int.toString n ^ "\n")
+val _ = pi ((1 + 2) * 3)
+(* CHECK-EXIT: 0 *)
+(* CHECK-STDOUT: 9 *)

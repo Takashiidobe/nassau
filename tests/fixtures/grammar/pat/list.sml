@@ -1,0 +1,5 @@
+(* SML'97 grammar, pattern: list. *)
+fun pi n = print (Int.toString n ^ "\n")
+fun f [a, b] = a + b | f [] = 0 | f _ = ~1 val _ = pi (f [1, 2] + f [])
+(* CHECK-EXIT: 0 *)
+(* CHECK-STDOUT: 3 *)

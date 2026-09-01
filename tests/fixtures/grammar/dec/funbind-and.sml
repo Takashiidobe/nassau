@@ -1,0 +1,6 @@
+(* SML'97 grammar, declaration: funbind and. *)
+fun pi n = print (Int.toString n ^ "\n")
+fun even 0 = true | even n = odd (n - 1) and odd 0 = false | odd n = even (n - 1)
+val _ = pi (if even 10 then 1 else 0)
+(* CHECK-EXIT: 0 *)
+(* CHECK-STDOUT: 1 *)

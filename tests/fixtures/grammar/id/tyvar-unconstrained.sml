@@ -1,0 +1,5 @@
+(* SML'97 grammar, identifier: tyvar unconstrained. *)
+fun pi n = print (Int.toString n ^ "\n")
+fun f (x : 'a) : 'a = x val _ = pi (f 3)
+(* CHECK-EXIT: 0 *)
+(* CHECK-STDOUT: 3 *)

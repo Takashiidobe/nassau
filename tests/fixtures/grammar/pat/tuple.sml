@@ -1,0 +1,5 @@
+(* SML'97 grammar, pattern: tuple. *)
+fun pi n = print (Int.toString n ^ "\n")
+fun f (a, (b, c), ()) = a + b + c val _ = pi (f (1, (2, 3), ()))
+(* CHECK-EXIT: 0 *)
+(* CHECK-STDOUT: 6 *)

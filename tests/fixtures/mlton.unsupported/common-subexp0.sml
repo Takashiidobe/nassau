@@ -1,0 +1,5 @@
+(* mlton regression/common-subexp0.sml @5fe943391; HPND licence in tests/fixtures/mlton/LICENSE *)
+val x = !(ref 0.0) / !(ref 0.0)
+val _ = print (concat [Real.toString x, "\n"])
+(* CHECK-EXIT: 0 *)
+(* CHECK-STDOUT: nan *)

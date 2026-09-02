@@ -59,6 +59,12 @@ fn collect_fixtures(directory: &Path, paths: &mut Vec<PathBuf>) {
     for entry in fs::read_dir(directory).expect("read test fixtures directory") {
         let path = entry.expect("read fixture directory entry").path();
         if path.is_dir() {
+            if path
+                .extension()
+                .is_some_and(|extension| extension == "ignored")
+            {
+                continue;
+            }
             collect_fixtures(&path, paths);
         } else if path.extension().is_some_and(|extension| extension == "sml") {
             paths.push(path);
@@ -128,13 +134,40 @@ fn supported_path(fixture: &Path) -> Option<PathBuf> {
 
 fn unsupported_fixture(fixture: &Path, supported: &Path, polyml: &str) {
     let reference = polyml_program(polyml, fixture);
+    let directory = fixture.parent().expect("fixture has a parent directory");
+    if !expected_valid(fixture) {
+        assert!(
+            !reference.status.success(),
+            "Poly/ML accepts {}",
+            fixture.display()
+        );
+        let compiled = Command::new(env!("CARGO_BIN_EXE_nassau"))
+            .arg(fixture)
+            .current_dir(directory)
+            .output()
+            .expect("run Nassau compiler");
+        let _ = fs::remove_file(fixture.with_extension(""));
+        if !compiled.status.success() && String::from_utf8_lossy(&compiled.stderr).contains('×') {
+            let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+            let from = fixture.strip_prefix(root).unwrap_or(fixture).display();
+            let to = supported.strip_prefix(root).unwrap_or(supported).display();
+            panic!(
+                "{from} is now rejected; run `mkdir -p {} && git mv {from} {to} && tools/update_filecheck.py {to}`",
+                supported
+                    .parent()
+                    .and_then(|parent| parent.strip_prefix(root).ok())
+                    .unwrap_or(Path::new("."))
+                    .display()
+            );
+        }
+        return;
+    }
     assert!(
         reference.status.success(),
         "Poly/ML rejects {}: {}",
         fixture.display(),
         String::from_utf8_lossy(&reference.stderr)
     );
-    let directory = fixture.parent().expect("fixture has a parent directory");
     let compiled = Command::new(env!("CARGO_BIN_EXE_nassau"))
         .arg(fixture)
         .current_dir(directory)
@@ -154,7 +187,9 @@ fn unsupported_fixture(fixture: &Path, supported: &Path, polyml: &str) {
         .output()
         .expect("interpret fixture");
     let matches_oracle = |output: &Output| {
-        output.stdout == reference.stdout && output.status.code() == reference.status.code()
+        output.stdout == reference.stdout
+            && output.status.code() == reference.status.code()
+            && output.stderr.is_empty()
     };
     if matches_oracle(&native) && matches_oracle(&interpreted) {
         let root = Path::new(env!("CARGO_MANIFEST_DIR"));

@@ -15,6 +15,7 @@ tests/**/*
 *.db
 .beads-credential-key
 .beads/proxieddb/
+.beads.gate.lock
 
 /www/dist/
 /www/target/

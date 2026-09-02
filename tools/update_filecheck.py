@@ -9,7 +9,8 @@ as SML comment lines at the end of the file:
     (* CHECK-STDERR: ... *)                 stderr of the compiled program
     (* CHECK-ERR: × expected int, ... *)    compiler diagnostic for fixtures under an error/ directory
                                            (fixtures under a *.unsupported/ directory get only
-                                           Poly/ML's CHECK-EXIT and CHECK-STDOUT)
+                                           Poly/ML's CHECK-EXIT and CHECK-STDOUT, and none
+                                           under *.unsupported/error/; *.ignored/ is skipped)
     (* CHECK-STDOUT: (val x (+ 1 2)) *)    syntax tree (--dump-ast) for tests/fixtures/parser,
                                            with CHECK-STDERR for its match warnings
     (* CHECK-STDOUT: fn f0 main() { *)      core IR (--dump-core) for tests/fixtures/core
@@ -99,11 +100,12 @@ def stream_lines(prefix, text):
     lines = text.split("\n")
     if lines and lines[-1] == "":
         lines.pop()
+    # filecheck cannot anchor a leading CHECK-EMPTY, so leading blank lines go unchecked
+    while lines and lines[0] == "":
+        lines.pop(0)
     out = []
     for index, line in enumerate(lines):
         if line == "":
-            if index == 0:
-                raise ToolError("output starting with a blank line is unsupported")
             out.append(f"(* {prefix}-EMPTY: *)")
         else:
             directive = prefix if index == 0 else f"{prefix}-NEXT"
@@ -216,8 +218,10 @@ def classify(path):
     parts = path.relative_to(TESTS).parts
     if parts[0] == "repl":
         return "repl"
+    if any(part.endswith(".ignored") for part in parts[:-1]):
+        return "skip"
     if any(part.endswith(".unsupported") for part in parts[:-1]):
-        return "unsupported"
+        return "unsupported-error" if "error" in parts[:-1] else "unsupported"
     if "error" in parts[:-1]:
         return "error"
     # Valid lexer fixtures are token snapshots (.tokens), not FileCheck.
@@ -287,6 +291,12 @@ def generate_unsupported(oracle, fixture, warnings):
     if stdout.strip():
         lines += stream_lines("CHECK-STDOUT", stdout)
     return lines
+
+
+def generate_unsupported_error(oracle, fixture, warnings):
+    if not oracle.rejects(fixture):
+        raise ToolError("Poly/ML accepts this unsupported error fixture")
+    return []
 
 
 def generate_runtime(oracle, fixture, warnings):
@@ -433,6 +443,8 @@ def rewrite(path, block):
     original = path.read_text()
     kept = [line for line in original.split("\n") if not GENERATED.match(line)]
     body = "\n".join(kept).rstrip("\n")
+    if not block:
+        return body + "\n"
     return body + "\n" + "\n".join(block) + "\n"
 
 
@@ -481,6 +493,7 @@ def main():
         "run": generate_run,
         "error": generate_error,
         "unsupported": generate_unsupported,
+        "unsupported-error": generate_unsupported_error,
         "parse": generate_parse,
         "core": generate_core,
         "types": generate_types,

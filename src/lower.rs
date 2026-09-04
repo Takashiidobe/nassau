@@ -368,6 +368,7 @@ enum Builtin {
     Length,
     Map,
     Foldl,
+    Filter,
     Print,
     IntToString,
     Size,
@@ -387,6 +388,7 @@ fn builtin(name: &str) -> Option<Builtin> {
         "length" => Builtin::Length,
         "map" => Builtin::Map,
         "foldl" => Builtin::Foldl,
+        "List.filter" => Builtin::Filter,
         "print" => Builtin::Print,
         "Int.toString" => Builtin::IntToString,
         "size" => Builtin::Size,
@@ -1729,6 +1731,7 @@ impl Lowerer<'_> {
             Builtin::Length => self.list_length(argument),
             Builtin::Map => self.list_function(argument, false),
             Builtin::Foldl => self.list_function(argument, true),
+            Builtin::Filter => self.list_filter(argument),
             Builtin::Print => self.bind("", Op::Prim(Prim::Print, vec![argument])),
             Builtin::IntToString => self.bind("", Op::Prim(Prim::IntToString, vec![argument])),
             Builtin::Size => self.bind("", Op::Prim(Prim::Size, vec![argument])),
@@ -1786,6 +1789,46 @@ impl Lowerer<'_> {
         self.terminate(Term::Jump(loop_block, vec![tail, next]));
         self.switch(done);
         Atom::Var(count)
+    }
+
+    fn list_filter(&mut self, function: Atom) -> Atom {
+        let worker = self.session.function_id();
+        self.frames
+            .push(Builder::new(worker, "filter", vec!["env", "list"]));
+        let env = Atom::Var(self.frame().params[0]);
+        let function_value = self.bind("", Op::Select(env.clone(), 1));
+        let list = Atom::Var(self.frame().params[1]);
+        let empty = self.bind(
+            "",
+            Op::Prim(Prim::WordEq, vec![list.clone(), Atom::Word(value::NIL)]),
+        );
+        let done = self.block(Vec::new());
+        let step = self.block(Vec::new());
+        self.terminate(Term::If(empty, done, step));
+        self.switch(done);
+        self.terminate(Term::Return(Atom::Word(value::NIL)));
+        self.switch(step);
+        let head = self.bind("", Op::Select(list.clone(), 0));
+        let tail = self.bind("", Op::Select(list, 1));
+        let keep = self.bind(
+            "",
+            Op::Call(Callee::Closure(function_value), vec![head.clone()]),
+        );
+        let kept = self.block(Vec::new());
+        let dropped = self.block(Vec::new());
+        self.terminate(Term::If(keep, kept, dropped));
+        self.switch(kept);
+        let rest = self.bind(
+            "",
+            Op::Call(Callee::Known(worker, env.clone()), vec![tail.clone()]),
+        );
+        let list = self.bind("", Op::Record(vec![head, rest]));
+        self.terminate(Term::Return(list));
+        self.switch(dropped);
+        self.terminate(Term::TailCall(Callee::Known(worker, env), vec![tail]));
+        let frame = self.frames.pop().unwrap();
+        self.functions.push(frame.finish());
+        self.closure("filter", worker, vec![function])
     }
 
     fn list_function(&mut self, function: Atom, fold: bool) -> Atom {

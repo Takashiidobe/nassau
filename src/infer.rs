@@ -556,6 +556,12 @@ impl Infer {
                 )
             });
         }
+        self.builtin("List.filter", false, 1, |v| {
+            arrow(
+                arrow(v[0].clone(), boolean()),
+                arrow(list(v[0].clone()), list(v[0].clone())),
+            )
+        });
         self.builtin("o", false, 3, |v| {
             arrow(
                 tuple(vec![

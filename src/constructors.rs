@@ -102,6 +102,7 @@ impl Constructors {
             "Bind",
             "Empty",
             "Subscript",
+            "Size",
             "Fail",
         ] {
             constructors.entries.push(Entry {

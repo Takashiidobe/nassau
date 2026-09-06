@@ -11,6 +11,7 @@ use crate::error::SourceError;
 use crate::lexer::Lexer;
 use crate::parser::Parser as SmlParser;
 use clap::Parser;
+use nassau::prelude::Basis;
 use nassau::{core, error, infer, interpreter, lexer, lower, matching, parser, scope, value};
 
 #[derive(Debug, Parser)]
@@ -121,7 +122,9 @@ fn run(cli: &Cli) -> miette::Result<Option<PathBuf>> {
                 .with_source_code(named_source.clone())
         })?;
     check_matches(&program, &named_source)?;
-    let checked = infer::check_program(&program).map_err(|(error, span)| {
+    let mut types = infer::Session::new();
+    let basis = Basis::check(&mut types);
+    let checked = types.check(&program).map_err(|(error, span)| {
         miette::Report::new(SourceError::new(error, span)).with_source_code(named_source.clone())
     })?;
     let file = input.file_name().map_or_else(
@@ -133,8 +136,18 @@ fn run(cli: &Cli) -> miette::Result<Option<PathBuf>> {
         text: source,
         first_line: 1,
     };
+    let user = lower::Part {
+        program: &program,
+        types: &checked.types,
+        source: &source,
+    };
+    let parts = if cli.dump_core {
+        vec![user]
+    } else {
+        vec![basis.part(), user]
+    };
     let module = lower::Session::new()
-        .lower(&program, &checked.types, &source, "main")
+        .lower_parts(&parts, "main")
         .map_err(|(error, span)| {
             miette::Report::new(SourceError::new(error, span)).with_source_code(named_source)
         })?;
@@ -230,7 +243,9 @@ fn dump_types(input: &Path, every_node: bool) -> miette::Result<()> {
     let program = parse_file(input)?;
     let source = fs::read_to_string(input).map_err(|error| miette::miette!("{error}"))?;
     let named_source = miette::NamedSource::new(input.display().to_string(), source.clone());
-    let checked = infer::check_program(&program).map_err(|(error, span)| {
+    let mut types = infer::Session::new();
+    Basis::check(&mut types);
+    let checked = types.check(&program).map_err(|(error, span)| {
         miette::Report::new(SourceError::new(error, span)).with_source_code(named_source)
     })?;
     if !every_node {

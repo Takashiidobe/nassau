@@ -194,6 +194,26 @@ an unsuccessful exit status. In REPL mode, it leaves the value for the REPL to
 report and keeps the session alive. This design needs no host-language panic
 or native stack unwinding machinery.
 
+## The basis library
+
+Basis modules are written in SML under `basis/` and embedded into the compiler
+by [prelude.rs](../src/prelude.rs), which checks them before the user's
+program in the same `infer::Session`. Each program keeps its own type table, so
+`--dump-expr-types` lists only the user's nodes. `lower::Session::lower_parts`
+lowers the basis and the program into one module, each part read against its
+own `Source`, so the basis never shifts the user's line numbers. A basis
+definition shadows a built-in of the same name, and lowering resolves a name
+to its binding before it considers a built-in. `hd`, `tl`, `null`, `rev`, `@`,
+`foldr` and `app` therefore come from `basis/list.sml`; `length`, `map` and
+`foldl` remain built-ins that lowering writes directly.
+
+`--dump-core` skips the basis when lowering, so a program's core IR numbers
+its functions and globals from zero. A program that needs a basis structure
+cannot be dumped that way.
+
+The REPL runs the basis as a hidden first chunk, without echoing its bindings,
+and again after `reset;;`.
+
 ## What the REPL keeps
 
 [session.rs](../src/session.rs) owns the persistent inference and lowering

@@ -7,6 +7,7 @@ pub mod lexer;
 pub mod lower;
 pub mod matching;
 pub mod parser;
+pub mod prelude;
 pub mod printing;
 pub mod scope;
 pub mod session;

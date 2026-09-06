@@ -519,7 +519,15 @@ impl Infer {
         for name in ["LESS", "EQUAL", "GREATER"] {
             self.builtin(name, true, 0, |_| con("order"));
         }
-        for name in ["Div", "Overflow", "Match", "Bind", "Empty", "Subscript"] {
+        for name in [
+            "Div",
+            "Overflow",
+            "Match",
+            "Bind",
+            "Empty",
+            "Subscript",
+            "Size",
+        ] {
             self.builtin(name, true, 0, |_| con("exn"));
         }
         self.builtin("Fail", true, 0, |_| arrow(string(), con("exn")));
@@ -529,37 +537,17 @@ impl Infer {
         self.builtin("^", false, 0, |_| {
             arrow(tuple(vec![string(), string()]), string())
         });
-        self.builtin("@", false, 1, |v| {
-            let l = list(v[0].clone());
-            arrow(tuple(vec![l.clone(), l.clone()]), l)
-        });
-        self.builtin("hd", false, 1, |v| arrow(list(v[0].clone()), v[0].clone()));
-        self.builtin("tl", false, 1, |v| {
-            arrow(list(v[0].clone()), list(v[0].clone()))
-        });
-        self.builtin("null", false, 1, |v| arrow(list(v[0].clone()), boolean()));
         self.builtin("length", false, 1, |v| arrow(list(v[0].clone()), int()));
-        self.builtin("rev", false, 1, |v| {
-            arrow(list(v[0].clone()), list(v[0].clone()))
-        });
         self.builtin("map", false, 2, |v| {
             arrow(
                 arrow(v[0].clone(), v[1].clone()),
                 arrow(list(v[0].clone()), list(v[1].clone())),
             )
         });
-        for name in ["foldl", "foldr"] {
-            self.builtin(name, false, 2, |v| {
-                arrow(
-                    arrow(tuple(vec![v[0].clone(), v[1].clone()]), v[1].clone()),
-                    arrow(v[1].clone(), arrow(list(v[0].clone()), v[1].clone())),
-                )
-            });
-        }
-        self.builtin("List.filter", false, 1, |v| {
+        self.builtin("foldl", false, 2, |v| {
             arrow(
-                arrow(v[0].clone(), boolean()),
-                arrow(list(v[0].clone()), list(v[0].clone())),
+                arrow(tuple(vec![v[0].clone(), v[1].clone()]), v[1].clone()),
+                arrow(v[1].clone(), arrow(list(v[0].clone()), v[1].clone())),
             )
         });
         self.builtin("o", false, 3, |v| {
@@ -2374,12 +2362,6 @@ impl Infer {
             .zip(function_types)
             .collect())
     }
-}
-
-/// Infers every top-level declaration and returns what each bound, or the
-/// first type error.
-pub fn check_program(program: &Program) -> Result<Checked, Failure> {
-    Session::new().check(program)
 }
 
 /// A type checker that keeps its environment from one program to the next,

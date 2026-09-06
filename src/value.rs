@@ -52,6 +52,7 @@ pub const BUILTIN_EXCEPTIONS: &[&str] = &[
     "Fail",
     "Subscript",
     "Empty",
+    "Size",
 ];
 
 /// The index of the built-in exception `name`.

@@ -6,6 +6,7 @@ use crate::infer;
 use crate::interpreter::{Interpreter, Signal, Value};
 use crate::lower;
 use crate::parser::{Fixity, Parser, Program};
+use crate::prelude::Basis;
 use crate::printing::{Printer, ReplValue, uncaught};
 
 pub enum Execution<V> {
@@ -52,7 +53,7 @@ impl Default for Session {
 
 impl<B: Backend> Session<B> {
     pub fn new(backend: B) -> Self {
-        Self {
+        let mut session = Self {
             backend,
             next_chunk: 0,
             fixity: None,
@@ -60,7 +61,25 @@ impl<B: Backend> Session<B> {
             lowering: lower::Session::new_repl(),
             lines: 0,
             exit: None,
-        }
+        };
+        session.load_basis();
+        session
+    }
+
+    fn load_basis(&mut self) {
+        let basis = Basis::check(&mut self.types);
+        let module = basis
+            .lower(&mut self.lowering, "nassau_basis")
+            .unwrap_or_else(|(error, span)| {
+                panic!("the basis does not lower: {error} at {span:?}")
+            });
+        let executed = self.backend.execute(module);
+        assert!(
+            matches!(executed, Ok(Execution::Returned(_))),
+            "the basis does not run"
+        );
+        self.backend
+            .retain_globals(&self.lowering.root_globals().into_iter().collect::<Vec<_>>());
     }
 
     pub fn submit(&mut self, source: &str) -> Response {
@@ -85,6 +104,7 @@ impl<B: Backend> Session<B> {
                 self.lowering = lower::Session::new_repl();
                 self.lines = 0;
                 self.exit = None;
+                self.load_basis();
                 return Response {
                     clear: true,
                     output: b"Reset\n".to_vec(),

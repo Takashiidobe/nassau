@@ -25,7 +25,7 @@ cargo run -- --opt-level speed-and-size --stats --timings input.ml
 cargo run -- --objdump input.ml
 ```
 
-Earlier stages have their own dumps: `--dump-expr-types` prints the inferred type of every expression and pattern, and `--dump-core` prints the core IR a program lowers to before Cranelift (`src/core.rs`).
+Earlier stages have their own dumps: `--dump-expr-types` prints the inferred type of every expression and pattern, and `--dump-core` prints the core IR a program lowers to before Cranelift (`src/core.rs`). The dump leaves out the SML basis in `basis/`, so it cannot show a program that uses a basis structure such as `List`.
 
 `--objdump` disassembles the actual Cranelift object bytes and requires `objdump` to be installed. `--debug-passes` remains as a shortcut for the main IR and instruction dumps.
 

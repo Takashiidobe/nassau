@@ -78,9 +78,9 @@ generates program output and exit status from Poly/ML. Run these trials with
 `(* RUNTIME-SKIP: reason *)` documents a fixture the backend cannot compile.
 Its `CHECK-RUN-ERR` lines verify the current rejection. Both the harness and
 updater fail if it begins compiling, requiring removal of the exclusion and
-regeneration of runtime checks. The seven remaining exclusions are tracked in
-`nassau-949.12`: infix datatype constructors, list append, word arithmetic,
-first-class Basis functions, and `List` applications.
+regeneration of runtime checks. The five remaining exclusions are tracked in
+`nassau-949.12`: infix datatype constructors, `~` negation, and word
+arithmetic.
 
 `tests/fixtures/grammar` holds one fixture per production of the SML'97
 grammar. Productions Nassau does not handle yet live in

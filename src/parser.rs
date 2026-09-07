@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use crate::error::{LexerError, ParseError, ParseErrorKind};
 use crate::lexer::{Lexer, Token, TokenKind};
-use crate::span::Span;
+use crate::span::{Loc, Span};
 use crate::value;
 
 pub type Expr = Span<ExprKind>;
@@ -316,6 +316,12 @@ pub struct Parser {
     /// How many `local`, `let`, `struct` or `abstype` bodies enclose the parser.
     nesting: usize,
 }
+
+/// Operators that `op` turns into a function, because they have no value of
+/// their own.
+const OPERATORS_AS_FUNCTIONS: &[&str] = &[
+    "+", "-", "*", "/", "div", "mod", "<", ">", "<=", ">=", "^", "o",
+];
 
 pub type Fixity = std::collections::HashMap<String, (u8, bool)>;
 
@@ -1674,6 +1680,23 @@ impl Parser {
         self.infix_info(kind).map(|(name, _, _)| name)
     }
 
+    /// `op name` for an operator that is syntax rather than a function: the
+    /// function `fn (x, y) => x name y`.
+    fn operator_function(name: String, start: Loc, end: Loc) -> Expr {
+        let pattern = |kind| Span::new(start.clone(), end.clone(), kind);
+        let expr = |kind| Span::new(start.clone(), end.clone(), kind);
+        let parameters = pattern(PatKind::Tuple(
+            ["x", "y"]
+                .map(|name| pattern(PatKind::Variable(name.into())))
+                .into(),
+        ));
+        let operand = |name: &str, at: &Loc| {
+            Span::new(at.clone(), at.clone(), ExprKind::Variable(name.into()))
+        };
+        let body = Self::build_infix(name, operand("x", &start), operand("y", &end));
+        expr(ExprKind::Fn(vec![(parameters, body)]))
+    }
+
     fn build_infix(name: String, lhs: Expr, rhs: Expr) -> Expr {
         let (start, end) = (lhs.start.clone(), rhs.end.clone());
         let (lhs, rhs) = (Box::new(lhs), Box::new(rhs));
@@ -1921,6 +1944,9 @@ impl Parser {
                 };
                 self.index += 1;
                 end = operator.end;
+                if OPERATORS_AS_FUNCTIONS.contains(&name.as_str()) {
+                    return Ok(Self::operator_function(name, start, end));
+                }
                 ExprKind::Variable(name)
             }
             TokenKind::Reserved(word) if word == "let" => return self.parse_let(start),

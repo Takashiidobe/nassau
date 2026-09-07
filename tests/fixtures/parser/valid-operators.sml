@@ -11,7 +11,7 @@ val negative = 3 - ~2
 val prefix_op = op + (1, 2)
 val modulo = 10 mod 3 * 2
 val composed = (op ~ o op ~) 5
-(* RUNTIME-SKIP: unbound variable '+' *)
+(* RUNTIME-SKIP: unbound variable '~' *)
 (* CHECK-STDOUT: (val xs (list 1 2 3)) *)
 (* CHECK-STDOUT-NEXT: (val precedence (- (+ 1 {{[(]}}* 2 3)) 4)) *)
 (* CHECK-STDOUT-NEXT: (val left_minus (- (- 20 5) 3)) *)
@@ -22,8 +22,8 @@ val composed = (op ~ o op ~) 5
 (* CHECK-STDOUT-NEXT: (val comparison (< (+ 1 2) 4)) *)
 (* CHECK-STDOUT-NEXT: (val chained (= (< 1 2) true)) *)
 (* CHECK-STDOUT-NEXT: (val negative (- 3 -2)) *)
-(* CHECK-STDOUT-NEXT: (val prefix_op (app + (tuple 1 2))) *)
+(* CHECK-STDOUT-NEXT: (val prefix_op (app (fn ((tuple x y) (+ x y))) (tuple 1 2))) *)
 (* CHECK-STDOUT-NEXT: (val modulo {{[(]}}* (mod 10 3) 2)) *)
 (* CHECK-STDOUT-NEXT: (val composed (app (o ~ ~) 5)) *)
-(* CHECK-RUN-ERR: × unbound variable '+' *)
-(* CHECK-RUN-ERR: :11:17] *)
+(* CHECK-RUN-ERR: × unbound variable '~' *)
+(* CHECK-RUN-ERR: :13:17] *)

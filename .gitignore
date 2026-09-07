@@ -22,3 +22,5 @@ tests/**/*
 
 # Local Netlify folder
 .netlify
+
+.llog/

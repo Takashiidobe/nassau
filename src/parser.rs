@@ -1927,7 +1927,7 @@ impl Parser {
             TokenKind::SymbolicIdentifier(name) => ExprKind::Variable(name),
             TokenKind::Identifier(mut name) => {
                 while self.at(&TokenKind::Dot)
-                    && let Some(TokenKind::Identifier(part)) = self.peek_at(1)
+                    && let Some(part) = self.peek_at(1).and_then(Self::token_name)
                 {
                     name = format!("{name}.{part}");
                     self.index += 2;

@@ -2,7 +2,7 @@ fun show xs = foldl (fn (n, acc) => acc ^ Int.toString n ^ ";") "" xs ^ "\n"
 fun opt NONE = "none\n" | opt (SOME n) = Int.toString n ^ "\n"
 fun tried f = (f (); "ok\n") handle List.Empty => "Empty\n" | Subscript => "Subscript\n" | Size => "Size\n"
 val xs = [1, 2, 3, 4, 5]
-val () = print (show (List.rev xs) ^ show (rev xs) ^ show (xs @ [6]) ^ show (List.concat [[1], [], [2, 3]]))
+val () = print (show (List.rev xs) ^ show (rev xs) ^ show (xs @ [6]) ^ show (List.@ (xs, [7])) ^ show (foldl List.@ [] [[1], [2, 3]]) ^ show (List.concat [[1], [], [2, 3]]))
 val () = print (show (List.revAppend ([3, 2, 1], [4])) ^ show (List.take (xs, 2)) ^ show (List.drop (xs, 2)))
 val () = print (Int.toString (hd xs) ^ Int.toString (List.hd xs) ^ show (tl xs) ^ show (List.tl [1]))
 val () = print (Int.toString (List.length xs) ^ Int.toString (List.last xs) ^ Int.toString (List.nth (xs, 2)) ^ "\n")
@@ -35,6 +35,8 @@ val () = print (Int.toString (List.length (upto 20000 @ upto 20000)) ^ " " ^ Int
 (* CHECK-STDOUT: 5;4;3;2;1; *)
 (* CHECK-STDOUT-NEXT: 5;4;3;2;1; *)
 (* CHECK-STDOUT-NEXT: 1;2;3;4;5;6; *)
+(* CHECK-STDOUT-NEXT: 1;2;3;4;5;7; *)
+(* CHECK-STDOUT-NEXT: 2;3;1; *)
 (* CHECK-STDOUT-NEXT: 1;2;3; *)
 (* CHECK-STDOUT-NEXT: 1;2;3;4; *)
 (* CHECK-STDOUT-NEXT: 1;2; *)

@@ -1709,6 +1709,10 @@ impl Infer {
                 operand,
             ));
         }
+        if name == "~" {
+            let operand = self.overloaded_var(NUMERIC);
+            return Ok(arrow(operand.clone(), operand));
+        }
         Err((TypeError::UnboundVariable(name.to_string()), span))
     }
 

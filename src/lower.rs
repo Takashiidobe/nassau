@@ -398,6 +398,7 @@ enum Builtin {
     Size,
     Not,
     Negate,
+    NegateReal,
     Ref,
     Deref,
     Ignore,
@@ -1386,7 +1387,14 @@ impl Lowerer<'_> {
                 None => match (self.constructor(name, self.ty(expr)), builtin(name)) {
                     (Some((Test::Word { word, .. }, _)), _) => Atom::Word(word),
                     (Some((test, _)), _) => self.constructor_closure(name, &test),
-                    (None, Some(builtin)) => self.builtin_closure(name, builtin),
+                    (None, Some(builtin)) => {
+                        let operand = match self.ty(expr) {
+                            Some(Ty::Arrow(from, _)) => Some(from.as_ref()),
+                            _ => None,
+                        };
+                        let builtin = self.typed_builtin(builtin, operand, expr)?;
+                        self.builtin_closure(name, builtin)
+                    }
                     (None, None) => {
                         return Err(unsupported(
                             &format!("built-in functions used as values, such as {name},"),
@@ -1688,14 +1696,9 @@ impl Lowerer<'_> {
             } else if binding.is_none()
                 && let Some(builtin) = builtin(name)
             {
-                let real = self.is_real(args[0]);
+                let builtin = self.typed_builtin(builtin, self.ty(args[0]), head)?;
                 let argument = self.value(args[0])?;
-                function = Some(match builtin {
-                    Builtin::Negate if real => {
-                        self.bind("", Op::Prim(Prim::RealNeg, vec![argument]))
-                    }
-                    builtin => self.builtin(builtin, argument),
-                });
+                function = Some(self.builtin(builtin, argument));
                 rest = &args[1..];
             } else if let Some(binding) = binding {
                 let known = match &binding {
@@ -1749,6 +1752,19 @@ impl Lowerer<'_> {
         }
     }
 
+    /// The built-in to use on an operand of type `operand`, for those that
+    /// are overloaded.
+    fn typed_builtin(&self, builtin: Builtin, operand: Option<&Ty>, expr: &Expr) -> Res<Builtin> {
+        if !matches!(builtin, Builtin::Negate) {
+            return Ok(builtin);
+        }
+        match operand {
+            Some(ty) if ty.is("real") => Ok(Builtin::NegateReal),
+            Some(ty) if ty.is("word") => Err(unsupported("word negation", expr)),
+            _ => Ok(builtin),
+        }
+    }
+
     fn builtin(&mut self, builtin: Builtin, argument: Atom) -> Atom {
         match builtin {
             Builtin::Length => self.list_length(argument),
@@ -1762,6 +1778,7 @@ impl Lowerer<'_> {
                 Op::Prim(Prim::WordEq, vec![argument, Atom::Word(value::FALSE)]),
             ),
             Builtin::Negate => self.bind("", Op::Prim(Prim::IntNeg, vec![argument])),
+            Builtin::NegateReal => self.bind("", Op::Prim(Prim::RealNeg, vec![argument])),
             Builtin::Ref => self.bind("", Op::Prim(Prim::Ref, vec![argument])),
             Builtin::Deref => self.bind("", Op::Select(argument, 0)),
             Builtin::Ignore => Atom::Word(value::tagged(0)),

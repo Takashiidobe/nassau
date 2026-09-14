@@ -3,7 +3,12 @@ use crate::infer::{self, TypeTable};
 use crate::lower::{self, Part, Source};
 use crate::parser::{Parser, Program};
 
-const SOURCE: &str = concat!(include_str!("../basis/list.sml"), "\n");
+const SOURCE: &str = concat!(
+    include_str!("../basis/list.sml"),
+    "\n",
+    include_str!("../basis/option.sml"),
+    "\n"
+);
 
 /// The basis library, written in SML and checked and lowered ahead of the
 /// user's program.

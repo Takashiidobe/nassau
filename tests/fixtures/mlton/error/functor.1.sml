@@ -16,5 +16,5 @@ structure S = F (type t = int
 structure S = F (type t = real
                  val x = 13.0
                  val f = Real.toString)
-(* CHECK-ERR: × unbound variable 'valOf' *)
-(* CHECK-ERR: :10:36] *)
+(* CHECK-ERR: × expected t, found ?.X1 *)
+(* CHECK-ERR: :10:35] *)

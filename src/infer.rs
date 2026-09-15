@@ -537,32 +537,6 @@ impl Infer {
         self.builtin("^", false, 0, |_| {
             arrow(tuple(vec![string(), string()]), string())
         });
-        self.builtin("length", false, 1, |v| arrow(list(v[0].clone()), int()));
-        self.builtin("map", false, 2, |v| {
-            arrow(
-                arrow(v[0].clone(), v[1].clone()),
-                arrow(list(v[0].clone()), list(v[1].clone())),
-            )
-        });
-        self.builtin("foldl", false, 2, |v| {
-            arrow(
-                arrow(tuple(vec![v[0].clone(), v[1].clone()]), v[1].clone()),
-                arrow(v[1].clone(), arrow(list(v[0].clone()), v[1].clone())),
-            )
-        });
-        self.builtin("o", false, 3, |v| {
-            arrow(
-                tuple(vec![
-                    arrow(v[1].clone(), v[2].clone()),
-                    arrow(v[0].clone(), v[1].clone()),
-                ]),
-                arrow(v[0].clone(), v[2].clone()),
-            )
-        });
-        self.builtin("before", false, 1, |v| {
-            arrow(tuple(vec![v[0].clone(), unit()]), v[0].clone())
-        });
-        self.builtin("ignore", false, 1, |v| arrow(v[0].clone(), unit()));
         self.builtin("ref", true, 1, |v| {
             arrow(v[0].clone(), reference(v[0].clone()))
         });

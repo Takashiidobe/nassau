@@ -4,6 +4,8 @@ use crate::lower::{self, Part, Source};
 use crate::parser::{Parser, Program};
 
 const SOURCE: &str = concat!(
+    include_str!("../basis/general.sml"),
+    "\n",
     include_str!("../basis/list.sml"),
     "\n",
     include_str!("../basis/option.sml"),

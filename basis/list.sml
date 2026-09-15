@@ -8,7 +8,13 @@ struct
   fun null [] = true
     | null _ = false
 
-  val length = length
+  fun length l =
+    let
+      fun go ([], n) = n
+        | go (_ :: xs, n) = go (xs, n + 1)
+    in
+      go (l, 0)
+    end
 
   val op @ = op @
 
@@ -64,7 +70,8 @@ struct
   fun app f [] = ()
     | app f (x :: xs) = (f x; app f xs)
 
-  val map = map
+  fun map f [] = []
+    | map f (x :: xs) = let val y = f x in y :: map f xs end
 
   fun mapPartial f [] = []
     | mapPartial f (x :: xs) =
@@ -87,7 +94,8 @@ struct
       go (l, [], [])
     end
 
-  val foldl = foldl
+  fun foldl f init [] = init
+    | foldl f init (x :: xs) = foldl f (f (x, init)) xs
 
   fun foldr f init [] = init
     | foldr f init (x :: xs) = f (x, foldr f init xs)
@@ -114,6 +122,9 @@ struct
          | order => order)
 end
 
+val length = List.length
+val map = List.map
+val foldl = List.foldl
 val app = List.app
 val hd = List.hd
 val tl = List.tl

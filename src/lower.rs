@@ -390,9 +390,6 @@ enum Applied {
 /// Built-in functions that are compiled inline when applied.
 #[derive(Clone, Copy)]
 enum Builtin {
-    Length,
-    Map,
-    Foldl,
     Print,
     IntToString,
     Size,
@@ -401,18 +398,13 @@ enum Builtin {
     NegateReal,
     Ref,
     Deref,
-    Ignore,
     Equal,
     Unequal,
     Assign,
-    Before,
 }
 
 fn builtin(name: &str) -> Option<Builtin> {
     Some(match name {
-        "length" => Builtin::Length,
-        "map" => Builtin::Map,
-        "foldl" => Builtin::Foldl,
         "print" => Builtin::Print,
         "Int.toString" => Builtin::IntToString,
         "size" => Builtin::Size,
@@ -420,11 +412,9 @@ fn builtin(name: &str) -> Option<Builtin> {
         "~" => Builtin::Negate,
         "ref" => Builtin::Ref,
         "!" => Builtin::Deref,
-        "ignore" => Builtin::Ignore,
         "=" => Builtin::Equal,
         "<>" => Builtin::Unequal,
         ":=" => Builtin::Assign,
-        "before" => Builtin::Before,
         _ => return None,
     })
 }
@@ -1614,7 +1604,6 @@ impl Lowerer<'_> {
             "^" => Some(Prim::Concat),
             "mod" => Some(Prim::IntMod),
             ":=" => Some(Prim::Assign),
-            "o" | "before" => None,
             _ => {
                 // A function declared infix is called with the pair.
                 let Some(binding) = self.lookup(name) else {
@@ -1635,14 +1624,6 @@ impl Lowerer<'_> {
             }
         };
         let mut args = vec![self.value(lhs)?, self.value(rhs)?];
-        if name == "o" {
-            let g = args.pop().expect("two operands");
-            let f = args.pop().expect("two operands");
-            return Ok(self.compose(f, g));
-        }
-        if name == "before" {
-            return Ok(args.swap_remove(0));
-        }
         Ok(match prim {
             // A cons cell is a record of the head and the tail.
             None => self.bind("", Op::Record(args)),
@@ -1767,9 +1748,6 @@ impl Lowerer<'_> {
 
     fn builtin(&mut self, builtin: Builtin, argument: Atom) -> Atom {
         match builtin {
-            Builtin::Length => self.list_length(argument),
-            Builtin::Map => self.list_function(argument, false),
-            Builtin::Foldl => self.list_function(argument, true),
             Builtin::Print => self.bind("", Op::Prim(Prim::Print, vec![argument])),
             Builtin::IntToString => self.bind("", Op::Prim(Prim::IntToString, vec![argument])),
             Builtin::Size => self.bind("", Op::Prim(Prim::Size, vec![argument])),
@@ -1781,7 +1759,6 @@ impl Lowerer<'_> {
             Builtin::NegateReal => self.bind("", Op::Prim(Prim::RealNeg, vec![argument])),
             Builtin::Ref => self.bind("", Op::Prim(Prim::Ref, vec![argument])),
             Builtin::Deref => self.bind("", Op::Select(argument, 0)),
-            Builtin::Ignore => Atom::Word(value::tagged(0)),
             Builtin::Equal | Builtin::Unequal => {
                 let lhs = self.bind("", Op::Select(argument.clone(), 0));
                 let rhs = self.bind("", Op::Select(argument, 1));
@@ -1796,114 +1773,9 @@ impl Lowerer<'_> {
                 let value = self.bind("", Op::Select(argument, 1));
                 self.bind("", Op::Prim(Prim::Assign, vec![cell, value]))
             }
-            Builtin::Before => self.bind("", Op::Select(argument, 0)),
         }
     }
 
-    fn list_length(&mut self, argument: Atom) -> Atom {
-        let list = self.frame().var("list");
-        let count = self.frame().var("count");
-        let loop_block = self.block(vec![list, count]);
-        let done = self.block(Vec::new());
-        let step = self.block(Vec::new());
-        self.terminate(Term::Jump(
-            loop_block,
-            vec![argument, Atom::Word(value::tagged(0))],
-        ));
-        self.switch(loop_block);
-        let empty = self.bind(
-            "",
-            Op::Prim(Prim::WordEq, vec![Atom::Var(list), Atom::Word(value::NIL)]),
-        );
-        self.terminate(Term::If(empty, done, step));
-        self.switch(step);
-        let tail = self.bind("", Op::Select(Atom::Var(list), 1));
-        let next = self.bind(
-            "",
-            Op::Prim(
-                Prim::IntAdd,
-                vec![Atom::Var(count), Atom::Word(value::tagged(1))],
-            ),
-        );
-        self.terminate(Term::Jump(loop_block, vec![tail, next]));
-        self.switch(done);
-        Atom::Var(count)
-    }
-
-    fn list_function(&mut self, function: Atom, fold: bool) -> Atom {
-        let worker = self.session.function_id();
-        let params = if fold {
-            vec!["env", "acc", "list"]
-        } else {
-            vec!["env", "list"]
-        };
-        self.frames.push(Builder::new(
-            worker,
-            if fold { "foldl" } else { "map" },
-            params,
-        ));
-        let env = Atom::Var(self.frame().params[0]);
-        let function_value = self.bind("", Op::Select(env.clone(), 1));
-        let list = Atom::Var(*self.frame().params.last().unwrap());
-        let acc = fold.then(|| Atom::Var(self.frame().params[1]));
-        let empty = self.bind(
-            "",
-            Op::Prim(Prim::WordEq, vec![list.clone(), Atom::Word(value::NIL)]),
-        );
-        let done = self.block(Vec::new());
-        let step = self.block(Vec::new());
-        self.terminate(Term::If(empty, done, step));
-        self.switch(done);
-        self.terminate(Term::Return(acc.clone().unwrap_or(Atom::Word(value::NIL))));
-        self.switch(step);
-        let head = self.bind("", Op::Select(list.clone(), 0));
-        let tail = self.bind("", Op::Select(list, 1));
-        let argument = match acc {
-            Some(acc) => self.bind("", Op::Record(vec![head, acc])),
-            None => head,
-        };
-        let result = self.bind(
-            "",
-            Op::Call(Callee::Closure(function_value), vec![argument]),
-        );
-        if fold {
-            self.terminate(Term::TailCall(
-                Callee::Known(worker, env),
-                vec![result, tail],
-            ));
-        } else {
-            let rest = self.bind("", Op::Call(Callee::Known(worker, env), vec![tail]));
-            let list = self.bind("", Op::Record(vec![result, rest]));
-            self.terminate(Term::Return(list));
-        }
-        let frame = self.frames.pop().unwrap();
-        self.functions.push(frame.finish());
-        if !fold {
-            return self.closure("map", worker, vec![function]);
-        }
-        let adapter = self.session.function_id();
-        self.frames
-            .push(Builder::new(adapter, "foldl.list", vec!["env", "list"]));
-        let env = Atom::Var(self.frame().params[0]);
-        let acc = self.bind("", Op::Select(env.clone(), 2));
-        let list = Atom::Var(self.frame().params[1]);
-        self.terminate(Term::TailCall(Callee::Known(worker, env), vec![acc, list]));
-        let frame = self.frames.pop().unwrap();
-        self.functions.push(frame.finish());
-        let partial = self.session.function_id();
-        self.frames
-            .push(Builder::new(partial, "foldl.acc", vec!["env", "acc"]));
-        let env = Atom::Var(self.frame().params[0]);
-        let function_value = self.bind("", Op::Select(env, 1));
-        let acc = Atom::Var(self.frame().params[1]);
-        let closure = self.closure("foldl.list", adapter, vec![function_value, acc]);
-        self.terminate(Term::Return(closure));
-        let frame = self.frames.pop().unwrap();
-        self.functions.push(frame.finish());
-        self.closure("foldl.acc", partial, vec![function])
-    }
-
-    /// The value the constructor `test` builds from `argument`.
     fn construct(&mut self, test: &Test, argument: Atom) -> Atom {
         match test {
             // A cons cell is laid out as the pair it is built from.
@@ -1994,21 +1866,6 @@ impl Lowerer<'_> {
             .map(|(depth, var)| Atom::Var(self.access(depth, var)))
             .collect();
         Ok(self.closure(name, id, captured))
-    }
-
-    /// `f o g`: a closure calling `g`, then `f`, both captured.
-    fn compose(&mut self, f: Atom, g: Atom) -> Atom {
-        let id = self.session.function_id();
-        self.frames.push(Builder::new(id, "o", vec!["env", ""]));
-        let env = Atom::Var(self.frame().params[0]);
-        let argument = Atom::Var(self.frame().params[1]);
-        let f_inner = self.bind("f", Op::Select(env.clone(), 1));
-        let g_inner = self.bind("g", Op::Select(env, 2));
-        let inner = self.bind("", Op::Call(Callee::Closure(g_inner), vec![argument]));
-        self.terminate(Term::TailCall(Callee::Closure(f_inner), vec![inner]));
-        let frame = self.frames.pop().expect("the composition's frame");
-        self.functions.push(frame.finish());
-        self.closure("", id, vec![f, g])
     }
 }
 

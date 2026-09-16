@@ -1,0 +1,12 @@
+fun order LESS = "less" | order EQUAL = "equal" | order GREATER = "greater"
+val () = TextIO.print (Int.toString 42 ^ " " ^ Int.toString (~7) ^ "\n")
+val () = print (order (Int.compare (1, 2)) ^ " " ^ order (Int.compare (2, 2)) ^ " " ^ order (Int.compare (3, 2)) ^ "\n")
+val () = print (Int.toString (Int.min (3, 4) + Int.max (3, 4) + Int.abs (~10) + Int.abs 5) ^ "\n")
+val () = print (Bool.toString (Bool.not true) ^ " " ^ Bool.toString (not false) ^ "\n")
+val () = print (Int.toString (String.size "hello") ^ " " ^ String.^ ("a", "b") ^ "\n")
+(* CHECK-EXIT: 0 *)
+(* CHECK-STDOUT: 42 ~7 *)
+(* CHECK-STDOUT-NEXT: less equal greater *)
+(* CHECK-STDOUT-NEXT: 22 *)
+(* CHECK-STDOUT-NEXT: false true *)
+(* CHECK-STDOUT-NEXT: 5 ab *)

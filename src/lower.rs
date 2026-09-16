@@ -406,7 +406,7 @@ enum Builtin {
 fn builtin(name: &str) -> Option<Builtin> {
     Some(match name {
         "print" => Builtin::Print,
-        "Int.toString" => Builtin::IntToString,
+        "Prim.intToString" => Builtin::IntToString,
         "size" => Builtin::Size,
         "not" => Builtin::Not,
         "~" => Builtin::Negate,

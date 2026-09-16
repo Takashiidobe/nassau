@@ -565,7 +565,7 @@ impl Infer {
         self.builtin("explode", false, 0, |_| arrow(string(), list(con("char"))));
         self.builtin("implode", false, 0, |_| arrow(list(con("char")), string()));
         self.builtin("concat", false, 0, |_| arrow(list(string()), string()));
-        self.builtin("Int.toString", false, 0, |_| arrow(int(), string()));
+        self.builtin("Prim.intToString", false, 0, |_| arrow(int(), string()));
         self.builtin("Word8.fromInt", false, 0, |_| arrow(int(), con("word8")));
         self.builtin("Posix.Process.exit", false, 1, |v| {
             arrow(con("word8"), v[0].clone())
@@ -1025,8 +1025,8 @@ impl Infer {
                         .find(|entry| entry.name == base)
                         .cloned();
                 }
-                // Basis functions such as `Int.toString` are built in under
-                // their qualified names, until the basis has structures.
+                // Primitives such as `Prim.intToString` and the harness's
+                // `Word8.fromInt` are built in under their qualified names.
                 None => self.values.iter().rev().find(|entry| entry.name == name),
             },
         }

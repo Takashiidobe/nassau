@@ -32,7 +32,7 @@ and values are displayed.
 | Functors and structure/type sharing                         | Yes                          | Yes                                 | Yes              |
 | Full Standard Basis Library                                 | A small subset is recognized | A smaller subset is executable      | Same as native                                              |
 
-The predefined names `Int.toString`, `Word8.fromInt`, and `Posix.Process.exit`
+The predefined names `Word8.fromInt` and `Posix.Process.exit`
 are special cases. Their availability does not mean that arbitrary structures
 or qualified Basis names work.
 

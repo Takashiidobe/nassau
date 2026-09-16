@@ -68,6 +68,8 @@ def escape(text):
     """Escape text for a FileCheck pattern inside an SML comment."""
     out = []
     i = 0
+    # FileCheck canonicalises a run of blanks to one space.
+    text = re.sub(r"[ \t]*\t[ \t]*", " ", text)
     while i < len(text):
         two = text[i : i + 2]
         char = text[i]

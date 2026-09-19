@@ -74,7 +74,7 @@ pub enum Prim {
     IntToString,
     /// A string's length.
     Size,
-    /// `Posix.Process.exit (Word8.fromInt n)`.
+    /// Ends the program with the status given.
     Exit,
     /// The identity of a built-in exception, by its index in
     /// `value::BUILTIN_EXCEPTIONS`.

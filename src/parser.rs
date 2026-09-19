@@ -37,8 +37,6 @@ pub enum ExprKind {
     If(Box<Expr>, Box<Expr>, Box<Expr>),
     String(String),
     List(Vec<Expr>),
-    Word8FromInt(Box<Expr>),
-    PosixExit(Box<Expr>),
     Character(char),
     Word(String),
     Unit,
@@ -97,8 +95,6 @@ pub enum TyKind {
 #[derive(Clone, Debug)]
 pub enum StmtKind {
     Val(String, Expr),
-    Print(Expr),
-    Exit(Expr),
     Declaration(Decl),
 }
 
@@ -492,74 +488,27 @@ impl Parser {
         })
     }
 
-    /// Recognises the declarations the backend already handles (`val x = e`,
-    /// `val _ = print "..."` and `val _ = Posix.Process.exit (Word8.fromInt e)`)
-    /// and keeps every other declaration as it was parsed.
+    /// Keeps `val x = e` as the simple statement the backend handles directly
+    /// and every other declaration as it was parsed.
     fn lower_statement(declaration: Decl) -> Stmt {
         let (start, end) = (declaration.start.clone(), declaration.end.clone());
         if let DeclKind::Val {
             recursive: false,
             bindings,
         } = &declaration.value
-            && let [(pattern, expr)] = bindings.as_slice()
+            && let [(pattern, _)] = bindings.as_slice()
+            && matches!(&pattern.value, PatKind::Variable(name) if !name.contains('.'))
         {
-            let simple = match &pattern.value {
-                PatKind::Variable(name) => !name.contains('.'),
-                PatKind::Wildcard => Self::is_effect(expr),
-                _ => false,
+            let DeclKind::Val { mut bindings, .. } = declaration.value else {
+                unreachable!()
             };
-            if simple {
-                let DeclKind::Val { mut bindings, .. } = declaration.value else {
-                    unreachable!()
-                };
-                let (pattern, expr) = bindings.pop().expect("one binding");
-                let kind = match pattern.value {
-                    PatKind::Variable(name) => StmtKind::Val(name, expr),
-                    _ => Self::lower_effect(expr),
-                };
-                return Span::new(start, end, kind);
-            }
+            let (pattern, expr) = bindings.pop().expect("one binding");
+            let PatKind::Variable(name) = pattern.value else {
+                unreachable!()
+            };
+            return Span::new(start, end, StmtKind::Val(name, expr));
         }
         Span::new(start, end, StmtKind::Declaration(declaration))
-    }
-
-    fn is_effect(expr: &Expr) -> bool {
-        let ExprKind::Apply(function, argument) = &expr.value else {
-            return false;
-        };
-        match (&function.value, &argument.value) {
-            (ExprKind::Variable(name), ExprKind::String(_)) => name == "print",
-            (ExprKind::Variable(name), ExprKind::Apply(inner, _)) => {
-                name == "Posix.Process.exit"
-                    && matches!(&inner.value, ExprKind::Variable(n) if n == "Word8.fromInt")
-            }
-            _ => false,
-        }
-    }
-
-    /// `print "text"` and `Posix.Process.exit (Word8.fromInt e)` as the
-    /// backend's effect statements; the caller has checked `is_effect`.
-    fn lower_effect(expr: Expr) -> StmtKind {
-        let ExprKind::Apply(function, argument) = expr.value else {
-            unreachable!()
-        };
-        if matches!(argument.value, ExprKind::String(_)) {
-            return StmtKind::Print(*argument);
-        }
-        let Expr {
-            start,
-            end,
-            value: ExprKind::Apply(_, integer),
-        } = *argument
-        else {
-            unreachable!()
-        };
-        let word8 = Span::new(start, end.clone(), ExprKind::Word8FromInt(integer));
-        StmtKind::Exit(Span::new(
-            function.start,
-            end,
-            ExprKind::PosixExit(Box::new(word8)),
-        ))
     }
 
     fn starts_decl(&self) -> bool {

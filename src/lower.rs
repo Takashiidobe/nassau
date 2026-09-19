@@ -392,6 +392,9 @@ enum Applied {
 enum Builtin {
     Print,
     IntToString,
+    Exit,
+    /// A conversion between types of the same representation.
+    Identity,
     Size,
     Not,
     Negate,
@@ -407,6 +410,8 @@ fn builtin(name: &str) -> Option<Builtin> {
     Some(match name {
         "print" => Builtin::Print,
         "Prim.intToString" => Builtin::IntToString,
+        "Prim.exit" => Builtin::Exit,
+        "Prim.word8OfInt" | "Prim.intOfWord8" => Builtin::Identity,
         "size" => Builtin::Size,
         "not" => Builtin::Not,
         "~" => Builtin::Negate,
@@ -784,13 +789,6 @@ impl Lowerer<'_> {
             StmtKind::Val(name, expr) => {
                 let value = self.value(expr)?;
                 self.bind_top(name, value, None);
-            }
-            StmtKind::Print(expr) => {
-                let text = self.value(expr)?;
-                self.bind("", Op::Prim(Prim::Print, vec![text]));
-            }
-            StmtKind::Exit(expr) => {
-                self.value(expr)?;
             }
             StmtKind::Declaration(declaration) => self.declaration(declaration, true)?,
         }
@@ -1584,17 +1582,6 @@ impl Lowerer<'_> {
                 };
                 self.selector_closure(label, index)
             }
-            ExprKind::PosixExit(word8) => {
-                let ExprKind::Word8FromInt(status) = &word8.value else {
-                    return Err(unsupported(
-                        "Posix.Process.exit without Word8.fromInt",
-                        expr,
-                    ));
-                };
-                let status = self.value(status)?;
-                self.bind("", Op::Prim(Prim::Exit, vec![status]))
-            }
-            other => return Err(unsupported(unsupported_name(other), expr)),
         })
     }
 
@@ -1750,6 +1737,8 @@ impl Lowerer<'_> {
         match builtin {
             Builtin::Print => self.bind("", Op::Prim(Prim::Print, vec![argument])),
             Builtin::IntToString => self.bind("", Op::Prim(Prim::IntToString, vec![argument])),
+            Builtin::Exit => self.bind("", Op::Prim(Prim::Exit, vec![argument])),
+            Builtin::Identity => argument,
             Builtin::Size => self.bind("", Op::Prim(Prim::Size, vec![argument])),
             Builtin::Not => self.bind(
                 "",
@@ -1904,11 +1893,4 @@ fn unsupported_pattern(what: &str, pattern: &Pat) -> Failure {
         LowerError::Unsupported(what.to_string()),
         pattern.source_span(),
     )
-}
-
-fn unsupported_name(kind: &ExprKind) -> &'static str {
-    match kind {
-        ExprKind::Word(_) => "word literals",
-        _ => "this expression",
-    }
 }

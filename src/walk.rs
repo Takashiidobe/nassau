@@ -29,7 +29,7 @@ pub fn walk_program<'a>(program: &'a Program, visit: &mut dyn FnMut(Node<'a>, &C
     let mut sigs = Signatures::default();
     for statement in &program.statements {
         match &statement.value {
-            StmtKind::Val(_, expr) | StmtKind::Print(expr) | StmtKind::Exit(expr) => {
+            StmtKind::Val(_, expr) => {
                 walk_expr(expr, visit, &mut env, &mut sigs);
             }
             StmtKind::Declaration(declaration) => {
@@ -269,10 +269,7 @@ fn walk_expr<'a>(
                 walk_expr(value, visit, env, sigs);
             }
         }
-        ExprKind::Word8FromInt(inner)
-        | ExprKind::PosixExit(inner)
-        | ExprKind::Raise(inner)
-        | ExprKind::Typed(inner, _) => walk_expr(inner, visit, env, sigs),
+        ExprKind::Raise(inner) | ExprKind::Typed(inner, _) => walk_expr(inner, visit, env, sigs),
         ExprKind::Let(declarations, body) => {
             let mark = env.mark();
             for inner in declarations {

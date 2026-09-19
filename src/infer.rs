@@ -395,6 +395,7 @@ const TYPE_CONSTRUCTORS: &[(&str, usize)] = &[
     ("unit", 0),
     ("char", 0),
     ("word", 0),
+    ("word8", 0),
     ("exn", 0),
     ("order", 0),
     ("list", 1),
@@ -566,10 +567,9 @@ impl Infer {
         self.builtin("implode", false, 0, |_| arrow(list(con("char")), string()));
         self.builtin("concat", false, 0, |_| arrow(list(string()), string()));
         self.builtin("Prim.intToString", false, 0, |_| arrow(int(), string()));
-        self.builtin("Word8.fromInt", false, 0, |_| arrow(int(), con("word8")));
-        self.builtin("Posix.Process.exit", false, 1, |v| {
-            arrow(con("word8"), v[0].clone())
-        });
+        self.builtin("Prim.word8OfInt", false, 0, |_| arrow(int(), con("word8")));
+        self.builtin("Prim.intOfWord8", false, 0, |_| arrow(con("word8"), int()));
+        self.builtin("Prim.exit", false, 1, |v| arrow(int(), v[0].clone()));
     }
 
     fn builtin(
@@ -1025,9 +1025,10 @@ impl Infer {
                         .find(|entry| entry.name == base)
                         .cloned();
                 }
-                // Primitives such as `Prim.intToString` and the harness's
-                // `Word8.fromInt` are built in under their qualified names.
-                None => self.values.iter().rev().find(|entry| entry.name == name),
+                // Primitives such as `Prim.intToString` are built in under
+                // their qualified names.
+                None if path == "Prim" => self.values.iter().rev().find(|entry| entry.name == name),
+                None => None,
             },
         }
         .cloned()
@@ -1653,16 +1654,6 @@ impl Infer {
                 let annotated = self.annotation(annotation)?;
                 self.unify_at(&annotated, &found, span)?;
                 Ok(annotated)
-            }
-            ExprKind::Word8FromInt(inner) => {
-                let found = self.infer_expr(inner)?;
-                self.unify_at(&con("int"), &found, inner.source_span())?;
-                Ok(con("word8"))
-            }
-            ExprKind::PosixExit(inner) => {
-                let found = self.infer_expr(inner)?;
-                self.unify_at(&con("word8"), &found, inner.source_span())?;
-                Ok(self.fresh())
             }
         }
     }
@@ -2478,15 +2469,6 @@ impl Infer {
             self.tyvars.clear();
             let bound = match &statement.value {
                 StmtKind::Val(name, expr) => self.infer_simple_val(name, expr)?,
-                StmtKind::Print(expr) => {
-                    let found = self.infer_expr(expr)?;
-                    self.unify_at(&con("string"), &found, expr.source_span())?;
-                    Vec::new()
-                }
-                StmtKind::Exit(expr) => {
-                    self.infer_expr(expr)?;
-                    Vec::new()
-                }
                 StmtKind::Declaration(declaration) => self.infer_decl(declaration)?,
             };
             self.check_flexible(statement.source_span(), true)?;

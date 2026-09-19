@@ -32,10 +32,6 @@ and values are displayed.
 | Functors and structure/type sharing                         | Yes                          | Yes                                 | Yes              |
 | Full Standard Basis Library                                 | A small subset is recognized | A smaller subset is executable      | Same as native                                              |
 
-The predefined names `Word8.fromInt` and `Posix.Process.exit`
-are special cases. Their availability does not mean that arbitrary structures
-or qualified Basis names work.
-
 ## Tokens and literals
 
 Names can be alphanumeric (`count`, `value'`, `item_2`) or symbolic (`++`, `!`).
@@ -244,25 +240,24 @@ fresh identities where required. Functors in top-level `local` declarations
 are a supported SML/NJ extension; MLton rejects that form. Higher-order
 functors are not implemented.
 
-## The small Basis subset
+## The Basis subset
 
-Executable built-ins include `print`, `size`, `Int.toString`, `length`, `map`,
-`foldl`, `not`, `~`,
-`ref`, `!`, `:=`, `ignore`, `before`, equality, string concatenation `^`, list
-construction `::`, and function composition `o`. The built-in datatype
-constructors include booleans, `nil`/`::`, `NONE`/`SOME`, and
-`LESS`/`EQUAL`/`GREATER`.
+Most of the Basis is SML source under `basis/`, checked and compiled ahead of
+every program (see [architecture.md](architecture.md)). It provides the
+structures `General`, `Bool`, `Int`, `String`, `TextIO`, `Word8`, `Posix.Process`,
+`OS.Process`, `List` and `Option`, with the top-level names the Basis exposes
+from them, such as `hd`, `map`, `@`, `ignore`, `o` and `valOf`. A structure
+holds only the functions listed in its source file.
 
-Process exit is currently supported through the specific form
-`Posix.Process.exit (Word8.fromInt e)`. General uses of these two functions are
-not compiled.
+A few names are known to the compiler: `print`, `size`, `not`, `~`, `^`, `ref`,
+`!`, `:=`, equality, and the built-in datatype constructors (booleans,
+`nil`/`::`, `NONE`/`SOME`, `LESS`/`EQUAL`/`GREATER`) and exceptions. The
+prelude reaches the primitives behind its structures as `Prim.name`.
 
-The checker also knows the types of `@`, `hd`, `tl`, `null`, `rev`,
-`foldr`, `real`, `floor`, `ord`, `chr`, `str`, `explode`,
-`implode`, and `concat`. The backend has no built-in implementations for them.
-Ordinary SML definitions of functions such as `map` and `foldl` work; several
-fixtures define their own. Arrays, vectors, general file I/O, and most Basis
-structures remain outside the implemented subset.
+The checker knows the types of `real`, `floor`, `ord`, `chr`, `str`, `explode`,
+`implode` and `concat`. The backend has no implementations for them. Arrays,
+vectors, general file I/O, and most Basis structures remain outside the
+implemented subset.
 
 ## REPL and compatibility limits
 

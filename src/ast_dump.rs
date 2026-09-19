@@ -16,8 +16,6 @@ pub fn program(program: &Program) -> String {
     for statement in &program.statements {
         out += &match &statement.value {
             StmtKind::Val(name, expr) => format!("(val {name} {})", expr_text(expr)),
-            StmtKind::Print(expr) => format!("(print {})", expr_text(expr)),
-            StmtKind::Exit(expr) => format!("(exit {})", expr_text(expr)),
             StmtKind::Declaration(declaration) => decl_text(declaration),
         };
         out.push('\n');
@@ -90,8 +88,6 @@ fn expr_text(expr: &Expr) -> String {
         ExprKind::Handle(body, rules) => list_with("handle", expr_text(body), rules),
         ExprKind::Raise(inner) => format!("(raise {})", expr_text(inner)),
         ExprKind::Typed(inner, ty) => format!("(: {} {})", expr_text(inner), ty_text(ty)),
-        ExprKind::Word8FromInt(inner) => format!("(Word8.fromInt {})", expr_text(inner)),
-        ExprKind::PosixExit(inner) => format!("(Posix.Process.exit {})", expr_text(inner)),
     }
 }
 

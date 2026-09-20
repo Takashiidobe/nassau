@@ -558,15 +558,17 @@ impl Infer {
                 self.vars[var].equality = true;
             }
         }
-        self.builtin("real", false, 0, |_| arrow(int(), real()));
-        self.builtin("floor", false, 0, |_| arrow(real(), int()));
-        self.builtin("ord", false, 0, |_| arrow(con("char"), int()));
-        self.builtin("chr", false, 0, |_| arrow(int(), con("char")));
-        self.builtin("str", false, 0, |_| arrow(con("char"), string()));
-        self.builtin("explode", false, 0, |_| arrow(string(), list(con("char"))));
-        self.builtin("implode", false, 0, |_| arrow(list(con("char")), string()));
-        self.builtin("concat", false, 0, |_| arrow(list(string()), string()));
         self.builtin("Prim.intToString", false, 0, |_| arrow(int(), string()));
+        self.builtin("Prim.intToReal", false, 0, |_| arrow(int(), real()));
+        self.builtin("Prim.realFloor", false, 0, |_| arrow(real(), int()));
+        self.builtin("Prim.ord", false, 0, |_| arrow(con("char"), int()));
+        self.builtin("Prim.chr", false, 0, |_| arrow(int(), con("char")));
+        self.builtin("Prim.charToString", false, 0, |_| {
+            arrow(con("char"), string())
+        });
+        self.builtin("Prim.stringSub", false, 0, |_| {
+            arrow(tuple(vec![string(), int()]), con("char"))
+        });
         self.builtin("Prim.word8OfInt", false, 0, |_| arrow(int(), con("word8")));
         self.builtin("Prim.intOfWord8", false, 0, |_| arrow(con("word8"), int()));
         self.builtin("Prim.exit", false, 1, |v| arrow(int(), v[0].clone()));

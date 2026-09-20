@@ -72,6 +72,14 @@ pub enum Prim {
     /// `^`.
     Concat,
     IntToString,
+    /// An int as a real.
+    IntToReal,
+    /// The floor of a real known to fit an int.
+    RealFloor,
+    /// The one-character string of a char.
+    CharToString,
+    /// The char at an index known to be in range of a string.
+    StringSub,
     /// A string's length.
     Size,
     /// Ends the program with the status given.
@@ -117,6 +125,10 @@ impl Prim {
             Prim::Print => "print",
             Prim::Concat => "concat",
             Prim::IntToString => "int.to_string",
+            Prim::IntToReal => "int.to_real",
+            Prim::RealFloor => "real.floor",
+            Prim::CharToString => "char.to_string",
+            Prim::StringSub => "string.sub",
             Prim::Size => "size",
             Prim::Exit => "exit",
             Prim::BuiltinException => "exception.builtin",

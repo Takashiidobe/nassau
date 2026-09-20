@@ -467,6 +467,12 @@ impl Interpreter {
                 .concat(),
             ),
             IntToString => string(int(0).to_string().replace('-', "~").into_bytes()),
+            IntToReal => real(int(0) as f64),
+            RealFloor => Value::Word(value::tagged(number(0).floor() as i64)),
+            CharToString => string(vec![int(0) as u8]),
+            StringSub => Value::Word(value::tagged(i64::from(
+                args[0].object().bytes[int(1) as usize],
+            ))),
             Size => Value::Word(value::tagged(args[0].object().bytes.len() as i64)),
             Exit => return Err(Signal::Exit((int(0) & 0xff) as u8)),
             BuiltinException => self.exception(int(0)),

@@ -920,6 +920,35 @@ impl<M: Module> Translator<'_, M> {
                     args,
                 )?
                 .expect("nassau_int_to_string returns a string"),
+            Prim::IntToReal => {
+                let integer = self.untag(args[0]);
+                let real = self.builder.ins().fcvt_from_sint(types::F64, integer);
+                self.box_real(real)?
+            }
+            Prim::RealFloor => {
+                let real = self.real(args[0]);
+                let floor = self.builder.ins().floor(real);
+                let integer = self.builder.ins().fcvt_to_sint_sat(types::I64, floor);
+                self.tag(integer)
+            }
+            Prim::CharToString => {
+                let string = self.allocate(1, value::KIND_STRING)?;
+                let code = self.untag(args[0]);
+                let byte = self.builder.ins().ireduce(types::I8, code);
+                self.builder
+                    .ins()
+                    .store(MemFlagsData::trusted(), byte, string, 8);
+                string
+            }
+            Prim::StringSub => {
+                let index = self.untag(args[1]);
+                let address = self.builder.ins().iadd(args[0], index);
+                let byte =
+                    self.builder
+                        .ins()
+                        .uload8(types::I64, MemFlagsData::trusted(), address, 8);
+                self.tag(byte)
+            }
             Prim::Size => {
                 let header =
                     self.builder

@@ -393,6 +393,10 @@ enum Builtin {
     Print,
     IntToString,
     Exit,
+    IntToReal,
+    RealFloor,
+    CharToString,
+    StringSub,
     /// A conversion between types of the same representation.
     Identity,
     Size,
@@ -411,7 +415,11 @@ fn builtin(name: &str) -> Option<Builtin> {
         "print" => Builtin::Print,
         "Prim.intToString" => Builtin::IntToString,
         "Prim.exit" => Builtin::Exit,
-        "Prim.word8OfInt" | "Prim.intOfWord8" => Builtin::Identity,
+        "Prim.intToReal" => Builtin::IntToReal,
+        "Prim.realFloor" => Builtin::RealFloor,
+        "Prim.charToString" => Builtin::CharToString,
+        "Prim.stringSub" => Builtin::StringSub,
+        "Prim.word8OfInt" | "Prim.intOfWord8" | "Prim.ord" | "Prim.chr" => Builtin::Identity,
         "size" => Builtin::Size,
         "not" => Builtin::Not,
         "~" => Builtin::Negate,
@@ -1738,6 +1746,14 @@ impl Lowerer<'_> {
             Builtin::Print => self.bind("", Op::Prim(Prim::Print, vec![argument])),
             Builtin::IntToString => self.bind("", Op::Prim(Prim::IntToString, vec![argument])),
             Builtin::Exit => self.bind("", Op::Prim(Prim::Exit, vec![argument])),
+            Builtin::IntToReal => self.bind("", Op::Prim(Prim::IntToReal, vec![argument])),
+            Builtin::RealFloor => self.bind("", Op::Prim(Prim::RealFloor, vec![argument])),
+            Builtin::CharToString => self.bind("", Op::Prim(Prim::CharToString, vec![argument])),
+            Builtin::StringSub => {
+                let string = self.bind("", Op::Select(argument.clone(), 0));
+                let index = self.bind("", Op::Select(argument, 1));
+                self.bind("", Op::Prim(Prim::StringSub, vec![string, index]))
+            }
             Builtin::Identity => argument,
             Builtin::Size => self.bind("", Op::Prim(Prim::Size, vec![argument])),
             Builtin::Not => self.bind(

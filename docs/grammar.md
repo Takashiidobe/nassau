@@ -244,8 +244,8 @@ functors are not implemented.
 
 Most of the Basis is SML source under `basis/`, checked and compiled ahead of
 every program (see [architecture.md](architecture.md)). It provides the
-structures `General`, `Bool`, `Int`, `String`, `TextIO`, `Word8`, `Posix.Process`,
-`OS.Process`, `List` and `Option`, with the top-level names the Basis exposes
+structures `General`, `Bool`, `Int`, `Char`, `Real`, `String`, `TextIO`, `Word8`,
+`Posix.Process`, `OS.Process`, `List` and `Option`, with the top-level names the Basis exposes
 from them, such as `hd`, `map`, `@`, `ignore`, `o` and `valOf`. A structure
 holds only the functions listed in its source file.
 
@@ -254,10 +254,8 @@ A few names are known to the compiler: `print`, `size`, `not`, `~`, `^`, `ref`,
 `nil`/`::`, `NONE`/`SOME`, `LESS`/`EQUAL`/`GREATER`) and exceptions. The
 prelude reaches the primitives behind its structures as `Prim.name`.
 
-The checker knows the types of `real`, `floor`, `ord`, `chr`, `str`, `explode`,
-`implode` and `concat`. The backend has no implementations for them. Arrays,
-vectors, general file I/O, and most Basis structures remain outside the
-implemented subset.
+Arrays, vectors, general file I/O, `Real.toString`, substrings, and most other
+Basis structures remain outside the implemented subset.
 
 ## REPL and compatibility limits
 

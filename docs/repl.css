@@ -1,0 +1,28 @@
+.repl-example {
+    margin: 1rem 0 2rem;
+}
+
+.repl-embed {
+    margin-block-start: -0.5rem;
+    overflow: hidden;
+    border: 1px solid var(--quote-border);
+    border-radius: 0.5rem;
+}
+
+.repl-embed summary {
+    padding: 0.6rem 1rem;
+    cursor: pointer;
+}
+
+.repl-embed iframe {
+    display: block;
+    width: 100%;
+    height: 430px;
+    border: 0;
+    background: #151719;
+}
+
+.repl-embed a {
+    display: block;
+    padding: 0.6rem 1rem;
+}

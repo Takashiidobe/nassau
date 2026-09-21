@@ -1,0 +1,8 @@
+[book]
+title = "Nassau Docs"
+authors = ["Takashiidobe"]
+language = "en"
+
+[output.html]
+additional-js = ["sml.js", "repl.js"]
+additional-css = ["repl.css"]

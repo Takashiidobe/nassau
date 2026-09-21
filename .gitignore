@@ -24,3 +24,5 @@ tests/**/*
 .netlify
 
 .llog/
+
+/docs/book/

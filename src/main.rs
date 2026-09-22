@@ -1,6 +1,7 @@
 mod codegen;
 mod lexer;
 mod parser;
+mod repl;
 mod span;
 
 use std::fs;
@@ -11,10 +12,13 @@ use crate::parser::Parser as SmlParser;
 use clap::Parser;
 
 #[derive(Debug, Parser)]
-#[command(name = "nassau", about = "Compile a Nassau source file")]
+#[command(
+    name = "nassau",
+    about = "Run the Nassau REPL or compile a source file"
+)]
 struct Cli {
     #[arg(value_name = "FILE")]
-    input: PathBuf,
+    input: Option<PathBuf>,
     #[arg(
         long,
         help = "Print IR before and after optimization and lowered instructions"
@@ -50,7 +54,10 @@ fn output_path(input: &Path) -> Result<PathBuf, String> {
 }
 
 fn run(cli: &Cli) -> miette::Result<PathBuf> {
-    let input = &cli.input;
+    let input = cli
+        .input
+        .as_ref()
+        .ok_or_else(|| miette::miette!("expected a source file"))?;
     let source = fs::read_to_string(input).map_err(|error| miette::miette!("{error}"))?;
     let named_source = miette::NamedSource::new(input.display().to_string(), source.clone());
     let program = SmlParser::from_source(&source, input.to_string_lossy().as_ref())
@@ -80,6 +87,20 @@ fn run(cli: &Cli) -> miette::Result<PathBuf> {
 
 fn main() {
     let cli = Cli::parse();
+    if cli.input.is_none() {
+        if let Err(error) = repl::run(
+            cli.opt_level,
+            cli.debug_passes,
+            cli.dump_ir,
+            cli.dump_optimized_ir,
+            cli.verify,
+            cli.stats,
+        ) {
+            eprintln!("{error:?}");
+            std::process::exit(1);
+        }
+        return;
+    }
     match run(&cli) {
         Ok(output) => println!("wrote {}", output.display()),
         Err(error) => {

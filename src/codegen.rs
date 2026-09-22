@@ -1,17 +1,20 @@
-use crate::parser::{ExprKind, Program, StmtKind};
+use std::env;
+use std::fs;
+use std::path::Path;
+use std::process::Command;
+use std::time::{Duration, Instant};
+
 use clap::ValueEnum;
 use cranelift_codegen::ir::{AbiParam, InstBuilder, types};
 use cranelift_codegen::settings::Configurable;
 use cranelift_codegen::{self, settings};
 use cranelift_control::ControlPlane;
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
-use cranelift_module::{DataDescription, Linkage, Module, default_libcall_names};
+use cranelift_jit::{JITBuilder, JITModule};
+use cranelift_module::{DataDescription, FuncId, Linkage, Module, default_libcall_names};
 use cranelift_object::{ObjectBuilder, ObjectModule};
-use std::env;
-use std::fs;
-use std::path::Path;
-use std::process::Command;
-use std::time::Instant;
+
+use crate::parser::{ExprKind, Program, StmtKind};
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
 pub enum OptLevel {
@@ -20,6 +23,7 @@ pub enum OptLevel {
     #[value(name = "speed-and-size")]
     SpeedAndSize,
 }
+
 impl OptLevel {
     fn as_cranelift(self) -> &'static str {
         match self {
@@ -41,6 +45,15 @@ pub struct Codegen {
     stats: bool,
     objdump: bool,
 }
+
+struct FunctionBuild {
+    id: FuncId,
+    context: cranelift_codegen::Context,
+    frontend: Duration,
+    optimization: Duration,
+    codegen: Duration,
+}
+
 impl Codegen {
     pub fn new(
         opt_level: OptLevel,
@@ -65,188 +78,57 @@ impl Codegen {
             objdump,
         }
     }
-    pub fn compile(&self, program: &Program, output: &Path) -> Result<(), String> {
-        self.lower_and_link(program, output)
-    }
-    fn lower_and_link(&self, program: &Program, output: &Path) -> Result<(), String> {
-        let total_start = Instant::now();
+
+    fn isa(&self, jit: bool) -> Result<cranelift_codegen::isa::OwnedTargetIsa, String> {
         let mut flag_builder = settings::builder();
         flag_builder
             .set("opt_level", self.opt_level.as_cranelift())
             .map_err(|error| error.to_string())?;
-        let flags = settings::Flags::new(flag_builder);
-        let isa = cranelift_native::builder()
+        if jit {
+            flag_builder
+                .set("use_colocated_libcalls", "false")
+                .map_err(|error| error.to_string())?;
+            if cfg!(target_arch = "x86_64") {
+                flag_builder
+                    .set("is_pic", "true")
+                    .map_err(|error| error.to_string())?;
+            }
+        }
+        cranelift_native::builder()
             .map_err(|error| error.to_string())?
-            .finish(flags)
+            .finish(settings::Flags::new(flag_builder))
+            .map_err(|error| error.to_string())
+    }
+
+    pub fn new_jit_module(&self) -> Result<JITModule, String> {
+        let builder = JITBuilder::with_isa(self.isa(true)?, default_libcall_names());
+        Ok(JITModule::new(builder))
+    }
+
+    pub fn compile_jit_chunk(
+        &self,
+        module: &mut JITModule,
+        program: &Program,
+        name: &str,
+    ) -> Result<*const u8, String> {
+        let function = self.define_program(module, program, name)?;
+        module
+            .finalize_definitions()
             .map_err(|error| error.to_string())?;
-        let frontend_config = isa.frontend_config();
+        Ok(module.get_finalized_function(function.id))
+    }
+
+    pub fn compile(&self, program: &Program, output: &Path) -> Result<(), String> {
+        let total_start = Instant::now();
+        let isa = self.isa(false)?;
         let object_builder = ObjectBuilder::new(isa, "nassau", default_libcall_names())
             .map_err(|error| error.to_string())?;
         let mut module = ObjectModule::new(object_builder);
-        let mut signature = module.make_signature();
-        signature.returns.push(AbiParam::new(types::I32));
-        let function = module
-            .declare_function("main", Linkage::Export, &signature)
-            .map_err(|error| error.to_string())?;
+        let function = self.define_program(&mut module, program, "main")?;
 
-        let mut context = module.make_context();
-        context.func.signature = signature;
-        let mut builder_context = FunctionBuilderContext::new();
-        let mut builder = FunctionBuilder::new(&mut context.func, &mut builder_context);
-        let block = builder.create_block();
-        builder.switch_to_block(block);
-        builder.seal_block(block);
-        let pointer_type = module.isa().pointer_type();
-        let has_print = program
-            .statements
-            .iter()
-            .any(|statement| matches!(statement.value, StmtKind::Print(_)));
-        let has_exit = program
-            .statements
-            .iter()
-            .any(|statement| matches!(statement.value, StmtKind::Exit(_)));
-        let printf = if has_print {
-            let mut sig = module.make_signature();
-            sig.params.push(AbiParam::new(pointer_type));
-            sig.params.push(AbiParam::new(pointer_type));
-            sig.returns.push(AbiParam::new(types::I32));
-            Some(
-                module
-                    .declare_function("printf", Linkage::Import, &sig)
-                    .map_err(|e| e.to_string())?,
-            )
-        } else {
-            None
-        };
-        let exit = if has_exit {
-            let mut sig = module.make_signature();
-            sig.params.push(AbiParam::new(types::I32));
-            Some(
-                module
-                    .declare_function("exit", Linkage::Import, &sig)
-                    .map_err(|e| e.to_string())?,
-            )
-        } else {
-            None
-        };
-        let format_data = if has_print {
-            let id = module
-                .declare_data("nassau_format", Linkage::Local, false, false)
-                .map_err(|e| e.to_string())?;
-            let mut data = DataDescription::new();
-            data.define(b"%s\0".to_vec().into_boxed_slice());
-            module.define_data(id, &data).map_err(|e| e.to_string())?;
-            Some(id)
-        } else {
-            None
-        };
-        let mut string_data = Vec::new();
-        for (index, statement) in program.statements.iter().enumerate() {
-            if let StmtKind::Print(expr) = &statement.value {
-                if let ExprKind::String(value) = &expr.value {
-                    let id = module
-                        .declare_data(
-                            &format!("nassau_string_{index}"),
-                            Linkage::Local,
-                            false,
-                            false,
-                        )
-                        .map_err(|e| e.to_string())?;
-                    let mut data = DataDescription::new();
-                    let mut bytes = value.as_bytes().to_vec();
-                    bytes.push(0);
-                    data.define(bytes.into_boxed_slice());
-                    module.define_data(id, &data).map_err(|e| e.to_string())?;
-                    string_data.push((index, id));
-                }
-            }
-        }
-        for (index, statement) in program.statements.iter().enumerate() {
-            match &statement.value {
-                StmtKind::Print(_) => {
-                    let format_id = format_data.unwrap();
-                    let string_id = string_data.iter().find(|(i, _)| *i == index).unwrap().1;
-                    let format_gv = module.declare_data_in_func(format_id, builder.func);
-                    let string_gv = module.declare_data_in_func(string_id, builder.func);
-                    let fmt = builder.ins().symbol_value(pointer_type, format_gv);
-                    let string = builder.ins().symbol_value(pointer_type, string_gv);
-                    let func = module.declare_func_in_func(printf.unwrap(), builder.func);
-                    builder.ins().call(func, &[fmt, string]);
-                }
-                StmtKind::Exit(expr) => {
-                    let ExprKind::PosixExit(word8) = &expr.value else {
-                        unreachable!()
-                    };
-                    let ExprKind::Word8FromInt(integer) = &word8.value else {
-                        unreachable!()
-                    };
-                    let ExprKind::Integer(value) = integer.value else {
-                        unreachable!()
-                    };
-                    let func = module.declare_func_in_func(exit.unwrap(), builder.func);
-                    let code = builder.ins().iconst(types::I32, value.rem_euclid(256));
-                    builder.ins().call(func, &[code]);
-                }
-            }
-        }
-        let result = builder.ins().iconst(types::I32, i64::from(program.result));
-        builder.ins().return_(&[result]);
-        builder.finalize(frontend_config);
-        let frontend_time = total_start.elapsed();
-        let dump_ir = self.debug_passes || self.dump_ir;
-        let dump_optimized_ir = self.debug_passes || self.dump_optimized_ir;
-        let needs_manual_optimization = dump_optimized_ir || self.verify || self.stats;
-        if self.verify {
-            cranelift_codegen::verify_function(&context.func, module.isa())
-                .map_err(|error| error.to_string())?;
-        }
-        if dump_ir {
-            println!(
-                "== Cranelift IR before optimization ==\n{}",
-                context.func.display()
-            );
-        }
-        let optimization_start = Instant::now();
-        if needs_manual_optimization {
-            context
-                .optimize(module.isa(), &mut ControlPlane::default())
-                .map_err(|error| error.to_string())?;
-        }
-        let optimization_time = optimization_start.elapsed();
-        if self.verify && needs_manual_optimization {
-            cranelift_codegen::verify_function(&context.func, module.isa())
-                .map_err(|error| error.to_string())?;
-        }
-        if dump_optimized_ir {
-            println!(
-                "== Cranelift IR after optimization ==\n{}",
-                context.func.display()
-            );
-        }
-        context.set_disasm(self.debug_passes || self.asm);
-        let codegen_start = Instant::now();
-        module
-            .define_function(function, &mut context)
-            .map_err(|error| error.to_string())?;
-        let codegen_time = codegen_start.elapsed();
-        if self.stats {
-            let blocks = context.func.layout.blocks().count();
-            let instructions = context
-                .func
-                .layout
-                .blocks()
-                .map(|block| context.func.layout.block_insts(block).count())
-                .sum::<usize>();
-            let code_size = context
-                .compiled_code()
-                .map(|compiled| compiled.code_info().total_size)
-                .unwrap_or_default();
-            println!(
-                "== Cranelift stats ==\nblocks: {blocks}\nIR instructions: {instructions}\ncode bytes: {code_size}"
-            );
-        }
         if self.debug_passes || self.asm {
-            let disassembly = context
+            let disassembly = function
+                .context
                 .compiled_code()
                 .and_then(|compiled| compiled.vcode.as_deref())
                 .ok_or_else(|| "target does not provide a textual assembly listing".to_string())?;
@@ -255,20 +137,12 @@ impl Codegen {
             }
             if self.asm {
                 fs::write(output, disassembly).map_err(|error| error.to_string())?;
-                if self.timings {
-                    println!(
-                        "== Timings ==\nfrontend: {:?}\noptimization: {:?}\ncodegen: {:?}\ntotal: {:?}",
-                        frontend_time,
-                        optimization_time,
-                        codegen_time,
-                        total_start.elapsed()
-                    );
-                }
+                self.print_timings(&function, Duration::ZERO, total_start.elapsed());
                 return Ok(());
             }
         }
-        let object = module.finish().emit().map_err(|error| error.to_string())?;
 
+        let object = module.finish().emit().map_err(|error| error.to_string())?;
         let object_path = env::temp_dir().join(format!("nassau-{}.o", std::process::id()));
         fs::write(&object_path, object).map_err(|error| error.to_string())?;
         if self.objdump {
@@ -300,16 +174,214 @@ impl Codegen {
                 .trim()
                 .to_string());
         }
+        self.print_timings(&function, link_start.elapsed(), total_start.elapsed());
+        Ok(())
+    }
+
+    fn define_program<M: Module>(
+        &self,
+        module: &mut M,
+        program: &Program,
+        name: &str,
+    ) -> Result<FunctionBuild, String> {
+        let total_start = Instant::now();
+        let frontend_config = module.isa().frontend_config();
+        let mut signature = module.make_signature();
+        signature.returns.push(AbiParam::new(types::I32));
+        let function = module
+            .declare_function(name, Linkage::Export, &signature)
+            .map_err(|error| error.to_string())?;
+        let mut context = module.make_context();
+        context.func.signature = signature;
+        let mut builder_context = FunctionBuilderContext::new();
+        let mut builder = FunctionBuilder::new(&mut context.func, &mut builder_context);
+        let block = builder.create_block();
+        builder.switch_to_block(block);
+        builder.seal_block(block);
+
+        let pointer_type = module.isa().pointer_type();
+        let has_print = program
+            .statements
+            .iter()
+            .any(|statement| matches!(statement.value, StmtKind::Print(_)));
+        let has_exit = program
+            .statements
+            .iter()
+            .any(|statement| matches!(statement.value, StmtKind::Exit(_)));
+        let printf = if has_print {
+            let mut signature = module.make_signature();
+            signature.params.push(AbiParam::new(pointer_type));
+            signature.params.push(AbiParam::new(pointer_type));
+            signature.returns.push(AbiParam::new(types::I32));
+            Some(
+                module
+                    .declare_function("printf", Linkage::Import, &signature)
+                    .map_err(|error| error.to_string())?,
+            )
+        } else {
+            None
+        };
+        let fflush = if has_print {
+            let mut signature = module.make_signature();
+            signature.params.push(AbiParam::new(pointer_type));
+            signature.returns.push(AbiParam::new(types::I32));
+            Some(
+                module
+                    .declare_function("fflush", Linkage::Import, &signature)
+                    .map_err(|error| error.to_string())?,
+            )
+        } else {
+            None
+        };
+        let exit = if has_exit {
+            let mut signature = module.make_signature();
+            signature.params.push(AbiParam::new(types::I32));
+            Some(
+                module
+                    .declare_function("exit", Linkage::Import, &signature)
+                    .map_err(|error| error.to_string())?,
+            )
+        } else {
+            None
+        };
+        let format_data = if has_print {
+            let id = module
+                .declare_data(&format!("{name}_format"), Linkage::Local, false, false)
+                .map_err(|error| error.to_string())?;
+            let mut data = DataDescription::new();
+            data.define(b"%s\0".to_vec().into_boxed_slice());
+            module
+                .define_data(id, &data)
+                .map_err(|error| error.to_string())?;
+            Some(id)
+        } else {
+            None
+        };
+        let mut string_data = Vec::new();
+        for (index, statement) in program.statements.iter().enumerate() {
+            if let StmtKind::Print(expr) = &statement.value {
+                if let ExprKind::String(value) = &expr.value {
+                    let id = module
+                        .declare_data(
+                            &format!("{name}_string_{index}"),
+                            Linkage::Local,
+                            false,
+                            false,
+                        )
+                        .map_err(|error| error.to_string())?;
+                    let mut data = DataDescription::new();
+                    let mut bytes = value.as_bytes().to_vec();
+                    bytes.push(0);
+                    data.define(bytes.into_boxed_slice());
+                    module
+                        .define_data(id, &data)
+                        .map_err(|error| error.to_string())?;
+                    string_data.push((index, id));
+                }
+            }
+        }
+        for (index, statement) in program.statements.iter().enumerate() {
+            match &statement.value {
+                StmtKind::Print(_) => {
+                    let format_id = format_data.unwrap();
+                    let string_id = string_data.iter().find(|(i, _)| *i == index).unwrap().1;
+                    let format_global = module.declare_data_in_func(format_id, builder.func);
+                    let string_global = module.declare_data_in_func(string_id, builder.func);
+                    let format_value = builder.ins().symbol_value(pointer_type, format_global);
+                    let string_value = builder.ins().symbol_value(pointer_type, string_global);
+                    let function = module.declare_func_in_func(printf.unwrap(), builder.func);
+                    builder.ins().call(function, &[format_value, string_value]);
+                    let function = module.declare_func_in_func(fflush.unwrap(), builder.func);
+                    let null = builder.ins().iconst(pointer_type, 0);
+                    builder.ins().call(function, &[null]);
+                }
+                StmtKind::Exit(expr) => {
+                    let ExprKind::PosixExit(word8) = &expr.value else {
+                        unreachable!()
+                    };
+                    let ExprKind::Word8FromInt(integer) = &word8.value else {
+                        unreachable!()
+                    };
+                    let ExprKind::Integer(value) = integer.value else {
+                        unreachable!()
+                    };
+                    let function = module.declare_func_in_func(exit.unwrap(), builder.func);
+                    let code = builder.ins().iconst(types::I32, value.rem_euclid(256));
+                    builder.ins().call(function, &[code]);
+                }
+            }
+        }
+        let result = builder.ins().iconst(types::I32, i64::from(program.result));
+        builder.ins().return_(&[result]);
+        builder.finalize(frontend_config);
+        let frontend = total_start.elapsed();
+        let dump_ir = self.debug_passes || self.dump_ir;
+        let dump_optimized_ir = self.debug_passes || self.dump_optimized_ir;
+        let needs_manual_optimization = dump_optimized_ir || self.verify || self.stats;
+        if self.verify {
+            cranelift_codegen::verify_function(&context.func, module.isa())
+                .map_err(|error| error.to_string())?;
+        }
+        if dump_ir {
+            println!(
+                "== Cranelift IR before optimization ==\n{}",
+                context.func.display()
+            );
+        }
+        let optimization_start = Instant::now();
+        if needs_manual_optimization {
+            context
+                .optimize(module.isa(), &mut ControlPlane::default())
+                .map_err(|error| error.to_string())?;
+        }
+        let optimization = optimization_start.elapsed();
+        if self.verify && needs_manual_optimization {
+            cranelift_codegen::verify_function(&context.func, module.isa())
+                .map_err(|error| error.to_string())?;
+        }
+        if dump_optimized_ir {
+            println!(
+                "== Cranelift IR after optimization ==\n{}",
+                context.func.display()
+            );
+        }
+        context.set_disasm(self.debug_passes || self.asm);
+        let codegen_start = Instant::now();
+        module
+            .define_function(function, &mut context)
+            .map_err(|error| error.to_string())?;
+        let codegen = codegen_start.elapsed();
+        if self.stats {
+            let blocks = context.func.layout.blocks().count();
+            let instructions = context
+                .func
+                .layout
+                .blocks()
+                .map(|block| context.func.layout.block_insts(block).count())
+                .sum::<usize>();
+            let code_size = context
+                .compiled_code()
+                .map(|compiled| compiled.code_info().total_size)
+                .unwrap_or_default();
+            println!(
+                "== Cranelift stats ==\nblocks: {blocks}\nIR instructions: {instructions}\ncode bytes: {code_size}"
+            );
+        }
+        Ok(FunctionBuild {
+            id: function,
+            context,
+            frontend,
+            optimization,
+            codegen,
+        })
+    }
+
+    fn print_timings(&self, function: &FunctionBuild, link: Duration, total: Duration) {
         if self.timings {
             println!(
                 "== Timings ==\nfrontend: {:?}\noptimization: {:?}\ncodegen: {:?}\nlink: {:?}\ntotal: {:?}",
-                frontend_time,
-                optimization_time,
-                codegen_time,
-                link_start.elapsed(),
-                total_start.elapsed()
+                function.frontend, function.optimization, function.codegen, link, total
             );
         }
-        Ok(())
     }
 }

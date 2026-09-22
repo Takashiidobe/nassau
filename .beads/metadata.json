@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "nassau",
+  "project_id": "7ce003b9-df91-48c1-916c-34d866db3400"
+}

@@ -48,7 +48,6 @@ fn compare_fixture(fixture: &Path) -> bool {
     let nassau_output = Command::new(&nassau_executable)
         .output()
         .expect("run Nassau output");
-
     let oracle_dir = std::env::temp_dir().join(format!(
         "nassau-mlton-{}-{}",
         std::process::id(),

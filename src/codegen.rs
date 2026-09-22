@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::path::Path;
@@ -111,8 +112,9 @@ impl Codegen {
         module: &mut JITModule,
         program: &Program,
         name: &str,
+        initial_variables: &HashMap<String, i32>,
     ) -> Result<*const u8, CodegenError> {
-        let function = self.define_program(module, program, name)?;
+        let function = self.define_program(module, program, name, initial_variables)?;
         module
             .finalize_definitions()
             .map_err(|error| CodegenError::Backend(error.to_string()))?;
@@ -125,7 +127,7 @@ impl Codegen {
         let object_builder = ObjectBuilder::new(isa, "nassau", default_libcall_names())
             .map_err(|error| CodegenError::Backend(error.to_string()))?;
         let mut module = ObjectModule::new(object_builder);
-        let function = self.define_program(&mut module, program, "main")?;
+        let function = self.define_program(&mut module, program, "main", &HashMap::new())?;
 
         if self.debug_passes || self.asm {
             let disassembly = function
@@ -198,6 +200,7 @@ impl Codegen {
         module: &mut M,
         program: &Program,
         name: &str,
+        initial_variables: &HashMap<String, i32>,
     ) -> Result<FunctionBuild, CodegenError> {
         let total_start = Instant::now();
         let frontend_config = module.isa().frontend_config();
@@ -295,8 +298,21 @@ impl Codegen {
                 }
             }
         }
+        let mut variables = initial_variables
+            .iter()
+            .map(|(name, value)| {
+                (
+                    name.clone(),
+                    builder.ins().iconst(types::I32, i64::from(*value)),
+                )
+            })
+            .collect::<HashMap<_, _>>();
         for (index, statement) in program.statements.iter().enumerate() {
             match &statement.value {
+                StmtKind::Val(name, expr) => {
+                    let value = Self::compile_integer_expr(expr, &mut builder, &variables);
+                    variables.insert(name.clone(), value);
+                }
                 StmtKind::Print(_) => {
                     let format_id = format_data.unwrap();
                     let string_id = string_data.iter().find(|(i, _)| *i == index).unwrap().1;
@@ -317,11 +333,9 @@ impl Codegen {
                     let ExprKind::Word8FromInt(integer) = &word8.value else {
                         unreachable!()
                     };
-                    let ExprKind::Integer(value) = integer.value else {
-                        unreachable!()
-                    };
+                    let value = Self::compile_integer_expr(integer, &mut builder, &variables);
                     let function = module.declare_func_in_func(exit.unwrap(), builder.func);
-                    let code = builder.ins().iconst(types::I32, value.rem_euclid(256));
+                    let code = builder.ins().urem_imm_u(value, 256);
                     builder.ins().call(function, &[code]);
                 }
             }
@@ -389,6 +403,23 @@ impl Codegen {
             optimization,
             codegen,
         })
+    }
+
+    fn compile_integer_expr(
+        expr: &crate::parser::Expr,
+        builder: &mut FunctionBuilder<'_>,
+        variables: &HashMap<String, cranelift_codegen::ir::Value>,
+    ) -> cranelift_codegen::ir::Value {
+        match &expr.value {
+            ExprKind::Integer(value) => builder.ins().iconst(types::I32, *value),
+            ExprKind::Variable(name) => variables[name],
+            ExprKind::Add(lhs, rhs) => {
+                let lhs = Self::compile_integer_expr(lhs, builder, variables);
+                let rhs = Self::compile_integer_expr(rhs, builder, variables);
+                builder.ins().iadd(lhs, rhs)
+            }
+            _ => unreachable!(),
+        }
     }
 
     fn print_timings(&self, function: &FunctionBuild, link: Duration, total: Duration) {

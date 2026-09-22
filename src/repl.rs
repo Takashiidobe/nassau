@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::io::{self, BufRead, Write};
 
 use crate::codegen::{Codegen, OptLevel};
@@ -8,6 +9,7 @@ pub struct Repl {
     codegen: Codegen,
     module: cranelift_jit::JITModule,
     next_chunk: usize,
+    variables: HashMap<String, i32>,
 }
 
 impl Repl {
@@ -35,13 +37,14 @@ impl Repl {
             codegen,
             module,
             next_chunk: 0,
+            variables: HashMap::new(),
         })
     }
 
     fn parse(&self, source: &str, chunk: usize) -> miette::Result<Program> {
         let filename = format!("<repl:{chunk}>");
         let named_source = miette::NamedSource::new(filename.clone(), source.to_owned());
-        Parser::from_repl_source(source, &filename)
+        Parser::from_repl_source_with_variables(source, &filename, self.variables.keys().cloned())
             .map_err(|error| miette::Report::new(error).with_source_code(named_source.clone()))?
             .parse()
             .map_err(|error| miette::Report::new(error).with_source_code(named_source))
@@ -53,10 +56,16 @@ impl Repl {
         let name = format!("nassau_repl_{chunk}");
         let function = self
             .codegen
-            .compile_jit_chunk(&mut self.module, &program, &name)
+            .compile_jit_chunk(&mut self.module, &program, &name, &self.variables)
             .map_err(miette::Report::new)?;
         let function: extern "C" fn() -> i32 = unsafe { std::mem::transmute(function) };
         let result = function();
+        for statement in &program.statements {
+            if let crate::parser::StmtKind::Val(name, expr) = &statement.value {
+                let value = evaluate_integer_expr(expr, &self.variables);
+                self.variables.insert(name.clone(), value);
+            }
+        }
         if program.statements.is_empty() {
             println!("val it = {result} : int");
         }
@@ -88,6 +97,16 @@ impl Repl {
             }
         }
         Ok(())
+    }
+}
+
+fn evaluate_integer_expr(expr: &crate::parser::Expr, variables: &HashMap<String, i32>) -> i32 {
+    match &expr.value {
+        crate::parser::ExprKind::Integer(value) => *value as i32,
+        crate::parser::ExprKind::Variable(name) => variables[name],
+        crate::parser::ExprKind::Add(lhs, rhs) => evaluate_integer_expr(lhs, variables)
+            .wrapping_add(evaluate_integer_expr(rhs, variables)),
+        _ => unreachable!(),
     }
 }
 

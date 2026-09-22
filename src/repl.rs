@@ -1,6 +1,7 @@
 use std::io::{self, BufRead, Write};
 
 use crate::codegen::{Codegen, OptLevel};
+use crate::error::CodegenError;
 use crate::parser::{Parser, Program};
 
 pub struct Repl {
@@ -17,7 +18,7 @@ impl Repl {
         dump_optimized_ir: bool,
         verify: bool,
         stats: bool,
-    ) -> Result<Self, String> {
+    ) -> Result<Self, CodegenError> {
         let codegen = Codegen::new(
             opt_level,
             debug_passes,
@@ -53,7 +54,7 @@ impl Repl {
         let function = self
             .codegen
             .compile_jit_chunk(&mut self.module, &program, &name)
-            .map_err(miette::Report::msg)?;
+            .map_err(miette::Report::new)?;
         let function: extern "C" fn() -> i32 = unsafe { std::mem::transmute(function) };
         let result = function();
         if program.statements.is_empty() {
@@ -106,6 +107,6 @@ pub fn run(
         verify,
         stats,
     )
-    .map_err(miette::Report::msg)?
+    .map_err(miette::Report::new)?
     .run()
 }

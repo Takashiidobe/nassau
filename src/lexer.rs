@@ -1,8 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use miette::{Diagnostic, SourceSpan};
-use thiserror::Error;
-
+use crate::error::LexerError;
 use crate::span::{Loc, Span};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -20,15 +18,6 @@ pub enum TokenKind {
 }
 
 pub type Token = Span<TokenKind>;
-
-#[derive(Debug, Error, Diagnostic)]
-#[error("{message}")]
-#[diagnostic(code(nassau::lexer))]
-pub struct LexerError {
-    pub message: String,
-    #[label("invalid source here")]
-    pub span: SourceSpan,
-}
 
 pub struct Lexer<'a> {
     source: &'a str,

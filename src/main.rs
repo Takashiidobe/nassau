@@ -5,6 +5,7 @@ use std::process::Command;
 
 use cranelift_codegen::ir::{AbiParam, InstBuilder, types};
 use cranelift_codegen::settings;
+use cranelift_control::ControlPlane;
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift_module::{Linkage, Module, default_libcall_names};
 use cranelift_object::{ObjectBuilder, ObjectModule};
@@ -53,7 +54,7 @@ fn output_path(input: &Path) -> Result<PathBuf, String> {
     Ok(input.with_file_name(stem))
 }
 
-fn lower_and_link(value: i64, output: &Path) -> Result<(), String> {
+fn lower_and_link(value: i64, output: &Path, debug_passes: bool) -> Result<(), String> {
     let flags = settings::Flags::new(settings::builder());
     let isa = cranelift_native::builder()
         .map_err(|error| error.to_string())?
@@ -79,9 +80,31 @@ fn lower_and_link(value: i64, output: &Path) -> Result<(), String> {
     let result = builder.ins().iconst(types::I32, value);
     builder.ins().return_(&[result]);
     builder.finalize(frontend_config);
+    if debug_passes {
+        println!(
+            "== Cranelift IR before optimization ==\n{}",
+            context.func.display()
+        );
+        context
+            .optimize(module.isa(), &mut ControlPlane::default())
+            .map_err(|error| error.to_string())?;
+        println!(
+            "== Cranelift IR after optimization ==\n{}",
+            context.func.display()
+        );
+        context.set_disasm(true);
+    }
     module
         .define_function(function, &mut context)
         .map_err(|error| error.to_string())?;
+    if debug_passes {
+        if let Some(disassembly) = context
+            .compiled_code()
+            .and_then(|compiled| compiled.vcode.as_deref())
+        {
+            println!("== Cranelift machine instructions ==\n{disassembly}");
+        }
+    }
     let object = module.finish().emit().map_err(|error| error.to_string())?;
 
     let object_path = env::temp_dir().join(format!("nassau-{}.o", std::process::id()));
@@ -102,7 +125,7 @@ fn lower_and_link(value: i64, output: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn run(input: &Path) -> Result<PathBuf, String> {
+fn run(input: &Path, debug_passes: bool) -> Result<PathBuf, String> {
     let source = fs::read_to_string(input).map_err(|error| error.to_string())?;
     let tokens = tokenize(&source)?;
     let value = parse(&tokens)?;
@@ -110,19 +133,31 @@ fn run(input: &Path) -> Result<PathBuf, String> {
         return Err("integer literal does not fit in i32".to_string());
     }
     let output = output_path(input)?;
-    lower_and_link(value, &output)?;
+    lower_and_link(value, &output, debug_passes)?;
     Ok(output)
 }
 
 fn main() {
-    let input = match env::args_os().nth(1) {
-        Some(input) => PathBuf::from(input),
+    let mut debug_passes = false;
+    let mut input = None;
+    for argument in env::args_os().skip(1) {
+        if argument == "--debug-passes" {
+            debug_passes = true;
+        } else if input.is_none() {
+            input = Some(PathBuf::from(argument));
+        } else {
+            eprintln!("usage: cargo run -- [--debug-passes] <file.ml>");
+            std::process::exit(2);
+        }
+    }
+    let input = match input {
+        Some(input) => input,
         None => {
-            eprintln!("usage: cargo run -- <file.ml>");
+            eprintln!("usage: cargo run -- [--debug-passes] <file.ml>");
             std::process::exit(2);
         }
     };
-    match run(&input) {
+    match run(&input, debug_passes) {
         Ok(output) => println!("wrote {}", output.display()),
         Err(error) => {
             eprintln!("error: {error}");

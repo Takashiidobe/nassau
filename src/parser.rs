@@ -10,8 +10,13 @@ pub type Stmt = Span<StmtKind>;
 #[derive(Debug)]
 pub enum ExprKind {
     Integer(i64),
+    Real(f64),
     Variable(String),
     Add(Box<Expr>, Box<Expr>),
+    Subtract(Box<Expr>, Box<Expr>),
+    Multiply(Box<Expr>, Box<Expr>),
+    Divide(Box<Expr>, Box<Expr>),
+    IntDivide(Box<Expr>, Box<Expr>),
     String(String),
     Word8FromInt(Box<Expr>),
     PosixExit(Box<Expr>),
@@ -28,6 +33,12 @@ pub enum StmtKind {
 pub struct Program {
     pub statements: Vec<Stmt>,
     pub result: i32,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum NumericValue {
+    Integer(i32),
+    Real(f64),
 }
 
 pub struct Parser {
@@ -174,17 +185,47 @@ impl Parser {
     }
 
     fn parse_integer_expr(&mut self) -> Result<Expr, ParseError> {
+        let mut expr = self.parse_multiplicative_expr()?;
+        while let Some(operator) = self.tokens.get(self.index).map(|token| &token.value) {
+            if !matches!(operator, TokenKind::Plus | TokenKind::Minus) {
+                break;
+            }
+            let operator = operator.clone();
+            self.index += 1;
+            let rhs = self.parse_multiplicative_expr()?;
+            let start = expr.start.clone();
+            let end = rhs.end.clone();
+            let kind = match operator {
+                TokenKind::Plus => ExprKind::Add(Box::new(expr), Box::new(rhs)),
+                TokenKind::Minus => ExprKind::Subtract(Box::new(expr), Box::new(rhs)),
+                _ => unreachable!(),
+            };
+            expr = Span::new(start, end, kind);
+        }
+        Ok(expr)
+    }
+
+    fn parse_multiplicative_expr(&mut self) -> Result<Expr, ParseError> {
         let mut expr = self.parse_atom()?;
-        while self
-            .tokens
-            .get(self.index)
-            .is_some_and(|token| token.value == TokenKind::Plus)
-        {
+        while let Some(operator) = self.tokens.get(self.index).map(|token| &token.value) {
+            if !matches!(
+                operator,
+                TokenKind::Star | TokenKind::Slash | TokenKind::Div
+            ) {
+                break;
+            }
+            let operator = operator.clone();
             self.index += 1;
             let rhs = self.parse_atom()?;
             let start = expr.start.clone();
             let end = rhs.end.clone();
-            expr = Span::new(start, end, ExprKind::Add(Box::new(expr), Box::new(rhs)));
+            let kind = match operator {
+                TokenKind::Star => ExprKind::Multiply(Box::new(expr), Box::new(rhs)),
+                TokenKind::Slash => ExprKind::Divide(Box::new(expr), Box::new(rhs)),
+                TokenKind::Div => ExprKind::IntDivide(Box::new(expr), Box::new(rhs)),
+                _ => unreachable!(),
+            };
+            expr = Span::new(start, end, kind);
         }
         Ok(expr)
     }
@@ -197,9 +238,29 @@ impl Parser {
             .clone();
         self.index += 1;
         match token.value {
+            TokenKind::Minus => {
+                let integer = self
+                    .tokens
+                    .get(self.index)
+                    .ok_or_else(|| self.error("expected an integer after unary '-'"))?
+                    .clone();
+                self.index += 1;
+                match integer.value {
+                    TokenKind::Integer(value) => Ok(Span::new(
+                        token.start,
+                        integer.end,
+                        ExprKind::Integer(-value),
+                    )),
+                    TokenKind::Real(value) => {
+                        Ok(Span::new(token.start, integer.end, ExprKind::Real(-value)))
+                    }
+                    _ => Err(self.error("expected a number after unary '-'")),
+                }
+            }
             TokenKind::Integer(value) => {
                 Ok(Span::new(token.start, token.end, ExprKind::Integer(value)))
             }
+            TokenKind::Real(value) => Ok(Span::new(token.start, token.end, ExprKind::Real(value))),
             TokenKind::Identifier(name) if self.variables.contains(&name) => {
                 Ok(Span::new(token.start, token.end, ExprKind::Variable(name)))
             }

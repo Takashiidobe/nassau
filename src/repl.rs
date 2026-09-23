@@ -3,13 +3,13 @@ use std::io::{self, BufRead, Write};
 
 use crate::codegen::{Codegen, OptLevel};
 use crate::error::CodegenError;
-use crate::parser::{Parser, Program};
+use crate::parser::{NumericValue, Parser, Program};
 
 pub struct Repl {
     codegen: Codegen,
     module: cranelift_jit::JITModule,
     next_chunk: usize,
-    variables: HashMap<String, i32>,
+    variables: HashMap<String, NumericValue>,
 }
 
 impl Repl {
@@ -64,6 +64,10 @@ impl Repl {
             if let crate::parser::StmtKind::Val(name, expr) = &statement.value {
                 let value = evaluate_integer_expr(expr, &self.variables);
                 self.variables.insert(name.clone(), value);
+                match value {
+                    NumericValue::Integer(value) => println!("val {name} = {value} : int"),
+                    NumericValue::Real(value) => println!("val {name} = {value:?} : real"),
+                }
             }
         }
         if program.statements.is_empty() {
@@ -100,12 +104,48 @@ impl Repl {
     }
 }
 
-fn evaluate_integer_expr(expr: &crate::parser::Expr, variables: &HashMap<String, i32>) -> i32 {
+fn evaluate_integer_expr(
+    expr: &crate::parser::Expr,
+    variables: &HashMap<String, NumericValue>,
+) -> NumericValue {
     match &expr.value {
-        crate::parser::ExprKind::Integer(value) => *value as i32,
+        crate::parser::ExprKind::Integer(value) => NumericValue::Integer(*value as i32),
+        crate::parser::ExprKind::Real(value) => NumericValue::Real(*value),
         crate::parser::ExprKind::Variable(name) => variables[name],
-        crate::parser::ExprKind::Add(lhs, rhs) => evaluate_integer_expr(lhs, variables)
-            .wrapping_add(evaluate_integer_expr(rhs, variables)),
+        crate::parser::ExprKind::Add(lhs, rhs) => {
+            apply_numeric_op(lhs, rhs, variables, |a, b| a.wrapping_add(b), |a, b| a + b)
+        }
+        crate::parser::ExprKind::Subtract(lhs, rhs) => {
+            apply_numeric_op(lhs, rhs, variables, |a, b| a.wrapping_sub(b), |a, b| a - b)
+        }
+        crate::parser::ExprKind::Multiply(lhs, rhs) => {
+            apply_numeric_op(lhs, rhs, variables, |a, b| a.wrapping_mul(b), |a, b| a * b)
+        }
+        crate::parser::ExprKind::Divide(lhs, rhs) => {
+            apply_numeric_op(lhs, rhs, variables, |_, _| unreachable!(), |a, b| a / b)
+        }
+        crate::parser::ExprKind::IntDivide(lhs, rhs) => {
+            apply_numeric_op(lhs, rhs, variables, |a, b| a / b, |_, _| unreachable!())
+        }
+        _ => unreachable!(),
+    }
+}
+
+fn apply_numeric_op(
+    lhs: &crate::parser::Expr,
+    rhs: &crate::parser::Expr,
+    variables: &HashMap<String, NumericValue>,
+    integer_op: impl FnOnce(i32, i32) -> i32,
+    real_op: impl FnOnce(f64, f64) -> f64,
+) -> NumericValue {
+    match (
+        evaluate_integer_expr(lhs, variables),
+        evaluate_integer_expr(rhs, variables),
+    ) {
+        (NumericValue::Integer(lhs), NumericValue::Integer(rhs)) => {
+            NumericValue::Integer(integer_op(lhs, rhs))
+        }
+        (NumericValue::Real(lhs), NumericValue::Real(rhs)) => NumericValue::Real(real_op(lhs, rhs)),
         _ => unreachable!(),
     }
 }

@@ -6,12 +6,17 @@ use crate::span::{Loc, Span};
 #[derive(Clone, Debug, PartialEq)]
 pub enum TokenKind {
     Integer(i64),
+    Real(f64),
     String(String),
     Val,
     Identifier(String),
     Underscore,
     Equals,
     Plus,
+    Minus,
+    Star,
+    Slash,
+    Div,
     Semicolon,
     Dot,
     LeftParen,
@@ -115,6 +120,9 @@ impl<'a> Lexer<'a> {
                 '_' => TokenKind::Underscore,
                 '=' => TokenKind::Equals,
                 '+' => TokenKind::Plus,
+                '-' => TokenKind::Minus,
+                '*' => TokenKind::Star,
+                '/' => TokenKind::Slash,
                 ';' => TokenKind::Semicolon,
                 '.' => TokenKind::Dot,
                 '(' => TokenKind::LeftParen,
@@ -148,16 +156,30 @@ impl<'a> Lexer<'a> {
                     }
                     TokenKind::String(value)
                 }
-                ch if ch.is_ascii_digit() || ch == '-' => {
+                ch if ch.is_ascii_digit() => {
                     let mut value = String::from(ch);
                     while self.peek().is_some_and(|next| next.is_ascii_digit()) {
                         value.push(self.bump().unwrap());
                     }
-                    TokenKind::Integer(
-                        value
-                            .parse()
-                            .map_err(|_| self.error(start.offset, "invalid integer literal"))?,
-                    )
+                    if self.peek() == Some('.')
+                        && self.peek_next().is_some_and(|next| next.is_ascii_digit())
+                    {
+                        value.push(self.bump().unwrap());
+                        while self.peek().is_some_and(|next| next.is_ascii_digit()) {
+                            value.push(self.bump().unwrap());
+                        }
+                        TokenKind::Real(
+                            value
+                                .parse()
+                                .map_err(|_| self.error(start.offset, "invalid real literal"))?,
+                        )
+                    } else {
+                        TokenKind::Integer(
+                            value
+                                .parse()
+                                .map_err(|_| self.error(start.offset, "invalid integer literal"))?,
+                        )
+                    }
                 }
                 ch if ch.is_ascii_alphabetic() => {
                     let mut word = String::from(ch);
@@ -169,6 +191,7 @@ impl<'a> Lexer<'a> {
                     }
                     match word.as_str() {
                         "val" => TokenKind::Val,
+                        "div" => TokenKind::Div,
                         _ => TokenKind::Identifier(word),
                     }
                 }

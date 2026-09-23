@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use crate::error::LexerError;
+use crate::error::{LexerError, LexerErrorKind};
 use crate::span::{Loc, Span};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -75,11 +75,8 @@ impl<'a> Lexer<'a> {
         Some(ch)
     }
 
-    fn error(&self, start: usize, message: impl Into<String>) -> LexerError {
-        LexerError {
-            message: message.into(),
-            span: (start, self.offset.saturating_sub(start).max(1)).into(),
-        }
+    fn error(&self, start: Loc, kind: LexerErrorKind) -> LexerError {
+        Span::new(start, self.loc(), kind)
     }
 
     pub fn tokenize(mut self) -> Result<Vec<Token>, LexerError> {
@@ -90,7 +87,7 @@ impl<'a> Lexer<'a> {
                 continue;
             }
             if ch == '(' && self.peek_next() == Some('*') {
-                let start = self.offset;
+                let start = self.loc();
                 self.bump();
                 self.bump();
                 let mut depth = 1;
@@ -109,7 +106,9 @@ impl<'a> Lexer<'a> {
                         (Some(_), _) => {
                             self.bump();
                         }
-                        (None, _) => return Err(self.error(start, "unterminated comment")),
+                        (None, _) => {
+                            return Err(self.error(start, LexerErrorKind::UnterminatedComment));
+                        }
                     }
                 }
                 continue;
@@ -138,19 +137,23 @@ impl<'a> Lexer<'a> {
                                 Some('"') => value.push('"'),
                                 Some('\\') => value.push('\\'),
                                 Some(_) => {
-                                    return Err(
-                                        self.error(start.offset, "unsupported string escape")
-                                    );
+                                    return Err(self.error(
+                                        start.clone(),
+                                        LexerErrorKind::UnsupportedStringEscape,
+                                    ));
                                 }
                                 None => {
-                                    return Err(
-                                        self.error(start.offset, "unterminated string escape")
-                                    );
+                                    return Err(self.error(
+                                        start.clone(),
+                                        LexerErrorKind::UnterminatedStringEscape,
+                                    ));
                                 }
                             },
                             Some(ch) => value.push(ch),
                             None => {
-                                return Err(self.error(start.offset, "unterminated string literal"));
+                                return Err(
+                                    self.error(start.clone(), LexerErrorKind::UnterminatedString)
+                                );
                             }
                         }
                     }
@@ -168,17 +171,13 @@ impl<'a> Lexer<'a> {
                         while self.peek().is_some_and(|next| next.is_ascii_digit()) {
                             value.push(self.bump().unwrap());
                         }
-                        TokenKind::Real(
-                            value
-                                .parse()
-                                .map_err(|_| self.error(start.offset, "invalid real literal"))?,
-                        )
+                        TokenKind::Real(value.parse().map_err(|_| {
+                            self.error(start.clone(), LexerErrorKind::InvalidRealLiteral)
+                        })?)
                     } else {
-                        TokenKind::Integer(
-                            value
-                                .parse()
-                                .map_err(|_| self.error(start.offset, "invalid integer literal"))?,
-                        )
+                        TokenKind::Integer(value.parse().map_err(|_| {
+                            self.error(start.clone(), LexerErrorKind::InvalidIntegerLiteral)
+                        })?)
                     }
                 }
                 ch if ch.is_ascii_alphabetic() => {
@@ -195,7 +194,7 @@ impl<'a> Lexer<'a> {
                         _ => TokenKind::Identifier(word),
                     }
                 }
-                _ => return Err(self.error(start.offset, format!("unexpected character: {first}"))),
+                _ => return Err(self.error(start, LexerErrorKind::UnexpectedCharacter(first))),
             };
             tokens.push(Span::new(start, self.loc(), kind));
         }

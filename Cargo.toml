@@ -14,3 +14,9 @@ cranelift-jit = "0.136"
 cranelift-module = "0.136"
 cranelift-native = "0.136"
 cranelift-object = "0.136"
+
+[lints.clippy]
+large_enum_variant = "allow"
+allow_attributes = "warn"
+allow_attributes_without_reason = "warn"
+result_large_err = "allow"

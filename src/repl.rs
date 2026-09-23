@@ -1,15 +1,17 @@
 use std::collections::HashMap;
 use std::io::{self, BufRead, Write};
 
-use crate::codegen::{Codegen, OptLevel};
-use crate::error::CodegenError;
+use crate::codegen::{Codegen, CodegenOptions, OptLevel};
+use crate::error::{CodegenError, SourceError};
 use crate::parser::{NumericValue, Parser, Program};
+use crate::sema::{self, Analyzer, ArithmeticOperator, Type};
 
 pub struct Repl {
     codegen: Codegen,
     module: cranelift_jit::JITModule,
     next_chunk: usize,
     variables: HashMap<String, NumericValue>,
+    analyzer: Analyzer,
 }
 
 impl Repl {
@@ -21,43 +23,57 @@ impl Repl {
         verify: bool,
         stats: bool,
     ) -> Result<Self, CodegenError> {
-        let codegen = Codegen::new(
+        let codegen = Codegen::new(CodegenOptions {
             opt_level,
             debug_passes,
-            false,
+            asm: false,
             dump_ir,
             dump_optimized_ir,
             verify,
-            false,
+            timings: false,
             stats,
-            false,
-        );
+            objdump: false,
+        });
         let module = codegen.new_jit_module()?;
         Ok(Self {
             codegen,
             module,
             next_chunk: 0,
             variables: HashMap::new(),
+            analyzer: Analyzer::new(),
         })
     }
 
     fn parse(&self, source: &str, chunk: usize) -> miette::Result<Program> {
         let filename = format!("<repl:{chunk}>");
         let named_source = miette::NamedSource::new(filename.clone(), source.to_owned());
-        Parser::from_repl_source_with_variables(source, &filename, self.variables.keys().cloned())
-            .map_err(|error| miette::Report::new(error).with_source_code(named_source.clone()))?
+        Parser::from_repl_source(source, &filename)
+            .map_err(|error| {
+                miette::Report::new(SourceError::from_span(error))
+                    .with_source_code(named_source.clone())
+            })?
             .parse()
-            .map_err(|error| miette::Report::new(error).with_source_code(named_source))
+            .map_err(|error| {
+                miette::Report::new(SourceError::from_span(error)).with_source_code(named_source)
+            })
     }
 
     fn execute(&mut self, source: &str) -> miette::Result<()> {
         let chunk = self.next_chunk;
         let program = self.parse(source, chunk)?;
+        let mut analyzer = self.analyzer.clone();
+        let named_source = miette::NamedSource::new(format!("<repl:{chunk}>"), source.to_owned());
+        analyzer
+            .analyze_program(&program)
+            .map_err(|(error, expr)| {
+                miette::Report::new(SourceError::new(error, expr.source_span()))
+                    .with_source_code(named_source)
+            })?;
         let name = format!("nassau_repl_{chunk}");
         let function = self
             .codegen
             .compile_jit_chunk(&mut self.module, &program, &name, &self.variables)
-            .map_err(miette::Report::new)?;
+            .map_err(miette::Report::msg)?;
         let function: extern "C" fn() -> i32 = unsafe { std::mem::transmute(function) };
         let result = function();
         for statement in &program.statements {
@@ -70,6 +86,7 @@ impl Repl {
                 }
             }
         }
+        self.analyzer = analyzer;
         if program.statements.is_empty() {
             println!("val it = {result} : int");
         }
@@ -113,40 +130,88 @@ fn evaluate_integer_expr(
         crate::parser::ExprKind::Real(value) => NumericValue::Real(*value),
         crate::parser::ExprKind::Variable(name) => variables[name],
         crate::parser::ExprKind::Add(lhs, rhs) => {
-            apply_numeric_op(lhs, rhs, variables, |a, b| a.wrapping_add(b), |a, b| a + b)
+            apply_numeric_op(ArithmeticOperator::Add, lhs, rhs, variables)
         }
         crate::parser::ExprKind::Subtract(lhs, rhs) => {
-            apply_numeric_op(lhs, rhs, variables, |a, b| a.wrapping_sub(b), |a, b| a - b)
+            apply_numeric_op(ArithmeticOperator::Subtract, lhs, rhs, variables)
         }
         crate::parser::ExprKind::Multiply(lhs, rhs) => {
-            apply_numeric_op(lhs, rhs, variables, |a, b| a.wrapping_mul(b), |a, b| a * b)
+            apply_numeric_op(ArithmeticOperator::Multiply, lhs, rhs, variables)
         }
         crate::parser::ExprKind::Divide(lhs, rhs) => {
-            apply_numeric_op(lhs, rhs, variables, |_, _| unreachable!(), |a, b| a / b)
+            apply_numeric_op(ArithmeticOperator::Divide, lhs, rhs, variables)
         }
         crate::parser::ExprKind::IntDivide(lhs, rhs) => {
-            apply_numeric_op(lhs, rhs, variables, |a, b| a / b, |_, _| unreachable!())
+            apply_numeric_op(ArithmeticOperator::IntDivide, lhs, rhs, variables)
         }
         _ => unreachable!(),
     }
 }
 
 fn apply_numeric_op(
+    operator: ArithmeticOperator,
     lhs: &crate::parser::Expr,
     rhs: &crate::parser::Expr,
     variables: &HashMap<String, NumericValue>,
-    integer_op: impl FnOnce(i32, i32) -> i32,
-    real_op: impl FnOnce(f64, f64) -> f64,
 ) -> NumericValue {
-    match (
-        evaluate_integer_expr(lhs, variables),
-        evaluate_integer_expr(rhs, variables),
-    ) {
-        (NumericValue::Integer(lhs), NumericValue::Integer(rhs)) => {
-            NumericValue::Integer(integer_op(lhs, rhs))
+    let lhs = evaluate_integer_expr(lhs, variables);
+    let rhs = evaluate_integer_expr(rhs, variables);
+    let result_type = sema::arithmetic_result(operator, numeric_type(lhs), numeric_type(rhs))
+        .expect("semantic analysis has already validated arithmetic");
+    match (operator, result_type, lhs, rhs) {
+        (
+            ArithmeticOperator::Add,
+            Type::Integer,
+            NumericValue::Integer(lhs),
+            NumericValue::Integer(rhs),
+        ) => NumericValue::Integer(lhs.wrapping_add(rhs)),
+        (
+            ArithmeticOperator::Subtract,
+            Type::Integer,
+            NumericValue::Integer(lhs),
+            NumericValue::Integer(rhs),
+        ) => NumericValue::Integer(lhs.wrapping_sub(rhs)),
+        (
+            ArithmeticOperator::Multiply,
+            Type::Integer,
+            NumericValue::Integer(lhs),
+            NumericValue::Integer(rhs),
+        ) => NumericValue::Integer(lhs.wrapping_mul(rhs)),
+        (
+            ArithmeticOperator::IntDivide,
+            Type::Integer,
+            NumericValue::Integer(lhs),
+            NumericValue::Integer(rhs),
+        ) => NumericValue::Integer(lhs / rhs),
+        (ArithmeticOperator::Add, Type::Real, NumericValue::Real(lhs), NumericValue::Real(rhs)) => {
+            NumericValue::Real(lhs + rhs)
         }
-        (NumericValue::Real(lhs), NumericValue::Real(rhs)) => NumericValue::Real(real_op(lhs, rhs)),
+        (
+            ArithmeticOperator::Subtract,
+            Type::Real,
+            NumericValue::Real(lhs),
+            NumericValue::Real(rhs),
+        ) => NumericValue::Real(lhs - rhs),
+        (
+            ArithmeticOperator::Multiply,
+            Type::Real,
+            NumericValue::Real(lhs),
+            NumericValue::Real(rhs),
+        ) => NumericValue::Real(lhs * rhs),
+        (
+            ArithmeticOperator::Divide,
+            Type::Real,
+            NumericValue::Real(lhs),
+            NumericValue::Real(rhs),
+        ) => NumericValue::Real(lhs / rhs),
         _ => unreachable!(),
+    }
+}
+
+fn numeric_type(value: NumericValue) -> Type {
+    match value {
+        NumericValue::Integer(_) => Type::Integer,
+        NumericValue::Real(_) => Type::Real,
     }
 }
 
@@ -166,6 +231,6 @@ pub fn run(
         verify,
         stats,
     )
-    .map_err(miette::Report::new)?
+    .map_err(miette::Report::msg)?
     .run()
 }

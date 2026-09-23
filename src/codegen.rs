@@ -17,6 +17,7 @@ use cranelift_object::{ObjectBuilder, ObjectModule};
 
 use crate::error::CodegenError;
 use crate::parser::{ExprKind, NumericValue, Program, StmtKind};
+use crate::sema::{self, ArithmeticOperator, Type};
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
 pub enum OptLevel {
@@ -48,6 +49,18 @@ pub struct Codegen {
     objdump: bool,
 }
 
+pub struct CodegenOptions {
+    pub opt_level: OptLevel,
+    pub debug_passes: bool,
+    pub asm: bool,
+    pub dump_ir: bool,
+    pub dump_optimized_ir: bool,
+    pub verify: bool,
+    pub timings: bool,
+    pub stats: bool,
+    pub objdump: bool,
+}
+
 struct FunctionBuild {
     id: FuncId,
     context: cranelift_codegen::Context,
@@ -57,27 +70,17 @@ struct FunctionBuild {
 }
 
 impl Codegen {
-    pub fn new(
-        opt_level: OptLevel,
-        debug_passes: bool,
-        asm: bool,
-        dump_ir: bool,
-        dump_optimized_ir: bool,
-        verify: bool,
-        timings: bool,
-        stats: bool,
-        objdump: bool,
-    ) -> Self {
+    pub fn new(options: CodegenOptions) -> Self {
         Self {
-            opt_level,
-            debug_passes,
-            asm,
-            dump_ir,
-            dump_optimized_ir,
-            verify,
-            timings,
-            stats,
-            objdump,
+            opt_level: options.opt_level,
+            debug_passes: options.debug_passes,
+            asm: options.asm,
+            dump_ir: options.dump_ir,
+            dump_optimized_ir: options.dump_optimized_ir,
+            verify: options.verify,
+            timings: options.timings,
+            stats: options.stats,
+            objdump: options.objdump,
         }
     }
 
@@ -277,25 +280,25 @@ impl Codegen {
         };
         let mut string_data = Vec::new();
         for (index, statement) in program.statements.iter().enumerate() {
-            if let StmtKind::Print(expr) = &statement.value {
-                if let ExprKind::String(value) = &expr.value {
-                    let id = module
-                        .declare_data(
-                            &format!("{name}_string_{index}"),
-                            Linkage::Local,
-                            false,
-                            false,
-                        )
-                        .map_err(|error| CodegenError::Backend(error.to_string()))?;
-                    let mut data = DataDescription::new();
-                    let mut bytes = value.as_bytes().to_vec();
-                    bytes.push(0);
-                    data.define(bytes.into_boxed_slice());
-                    module
-                        .define_data(id, &data)
-                        .map_err(|error| CodegenError::Backend(error.to_string()))?;
-                    string_data.push((index, id));
-                }
+            if let StmtKind::Print(expr) = &statement.value
+                && let ExprKind::String(value) = &expr.value
+            {
+                let id = module
+                    .declare_data(
+                        &format!("{name}_string_{index}"),
+                        Linkage::Local,
+                        false,
+                        false,
+                    )
+                    .map_err(|error| CodegenError::Backend(error.to_string()))?;
+                let mut data = DataDescription::new();
+                let mut bytes = value.as_bytes().to_vec();
+                bytes.push(0);
+                data.define(bytes.into_boxed_slice());
+                module
+                    .define_data(id, &data)
+                    .map_err(|error| CodegenError::Backend(error.to_string()))?;
+                string_data.push((index, id));
             }
         }
         let mut variables = initial_variables
@@ -433,36 +436,33 @@ impl Codegen {
             | ExprKind::IntDivide(lhs, rhs) => {
                 let lhs = Self::compile_expr(lhs, builder, variables)?;
                 let rhs = Self::compile_expr(rhs, builder, variables)?;
-                let ty = builder.func.dfg.value_type(lhs);
-                if builder.func.dfg.value_type(rhs) != ty {
-                    return Err(CodegenError::Message(
-                        "arithmetic operands must have the same type".into(),
-                    ));
-                }
-                let is_real_division = matches!(expr.value, ExprKind::Divide(_, _));
-                let is_integer_division = matches!(expr.value, ExprKind::IntDivide(_, _));
-                let instruction = match (ty, &expr.value) {
-                    (types::I32, ExprKind::Add(_, _)) => builder.ins().iadd(lhs, rhs),
-                    (types::I32, ExprKind::Subtract(_, _)) => builder.ins().isub(lhs, rhs),
-                    (types::I32, ExprKind::Multiply(_, _)) => builder.ins().imul(lhs, rhs),
-                    (types::I32, ExprKind::IntDivide(_, _)) => builder.ins().sdiv(lhs, rhs),
-                    (types::F64, ExprKind::Add(_, _)) => builder.ins().fadd(lhs, rhs),
-                    (types::F64, ExprKind::Subtract(_, _)) => builder.ins().fsub(lhs, rhs),
-                    (types::F64, ExprKind::Multiply(_, _)) => builder.ins().fmul(lhs, rhs),
-                    (types::F64, ExprKind::Divide(_, _)) => builder.ins().fdiv(lhs, rhs),
-                    _ if is_real_division => {
-                        return Err(CodegenError::Message("'/' expects real operands".into()));
-                    }
-                    _ if is_integer_division => {
-                        return Err(CodegenError::Message(
-                            "'div' expects integer operands".into(),
-                        ));
-                    }
-                    _ => {
-                        return Err(CodegenError::Message(
-                            "arithmetic requires integer or real operands of the same type".into(),
-                        ));
-                    }
+                let operator = match &expr.value {
+                    ExprKind::Add(_, _) => ArithmeticOperator::Add,
+                    ExprKind::Subtract(_, _) => ArithmeticOperator::Subtract,
+                    ExprKind::Multiply(_, _) => ArithmeticOperator::Multiply,
+                    ExprKind::Divide(_, _) => ArithmeticOperator::Divide,
+                    ExprKind::IntDivide(_, _) => ArithmeticOperator::IntDivide,
+                    _ => unreachable!(),
+                };
+                let type_of = |value| match builder.func.dfg.value_type(value) {
+                    types::I32 => Ok(Type::Integer),
+                    types::F64 => Ok(Type::Real),
+                    _ => Err(CodegenError::Message(
+                        "unsupported arithmetic operand type".into(),
+                    )),
+                };
+                let result_type = sema::arithmetic_result(operator, type_of(lhs)?, type_of(rhs)?)
+                    .map_err(|error| CodegenError::Message(error.to_string()))?;
+                let instruction = match (operator, result_type) {
+                    (ArithmeticOperator::Add, Type::Integer) => builder.ins().iadd(lhs, rhs),
+                    (ArithmeticOperator::Subtract, Type::Integer) => builder.ins().isub(lhs, rhs),
+                    (ArithmeticOperator::Multiply, Type::Integer) => builder.ins().imul(lhs, rhs),
+                    (ArithmeticOperator::IntDivide, Type::Integer) => builder.ins().sdiv(lhs, rhs),
+                    (ArithmeticOperator::Add, Type::Real) => builder.ins().fadd(lhs, rhs),
+                    (ArithmeticOperator::Subtract, Type::Real) => builder.ins().fsub(lhs, rhs),
+                    (ArithmeticOperator::Multiply, Type::Real) => builder.ins().fmul(lhs, rhs),
+                    (ArithmeticOperator::Divide, Type::Real) => builder.ins().fdiv(lhs, rhs),
+                    _ => unreachable!(),
                 };
                 Ok(instruction)
             }

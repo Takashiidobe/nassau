@@ -11,6 +11,7 @@ pub type Stmt = Span<StmtKind>;
 pub enum ExprKind {
     Integer(i64),
     Real(f64),
+    Boolean(bool),
     Variable(String),
     Add(Box<Expr>, Box<Expr>),
     Subtract(Box<Expr>, Box<Expr>),
@@ -23,6 +24,7 @@ pub enum ExprKind {
     LessEqual(Box<Expr>, Box<Expr>),
     Equal(Box<Expr>, Box<Expr>),
     NotEqual(Box<Expr>, Box<Expr>),
+    If(Box<Expr>, Box<Expr>, Box<Expr>),
     String(String),
     Word8FromInt(Box<Expr>),
     PosixExit(Box<Expr>),
@@ -319,6 +321,25 @@ impl Parser {
                 Ok(Span::new(token.start, token.end, ExprKind::Integer(value)))
             }
             TokenKind::Real(value) => Ok(Span::new(token.start, token.end, ExprKind::Real(value))),
+            TokenKind::True => Ok(Span::new(token.start, token.end, ExprKind::Boolean(true))),
+            TokenKind::False => Ok(Span::new(token.start, token.end, ExprKind::Boolean(false))),
+            TokenKind::If => {
+                let condition = self.parse_integer_expr()?;
+                self.expect(TokenKind::Then, ParseErrorKind::Expect("then".into()))?;
+                let consequent = self.parse_integer_expr()?;
+                self.expect(TokenKind::Else, ParseErrorKind::Expect("else".into()))?;
+                let alternative = self.parse_integer_expr()?;
+                let end = alternative.end.clone();
+                Ok(Span::new(
+                    token.start,
+                    end,
+                    ExprKind::If(
+                        Box::new(condition),
+                        Box::new(consequent),
+                        Box::new(alternative),
+                    ),
+                ))
+            }
             TokenKind::Identifier(name) => {
                 Ok(Span::new(token.start, token.end, ExprKind::Variable(name)))
             }

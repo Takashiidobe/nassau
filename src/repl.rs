@@ -129,7 +129,19 @@ fn evaluate_integer_expr(
     match &expr.value {
         crate::parser::ExprKind::Integer(value) => NumericValue::Integer(*value as i32),
         crate::parser::ExprKind::Real(value) => NumericValue::Real(*value),
+        crate::parser::ExprKind::Boolean(value) => NumericValue::Boolean(*value),
         crate::parser::ExprKind::Variable(name) => variables[name],
+        crate::parser::ExprKind::If(condition, consequent, alternative) => {
+            let NumericValue::Boolean(condition) = evaluate_integer_expr(condition, variables)
+            else {
+                unreachable!()
+            };
+            if condition {
+                evaluate_integer_expr(consequent, variables)
+            } else {
+                evaluate_integer_expr(alternative, variables)
+            }
+        }
         crate::parser::ExprKind::Add(lhs, rhs) => {
             apply_numeric_op(ArithmeticOperator::Add, lhs, rhs, variables)
         }

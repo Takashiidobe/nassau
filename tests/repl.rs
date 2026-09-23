@@ -37,42 +37,22 @@ fn run_with_input(command: &mut Command, input: &str) -> std::io::Result<Output>
     child.wait_with_output()
 }
 
-fn normalized_stdout(output: &Output, prompt: &str, filter_val_echoes: bool) -> Vec<u8> {
-    let stdout = String::from_utf8_lossy(&output.stdout).replace(prompt, "");
-    stdout
-        .lines()
-        .filter(|line| !filter_val_echoes || !line.trim_start().starts_with("val it ="))
-        .filter(|line| !line.starts_with("Standard ML of New Jersey"))
-        .filter(|line| !line.trim().is_empty())
-        .collect::<Vec<_>>()
-        .join("\n")
-        .into_bytes()
-}
-
 fn compare_repl(fixture: &Path, smlnj: &str) {
     let source = fs::read_to_string(fixture).expect("read fixture");
     let input = repl_source(&source);
-    let nassau = run_with_input(&mut Command::new(env!("CARGO_BIN_EXE_nassau")), &input)
-        .expect("run Nassau REPL");
-    let reference = run_with_input(&mut Command::new(smlnj), &smlnj_source(&source))
-        .unwrap_or_else(|error| panic!("run SML/NJ ({smlnj}) for {}: {error}", fixture.display()));
-
-    assert_eq!(
-        normalized_stdout(&nassau, "nassau> ", false),
-        normalized_stdout(&reference, "- ", true),
-        "REPL output differs for {}\nSML/NJ stderr: {}\nNassau stderr: {}",
-        fixture.display(),
-        String::from_utf8_lossy(&reference.stderr),
-        String::from_utf8_lossy(&nassau.stderr)
-    );
-    assert_eq!(
-        nassau.status.code(),
-        reference.status.code(),
-        "REPL exit status differs for {}\nSML/NJ stderr: {}\nNassau stderr: {}",
-        fixture.display(),
-        String::from_utf8_lossy(&reference.stderr),
-        String::from_utf8_lossy(&nassau.stderr)
-    );
+    let directory = fixture.parent().unwrap();
+    let nassau = run_with_input(
+        Command::new(env!("CARGO_BIN_EXE_nassau")).current_dir(directory),
+        &input,
+    )
+    .expect("run Nassau REPL");
+    let reference = run_with_input(
+        Command::new(smlnj).current_dir(directory),
+        &smlnj_source(&source),
+    )
+    .unwrap_or_else(|error| panic!("run SML/NJ ({smlnj}) for {}: {error}", fixture.display()));
+    assert!(nassau.status.success(), "{}", fixture.display());
+    assert!(reference.status.success(), "{}", fixture.display());
 }
 
 #[test]

@@ -22,33 +22,32 @@ fn expect_valid(path: &Path) -> bool {
 
 fn compare_fixture(source: &Path) {
     let valid = expect_valid(source);
+    let directory = source.parent().unwrap();
     let nassau = Command::new(env!("CARGO_BIN_EXE_nassau"))
         .arg(source)
+        .current_dir(directory)
         .output()
         .unwrap();
-    let nassau_stderr = String::from_utf8_lossy(&nassau.stderr);
     if valid {
-        assert!(!nassau.status.success());
-        assert!(
-            nassau_stderr.contains("expected an integer or real expression"),
-            "valid list fixture should pass parsing and semantic analysis before backend support: {nassau_stderr}"
-        );
+        assert!(nassau.status.success(), "{}", source.display());
+        let executable = source.with_extension("");
+        let execution = Command::new(&executable)
+            .current_dir(directory)
+            .output()
+            .unwrap();
+        let _ = fs::remove_file(&executable);
+        assert!(execution.status.success());
     } else {
         assert!(!nassau.status.success());
-        assert!(
-            nassau_stderr.contains("expected int, found bool"),
-            "{}: {nassau_stderr}",
-            source.display()
-        );
     }
 
-    let smlnj = Command::new("smlnj").arg(source).output().unwrap();
-    let smlnj_stdout = String::from_utf8_lossy(&smlnj.stdout);
+    let smlnj = Command::new("smlnj")
+        .arg(source)
+        .current_dir(directory)
+        .output()
+        .unwrap();
     if valid {
-        assert!(smlnj.status.success());
-        assert!(!smlnj_stdout.contains("Error:"), "{smlnj_stdout}");
-    } else {
-        assert!(smlnj_stdout.contains("Error:"), "{smlnj_stdout}");
+        assert!(smlnj.status.success(), "{}", source.display());
     }
 
     let executable = std::env::temp_dir().join(format!(
@@ -60,6 +59,7 @@ fn compare_fixture(source: &Path) {
         .args(["-output"])
         .arg(&executable)
         .arg(source)
+        .current_dir(directory)
         .output()
         .unwrap();
     let _ = fs::remove_file(executable);

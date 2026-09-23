@@ -84,6 +84,7 @@ impl Repl {
                     NumericValue::Integer(value) => println!("val {name} = {value} : int"),
                     NumericValue::Real(value) => println!("val {name} = {value} : real"),
                     NumericValue::Boolean(value) => println!("val {name} = {value} : bool"),
+                    NumericValue::List(_) => println!("val {name} = [] : _ list"),
                 }
             }
         }
@@ -130,6 +131,19 @@ fn evaluate_integer_expr(
         crate::parser::ExprKind::Integer(value) => NumericValue::Integer(*value as i32),
         crate::parser::ExprKind::Real(value) => NumericValue::Real(*value),
         crate::parser::ExprKind::Boolean(value) => NumericValue::Boolean(*value),
+        crate::parser::ExprKind::List(elements) => {
+            let mut slots = Vec::with_capacity(elements.len() + 1);
+            slots.push(elements.len() as u64);
+            for element in elements {
+                slots.push(match evaluate_integer_expr(element, variables) {
+                    NumericValue::Integer(value) => value as i64 as u64,
+                    NumericValue::Real(value) => value.to_bits(),
+                    NumericValue::Boolean(value) => u64::from(value),
+                    NumericValue::List(value) => value as usize as u64,
+                });
+            }
+            NumericValue::List(Box::into_raw(slots.into_boxed_slice()) as *mut u64)
+        }
         crate::parser::ExprKind::Variable(name) => variables[name],
         crate::parser::ExprKind::If(condition, consequent, alternative) => {
             let NumericValue::Boolean(condition) = evaluate_integer_expr(condition, variables)
@@ -244,6 +258,7 @@ fn numeric_type(value: NumericValue) -> Type {
         NumericValue::Integer(_) => Type::Integer,
         NumericValue::Real(_) => Type::Real,
         NumericValue::Boolean(_) => Type::Boolean,
+        NumericValue::List(_) => Type::List(Box::new(Type::Variable(0))),
     }
 }
 

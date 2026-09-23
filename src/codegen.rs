@@ -66,6 +66,12 @@ pub struct CodegenOptions {
     pub objdump: bool,
 }
 
+struct ExprEnvironment<'a> {
+    variables: &'a HashMap<String, cranelift_codegen::ir::Value>,
+    allocator: cranelift_codegen::ir::FuncRef,
+    pointer_type: cranelift_codegen::ir::Type,
+}
+
 struct FunctionBuild {
     id: FuncId,
     context: cranelift_codegen::Context,
@@ -270,6 +276,14 @@ impl Codegen {
         } else {
             None
         };
+        let mut allocator_signature = module.make_signature();
+        allocator_signature.params.push(AbiParam::new(pointer_type));
+        allocator_signature
+            .returns
+            .push(AbiParam::new(pointer_type));
+        let allocator = module
+            .declare_function("malloc", Linkage::Import, &allocator_signature)
+            .map_err(|error| CodegenError::Backend(error.to_string()))?;
         let format_data = if has_print {
             let id = module
                 .declare_data(&format!("{name}_format"), Linkage::Local, false, false)
@@ -321,6 +335,9 @@ impl Codegen {
                         NumericValue::Boolean(value) => {
                             builder.ins().iconst(types::I8, i64::from(*value))
                         }
+                        NumericValue::List(value) => {
+                            builder.ins().iconst(pointer_type, *value as i64)
+                        }
                     },
                 )
             })
@@ -328,7 +345,13 @@ impl Codegen {
         for (index, statement) in program.statements.iter().enumerate() {
             match &statement.value {
                 StmtKind::Val(name, expr) => {
-                    let value = Self::compile_expr(expr, &mut builder, &variables)?;
+                    let allocator = module.declare_func_in_func(allocator, builder.func);
+                    let environment = ExprEnvironment {
+                        variables: &variables,
+                        allocator,
+                        pointer_type,
+                    };
+                    let value = Self::compile_expr(expr, &mut builder, &environment)?;
                     variables.insert(name.clone(), value);
                 }
                 StmtKind::Print(_) => {
@@ -351,7 +374,13 @@ impl Codegen {
                     let ExprKind::Word8FromInt(integer) = &word8.value else {
                         unreachable!()
                     };
-                    let value = Self::compile_expr(integer, &mut builder, &variables)?;
+                    let allocator = module.declare_func_in_func(allocator, builder.func);
+                    let environment = ExprEnvironment {
+                        variables: &variables,
+                        allocator,
+                        pointer_type,
+                    };
+                    let value = Self::compile_expr(integer, &mut builder, &environment)?;
                     if builder.func.dfg.value_type(value) != types::I32 {
                         return Err(CodegenError::Message(
                             "Posix.Process.exit expects an integer".into(),
@@ -431,15 +460,54 @@ impl Codegen {
     fn compile_expr(
         expr: &crate::parser::Expr,
         builder: &mut FunctionBuilder<'_>,
-        variables: &HashMap<String, cranelift_codegen::ir::Value>,
+        environment: &ExprEnvironment<'_>,
     ) -> Result<cranelift_codegen::ir::Value, CodegenError> {
         match &expr.value {
             ExprKind::Integer(value) => Ok(builder.ins().iconst(types::I32, *value)),
             ExprKind::Real(value) => Ok(builder.ins().f64const(Ieee64::with_float(*value))),
             ExprKind::Boolean(value) => Ok(builder.ins().iconst(types::I8, i64::from(*value))),
-            ExprKind::Variable(name) => Ok(variables[name]),
+            ExprKind::Variable(name) => Ok(environment.variables[name]),
+            ExprKind::List(elements) => {
+                let mut values = Vec::with_capacity(elements.len());
+                for element in elements {
+                    values.push(Self::compile_expr(element, builder, environment)?);
+                }
+                let pointer_ty = environment.pointer_type;
+                let size = (elements.len() + 1) * 8;
+                let allocation = builder.ins().iconst(pointer_ty, size as i64);
+                let allocation = builder.ins().call(environment.allocator, &[allocation]);
+                let pointer = builder.inst_results(allocation)[0];
+                let base = pointer;
+                let length = builder.ins().iconst(types::I64, elements.len() as i64);
+                builder
+                    .ins()
+                    .store(cranelift_codegen::ir::MemFlagsData::new(), length, base, 0);
+                for (index, value) in values.into_iter().enumerate() {
+                    let value = match builder.func.dfg.value_type(value) {
+                        types::I32 => builder.ins().sextend(types::I64, value),
+                        types::I8 => builder.ins().uextend(types::I64, value),
+                        types::F64 => builder.ins().bitcast(
+                            types::I64,
+                            cranelift_codegen::ir::MemFlagsData::new(),
+                            value,
+                        ),
+                        ty if ty == pointer_ty && pointer_ty != types::I64 => {
+                            builder.ins().uextend(types::I64, value)
+                        }
+                        types::I64 => value,
+                        _ => value,
+                    };
+                    builder.ins().store(
+                        cranelift_codegen::ir::MemFlagsData::new(),
+                        value,
+                        base,
+                        ((index + 1) * 8) as i32,
+                    );
+                }
+                Ok(pointer)
+            }
             ExprKind::If(condition, consequent, alternative) => {
-                let condition = Self::compile_expr(condition, builder, variables)?;
+                let condition = Self::compile_expr(condition, builder, environment)?;
                 let then_block = builder.create_block();
                 let else_block = builder.create_block();
                 let merge_block = builder.create_block();
@@ -450,14 +518,14 @@ impl Codegen {
                 builder.seal_block(else_block);
 
                 builder.switch_to_block(then_block);
-                let then_value = Self::compile_expr(consequent, builder, variables)?;
+                let then_value = Self::compile_expr(consequent, builder, environment)?;
                 let result_type = builder.func.dfg.value_type(then_value);
                 let result = builder.append_block_param(merge_block, result_type);
                 let then_arg = then_value.into();
                 builder.ins().jump(merge_block, &[then_arg]);
 
                 builder.switch_to_block(else_block);
-                let else_value = Self::compile_expr(alternative, builder, variables)?;
+                let else_value = Self::compile_expr(alternative, builder, environment)?;
                 if builder.func.dfg.value_type(else_value) != result_type {
                     return Err(CodegenError::Message(
                         "conditional branches must have the same type".into(),
@@ -476,8 +544,8 @@ impl Codegen {
             | ExprKind::LessEqual(lhs, rhs)
             | ExprKind::Equal(lhs, rhs)
             | ExprKind::NotEqual(lhs, rhs) => {
-                let lhs = Self::compile_expr(lhs, builder, variables)?;
-                let rhs = Self::compile_expr(rhs, builder, variables)?;
+                let lhs = Self::compile_expr(lhs, builder, environment)?;
+                let rhs = Self::compile_expr(rhs, builder, environment)?;
                 let operator = match &expr.value {
                     ExprKind::Greater(_, _) => ComparisonOperator::Greater,
                     ExprKind::GreaterEqual(_, _) => ComparisonOperator::GreaterEqual,
@@ -543,8 +611,8 @@ impl Codegen {
             | ExprKind::Multiply(lhs, rhs)
             | ExprKind::Divide(lhs, rhs)
             | ExprKind::IntDivide(lhs, rhs) => {
-                let lhs = Self::compile_expr(lhs, builder, variables)?;
-                let rhs = Self::compile_expr(rhs, builder, variables)?;
+                let lhs = Self::compile_expr(lhs, builder, environment)?;
+                let rhs = Self::compile_expr(rhs, builder, environment)?;
                 let operator = match &expr.value {
                     ExprKind::Add(_, _) => ArithmeticOperator::Add,
                     ExprKind::Subtract(_, _) => ArithmeticOperator::Subtract,

@@ -24,8 +24,11 @@ pub enum ArithmeticOperator {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ComparisonOperator {
     Greater,
+    GreaterEqual,
     Less,
+    LessEqual,
     Equal,
+    NotEqual,
 }
 
 #[derive(Debug, ThisError)]
@@ -159,8 +162,17 @@ pub fn comparison_result(
         return Err(ComparisonTypeError::MismatchedTypes { lhs, rhs });
     }
     match (operator, lhs) {
-        (ComparisonOperator::Greater | ComparisonOperator::Less, Type::Integer | Type::Real)
-        | (ComparisonOperator::Equal, Type::Integer | Type::Boolean) => Ok(Type::Boolean),
+        (
+            ComparisonOperator::Greater
+            | ComparisonOperator::GreaterEqual
+            | ComparisonOperator::Less
+            | ComparisonOperator::LessEqual,
+            Type::Integer | Type::Real,
+        )
+        | (
+            ComparisonOperator::Equal | ComparisonOperator::NotEqual,
+            Type::Integer | Type::Boolean,
+        ) => Ok(Type::Boolean),
         _ => Err(ComparisonTypeError::UnsupportedOperands { operator, ty: lhs }),
     }
 }
@@ -199,11 +211,19 @@ fn analyze_expr<'a>(
             arithmetic_result(operator, lhs, rhs)
                 .map_err(|error| (SemanticError::InvalidArithmetic(error), expr))
         }
-        ExprKind::Greater(lhs, rhs) | ExprKind::Less(lhs, rhs) | ExprKind::Equal(lhs, rhs) => {
+        ExprKind::Greater(lhs, rhs)
+        | ExprKind::GreaterEqual(lhs, rhs)
+        | ExprKind::Less(lhs, rhs)
+        | ExprKind::LessEqual(lhs, rhs)
+        | ExprKind::Equal(lhs, rhs)
+        | ExprKind::NotEqual(lhs, rhs) => {
             let operator = match &expr.value {
                 ExprKind::Greater(_, _) => ComparisonOperator::Greater,
+                ExprKind::GreaterEqual(_, _) => ComparisonOperator::GreaterEqual,
                 ExprKind::Less(_, _) => ComparisonOperator::Less,
+                ExprKind::LessEqual(_, _) => ComparisonOperator::LessEqual,
                 ExprKind::Equal(_, _) => ComparisonOperator::Equal,
+                ExprKind::NotEqual(_, _) => ComparisonOperator::NotEqual,
                 _ => unreachable!(),
             };
             let lhs = analyze_expr(lhs, scopes)?;
@@ -246,8 +266,11 @@ impl std::fmt::Display for ComparisonOperator {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter.write_str(match self {
             Self::Greater => ">",
+            Self::GreaterEqual => ">=",
             Self::Less => "<",
+            Self::LessEqual => "<=",
             Self::Equal => "=",
+            Self::NotEqual => "<>",
         })
     }
 }

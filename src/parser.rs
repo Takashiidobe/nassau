@@ -18,8 +18,11 @@ pub enum ExprKind {
     Divide(Box<Expr>, Box<Expr>),
     IntDivide(Box<Expr>, Box<Expr>),
     Greater(Box<Expr>, Box<Expr>),
+    GreaterEqual(Box<Expr>, Box<Expr>),
     Less(Box<Expr>, Box<Expr>),
+    LessEqual(Box<Expr>, Box<Expr>),
     Equal(Box<Expr>, Box<Expr>),
+    NotEqual(Box<Expr>, Box<Expr>),
     String(String),
     Word8FromInt(Box<Expr>),
     PosixExit(Box<Expr>),
@@ -209,7 +212,12 @@ impl Parser {
         while let Some(operator) = self.tokens.get(self.index).map(|token| &token.value) {
             if !matches!(
                 operator,
-                TokenKind::Greater | TokenKind::Less | TokenKind::Equals
+                TokenKind::Greater
+                    | TokenKind::GreaterEqual
+                    | TokenKind::Less
+                    | TokenKind::LessEqual
+                    | TokenKind::Equals
+                    | TokenKind::NotEquals
             ) {
                 break;
             }
@@ -220,8 +228,11 @@ impl Parser {
             let end = rhs.end.clone();
             let kind = match operator {
                 TokenKind::Greater => ExprKind::Greater(Box::new(expr), Box::new(rhs)),
+                TokenKind::GreaterEqual => ExprKind::GreaterEqual(Box::new(expr), Box::new(rhs)),
                 TokenKind::Less => ExprKind::Less(Box::new(expr), Box::new(rhs)),
+                TokenKind::LessEqual => ExprKind::LessEqual(Box::new(expr), Box::new(rhs)),
                 TokenKind::Equals => ExprKind::Equal(Box::new(expr), Box::new(rhs)),
+                TokenKind::NotEquals => ExprKind::NotEqual(Box::new(expr), Box::new(rhs)),
                 _ => unreachable!(),
             };
             expr = Span::new(start, end, kind);

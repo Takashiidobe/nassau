@@ -18,7 +18,10 @@ pub enum TokenKind {
     Slash,
     Div,
     Greater,
+    GreaterEqual,
     Less,
+    LessEqual,
+    NotEquals,
     Semicolon,
     Dot,
     LeftParen,
@@ -124,7 +127,19 @@ impl<'a> Lexer<'a> {
                 '-' => TokenKind::Minus,
                 '*' => TokenKind::Star,
                 '/' => TokenKind::Slash,
+                '>' if self.peek() == Some('=') => {
+                    self.bump();
+                    TokenKind::GreaterEqual
+                }
                 '>' => TokenKind::Greater,
+                '<' if self.peek() == Some('=') => {
+                    self.bump();
+                    TokenKind::LessEqual
+                }
+                '<' if self.peek() == Some('>') => {
+                    self.bump();
+                    TokenKind::NotEquals
+                }
                 '<' => TokenKind::Less,
                 ';' => TokenKind::Semicolon,
                 '.' => TokenKind::Dot,

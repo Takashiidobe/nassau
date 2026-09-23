@@ -3,13 +3,15 @@ use std::collections::HashMap;
 use crate::error::ThisError;
 use crate::parser::{Expr, ExprKind, Program, StmtKind};
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Type {
     Integer,
     Real,
     String,
     Boolean,
     Unit,
+    List(Box<Type>),
+    Variable(usize),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -161,7 +163,7 @@ pub fn comparison_result(
     if lhs != rhs {
         return Err(ComparisonTypeError::MismatchedTypes { lhs, rhs });
     }
-    match (operator, lhs) {
+    match (operator, lhs.clone()) {
         (
             ComparisonOperator::Greater
             | ComparisonOperator::GreaterEqual
@@ -188,11 +190,21 @@ fn analyze_expr<'a>(
         ExprKind::Real(_) => Ok(Type::Real),
         ExprKind::Boolean(_) => Ok(Type::Boolean),
         ExprKind::String(_) => Ok(Type::String),
+        ExprKind::List(elements) => {
+            let mut element_type = Type::Variable(expr.start.offset);
+            for element in elements {
+                let found = analyze_expr(element, scopes)?;
+                element_type = unify(element_type, found).map_err(|(expected, found)| {
+                    (SemanticError::TypeMismatch { expected, found }, element)
+                })?;
+            }
+            Ok(Type::List(Box::new(element_type)))
+        }
         ExprKind::Variable(name) => scopes
             .iter()
             .rev()
             .find_map(|scope| scope.get(name))
-            .copied()
+            .cloned()
             .ok_or_else(|| (SemanticError::UnboundVariable(name.clone()), expr)),
         ExprKind::Add(lhs, rhs)
         | ExprKind::Subtract(lhs, rhs)
@@ -236,17 +248,9 @@ fn analyze_expr<'a>(
             expect_type(analyze_expr(condition, scopes)?, Type::Boolean, condition)?;
             let consequent_type = analyze_expr(consequent, scopes)?;
             let alternative_type = analyze_expr(alternative, scopes)?;
-            if consequent_type == alternative_type {
-                Ok(consequent_type)
-            } else {
-                Err((
-                    SemanticError::TypeMismatch {
-                        expected: consequent_type,
-                        found: alternative_type,
-                    },
-                    expr,
-                ))
-            }
+            unify(consequent_type, alternative_type).map_err(|(expected, found)| {
+                (SemanticError::TypeMismatch { expected, found }, expr)
+            })
         }
         ExprKind::Word8FromInt(expr) => {
             expect_type(analyze_expr(expr, scopes)?, Type::Integer, expr)?;
@@ -260,22 +264,33 @@ fn analyze_expr<'a>(
 }
 
 fn expect_type(found: Type, expected: Type, expr: &Expr) -> Result<(), (SemanticError, &Expr)> {
-    if found == expected {
+    if unify(found.clone(), expected.clone()).is_ok() {
         Ok(())
     } else {
         Err((SemanticError::TypeMismatch { expected, found }, expr))
     }
 }
 
+fn unify(lhs: Type, rhs: Type) -> Result<Type, (Type, Type)> {
+    match (lhs, rhs) {
+        (Type::Variable(_), ty) | (ty, Type::Variable(_)) => Ok(ty),
+        (Type::List(a), Type::List(b)) => unify(*a, *b).map(|ty| Type::List(Box::new(ty))),
+        (a, b) if a == b => Ok(a),
+        (a, b) => Err((a, b)),
+    }
+}
+
 impl std::fmt::Display for Type {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str(match self {
-            Self::Integer => "int",
-            Self::Real => "real",
-            Self::String => "string",
-            Self::Boolean => "bool",
-            Self::Unit => "unit",
-        })
+        match self {
+            Self::Integer => formatter.write_str("int"),
+            Self::Real => formatter.write_str("real"),
+            Self::String => formatter.write_str("string"),
+            Self::Boolean => formatter.write_str("bool"),
+            Self::Unit => formatter.write_str("unit"),
+            Self::List(e) => write!(formatter, "{e} list"),
+            Self::Variable(id) => write!(formatter, "'a{id}"),
+        }
     }
 }
 

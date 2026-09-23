@@ -31,6 +31,9 @@ pub enum TokenKind {
     Dot,
     LeftParen,
     RightParen,
+    LeftBracket,
+    RightBracket,
+    Comma,
 }
 
 pub type Token = Span<TokenKind>;
@@ -150,6 +153,9 @@ impl<'a> Lexer<'a> {
                 '.' => TokenKind::Dot,
                 '(' => TokenKind::LeftParen,
                 ')' => TokenKind::RightParen,
+                '[' => TokenKind::LeftBracket,
+                ']' => TokenKind::RightBracket,
+                ',' => TokenKind::Comma,
                 '"' => {
                     let mut value = String::new();
                     loop {

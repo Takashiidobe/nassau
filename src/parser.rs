@@ -26,6 +26,7 @@ pub enum ExprKind {
     NotEqual(Box<Expr>, Box<Expr>),
     If(Box<Expr>, Box<Expr>, Box<Expr>),
     String(String),
+    List(Vec<Expr>),
     Word8FromInt(Box<Expr>),
     PosixExit(Box<Expr>),
 }
@@ -323,6 +324,37 @@ impl Parser {
             TokenKind::Real(value) => Ok(Span::new(token.start, token.end, ExprKind::Real(value))),
             TokenKind::True => Ok(Span::new(token.start, token.end, ExprKind::Boolean(true))),
             TokenKind::False => Ok(Span::new(token.start, token.end, ExprKind::Boolean(false))),
+            TokenKind::LeftBracket => {
+                let mut elements = Vec::new();
+                if self
+                    .tokens
+                    .get(self.index)
+                    .is_some_and(|t| t.value == TokenKind::RightBracket)
+                {
+                    let end = self.tokens[self.index].end.clone();
+                    self.index += 1;
+                    return Ok(Span::new(token.start, end, ExprKind::List(elements)));
+                }
+                loop {
+                    elements.push(self.parse_integer_expr()?);
+                    if self
+                        .tokens
+                        .get(self.index)
+                        .is_some_and(|t| t.value == TokenKind::Comma)
+                    {
+                        self.index += 1;
+                    } else {
+                        break;
+                    }
+                }
+                let end = self
+                    .expect(
+                        TokenKind::RightBracket,
+                        ParseErrorKind::Expect("] after list elements".into()),
+                    )?
+                    .end;
+                Ok(Span::new(token.start, end, ExprKind::List(elements)))
+            }
             TokenKind::If => {
                 let condition = self.parse_integer_expr()?;
                 self.expect(TokenKind::Then, ParseErrorKind::Expect("then".into()))?;

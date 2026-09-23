@@ -1,0 +1,1 @@
+val bad = if true then [1] else [true]

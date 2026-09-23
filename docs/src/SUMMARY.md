@@ -1,5 +1,6 @@
 # Manual Pages
 
+- [The `General` structure](./manual/general.md)
 - [The `List` structure](./manual/list.md)
 
 ## For Devs

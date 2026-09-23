@@ -4,7 +4,7 @@ use std::io::{self, BufRead, Write};
 use crate::codegen::{Codegen, CodegenOptions, OptLevel};
 use crate::error::{CodegenError, SourceError};
 use crate::parser::{NumericValue, Parser, Program};
-use crate::sema::{self, Analyzer, ArithmeticOperator, Type};
+use crate::sema::{self, Analyzer, ArithmeticOperator, ComparisonOperator, Type};
 
 pub struct Repl {
     codegen: Codegen,
@@ -82,7 +82,8 @@ impl Repl {
                 self.variables.insert(name.clone(), value);
                 match value {
                     NumericValue::Integer(value) => println!("val {name} = {value} : int"),
-                    NumericValue::Real(value) => println!("val {name} = {value:?} : real"),
+                    NumericValue::Real(value) => println!("val {name} = {value} : real"),
+                    NumericValue::Boolean(value) => println!("val {name} = {value} : bool"),
                 }
             }
         }
@@ -143,6 +144,15 @@ fn evaluate_integer_expr(
         }
         crate::parser::ExprKind::IntDivide(lhs, rhs) => {
             apply_numeric_op(ArithmeticOperator::IntDivide, lhs, rhs, variables)
+        }
+        crate::parser::ExprKind::Greater(lhs, rhs) => {
+            apply_comparison(ComparisonOperator::Greater, lhs, rhs, variables)
+        }
+        crate::parser::ExprKind::Less(lhs, rhs) => {
+            apply_comparison(ComparisonOperator::Less, lhs, rhs, variables)
+        }
+        crate::parser::ExprKind::Equal(lhs, rhs) => {
+            apply_comparison(ComparisonOperator::Equal, lhs, rhs, variables)
         }
         _ => unreachable!(),
     }
@@ -212,7 +222,41 @@ fn numeric_type(value: NumericValue) -> Type {
     match value {
         NumericValue::Integer(_) => Type::Integer,
         NumericValue::Real(_) => Type::Real,
+        NumericValue::Boolean(_) => Type::Boolean,
     }
+}
+
+fn apply_comparison(
+    operator: ComparisonOperator,
+    lhs: &crate::parser::Expr,
+    rhs: &crate::parser::Expr,
+    variables: &HashMap<String, NumericValue>,
+) -> NumericValue {
+    let lhs = evaluate_integer_expr(lhs, variables);
+    let rhs = evaluate_integer_expr(rhs, variables);
+    sema::comparison_result(operator, numeric_type(lhs), numeric_type(rhs))
+        .expect("semantic analysis has already validated comparisons");
+    let result = match (operator, lhs, rhs) {
+        (ComparisonOperator::Greater, NumericValue::Integer(lhs), NumericValue::Integer(rhs)) => {
+            lhs > rhs
+        }
+        (ComparisonOperator::Less, NumericValue::Integer(lhs), NumericValue::Integer(rhs)) => {
+            lhs < rhs
+        }
+        (ComparisonOperator::Equal, NumericValue::Integer(lhs), NumericValue::Integer(rhs)) => {
+            lhs == rhs
+        }
+        (ComparisonOperator::Greater, NumericValue::Real(lhs), NumericValue::Real(rhs)) => {
+            lhs > rhs
+        }
+        (ComparisonOperator::Less, NumericValue::Real(lhs), NumericValue::Real(rhs)) => lhs < rhs,
+        (ComparisonOperator::Equal, NumericValue::Real(lhs), NumericValue::Real(rhs)) => lhs == rhs,
+        (ComparisonOperator::Equal, NumericValue::Boolean(lhs), NumericValue::Boolean(rhs)) => {
+            lhs == rhs
+        }
+        _ => unreachable!(),
+    };
+    NumericValue::Boolean(result)
 }
 
 pub fn run(

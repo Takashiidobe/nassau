@@ -17,6 +17,9 @@ pub enum ExprKind {
     Multiply(Box<Expr>, Box<Expr>),
     Divide(Box<Expr>, Box<Expr>),
     IntDivide(Box<Expr>, Box<Expr>),
+    Greater(Box<Expr>, Box<Expr>),
+    Less(Box<Expr>, Box<Expr>),
+    Equal(Box<Expr>, Box<Expr>),
     String(String),
     Word8FromInt(Box<Expr>),
     PosixExit(Box<Expr>),
@@ -39,6 +42,7 @@ pub struct Program {
 pub enum NumericValue {
     Integer(i32),
     Real(f64),
+    Boolean(bool),
 }
 
 pub struct Parser {
@@ -201,6 +205,31 @@ impl Parser {
     }
 
     fn parse_integer_expr(&mut self) -> Result<Expr, ParseError> {
+        let mut expr = self.parse_additive_expr()?;
+        while let Some(operator) = self.tokens.get(self.index).map(|token| &token.value) {
+            if !matches!(
+                operator,
+                TokenKind::Greater | TokenKind::Less | TokenKind::Equals
+            ) {
+                break;
+            }
+            let operator = operator.clone();
+            self.index += 1;
+            let rhs = self.parse_additive_expr()?;
+            let start = expr.start.clone();
+            let end = rhs.end.clone();
+            let kind = match operator {
+                TokenKind::Greater => ExprKind::Greater(Box::new(expr), Box::new(rhs)),
+                TokenKind::Less => ExprKind::Less(Box::new(expr), Box::new(rhs)),
+                TokenKind::Equals => ExprKind::Equal(Box::new(expr), Box::new(rhs)),
+                _ => unreachable!(),
+            };
+            expr = Span::new(start, end, kind);
+        }
+        Ok(expr)
+    }
+
+    fn parse_additive_expr(&mut self) -> Result<Expr, ParseError> {
         let mut expr = self.parse_multiplicative_expr()?;
         while let Some(operator) = self.tokens.get(self.index).map(|token| &token.value) {
             if !matches!(operator, TokenKind::Plus | TokenKind::Minus) {

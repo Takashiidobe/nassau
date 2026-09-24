@@ -18,6 +18,7 @@ A work-in-progress Standard ML implementation in Rust with a Cranelift backend.
 
 - Start the REPL: `cargo run`.
 - Start the interpreter REPL: `cargo run -- --interpret`.
+- The native REPL saves submitted phrases in the platform data directory and completes in-scope names with Tab.
 - In either REPL, `clear;;` clears the display; `reset;;` clears it and discards bindings.
 - Compile a program: `cargo run -- input.sml`.
 - Interpret a program with the portable Rust backend: `cargo run -- --interpret input.sml`.

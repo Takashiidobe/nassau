@@ -4,6 +4,8 @@ const decoder = new TextDecoder();
 const history = [];
 let editor, inputRow, worker, ready = false, busy = false, exited = false, activeEntry;
 let historyIndex = 0, draft = '', exampleRequest = 0, promptId = 0;
+let completionRequestId = 0, completionCycle = null;
+const completionRequests = new Map();
 let resumeVimInsert = false;
 const storage = {
   get(key) { try { return localStorage.getItem(key); } catch { return null; } },
@@ -25,7 +27,7 @@ function configureEditor(textarea) {
     extraKeys: {
       'Ctrl-Enter': run, 'Cmd-Enter': run,
       'Ctrl-Up': () => recall(-1), 'Ctrl-Down': () => recall(1),
-      Tab: cm => cm.replaceSelection('  ')
+      Tab: complete
     }
   });
   cm.on('vim-mode-change', ({ mode, subMode }) => {
@@ -33,6 +35,7 @@ function configureEditor(textarea) {
   });
   cm.on('change', (cm, change) => {
     if (cm !== editor) return;
+    if (change.origin !== 'complete') completionCycle = null;
     scroll();
     if (change.origin === '+input' && endsCommand(cm)) {
       queueMicrotask(() => { if (cm === editor && endsCommand(cm)) run(); });
@@ -74,6 +77,59 @@ function recall(direction) {
   editor.setValue(historyIndex === history.length ? draft : history[historyIndex]);
   editor.setCursor(editor.lineCount() - 1); editor.focus(); controls();
 }
+function complete(cm) {
+  const cursor = cm.getCursor();
+  if (completionCycle && completionCycle.cm === cm && completionCycle.cursor.line === cursor.line && completionCycle.cursor.ch === cursor.ch) {
+    const next = (completionCycle.index + 1) % completionCycle.names.length;
+    applyCompletion(cm, completionCycle.from, cursor, completionCycle.names[next]);
+    completionCycle.index = next;
+    completionCycle.value = completionCycle.names[next];
+    completionCycle.cursor = cm.getCursor();
+    return;
+  }
+  const before = cm.getLine(cursor.line).slice(0, cursor.ch);
+  const match = before.match(/[A-Za-z0-9_'.]+$/);
+  const prefix = match?.[0] ?? '';
+  if (!prefix) { cm.replaceSelection('  '); return; }
+  const requestId = ++completionRequestId;
+  completionRequests.set(requestId, { cm, cursor, from: { line: cursor.line, ch: cursor.ch - prefix.length }, prefix, source: cm.getValue() });
+  worker.postMessage({ type: 'complete', requestId, prefix });
+}
+function applyCompletion(cm, from, cursor, value) {
+  cm.replaceRange(value, from, cursor, 'complete');
+  cm.setCursor({ line: from.line, ch: from.ch + value.length });
+}
+function commonPrefix(names) {
+  let prefix = names[0] ?? '';
+  for (const name of names.slice(1)) {
+    let length = 0;
+    while (length < prefix.length && prefix[length] === name[length]) length++;
+    prefix = prefix.slice(0, length);
+  }
+  return prefix;
+}
+function receiveCompletions(data) {
+  const request = completionRequests.get(data.requestId);
+  completionRequests.delete(data.requestId);
+  if (!request || request.cm !== editor || request.cm.getValue() !== request.source) return;
+  const cursor = request.cm.getCursor();
+  if (cursor.line !== request.cursor.line || cursor.ch !== request.cursor.ch) return;
+  const names = [...new Set(data.names)].filter(name => name.startsWith(request.prefix) && name !== request.prefix);
+  if (!names.length) { applyCompletion(request.cm, request.from, request.cursor, request.prefix + '  '); return; }
+  completionCycle = { cm: request.cm, from: request.from, names, index: -1, cursor: request.cursor, value: request.prefix };
+  const prefix = commonPrefix(names);
+  if (prefix.length > request.prefix.length) {
+    applyCompletion(request.cm, request.from, request.cursor, prefix);
+    completionCycle.value = prefix;
+    completionCycle.cursor = request.cm.getCursor();
+  } else {
+    const next = 0;
+    applyCompletion(request.cm, request.from, request.cursor, names[next]);
+    completionCycle.index = next;
+    completionCycle.value = names[next];
+    completionCycle.cursor = request.cm.getCursor();
+  }
+}
 function append(parent, text, kind) {
   const pre = document.createElement('pre'); pre.className = kind;
   if (kind === 'output') {
@@ -105,6 +161,7 @@ function startWorker() {
     if (worker !== currentWorker) return;
     if (data.type === 'ready') { ready = true; status(''); }
     else if (data.type === 'fatal') { fail(data.message); return; }
+    else if (data.type === 'completions') { receiveCompletions(data); return; }
     else if (data.type === 'result') {
       const { output, diagnostics, exit, clear } = data.response;
       if (clear) { transcript.replaceChildren(); activeEntry = transcript; }

@@ -324,7 +324,7 @@ fn main() {
         return;
     }
     if cli.input.is_none() {
-        if let Err(error) = repl::run(
+        match repl::run(
             cli.interpret,
             cli.opt_level,
             cli.debug_passes,
@@ -333,10 +333,12 @@ fn main() {
             cli.verify,
             cli.stats,
         ) {
-            eprintln!("{error:?}");
-            std::process::exit(1);
+            Ok(status) => std::process::exit(status),
+            Err(error) => {
+                eprintln!("{error:?}");
+                std::process::exit(1);
+            }
         }
-        return;
     }
     match run(&cli) {
         Ok(Some(output)) => println!("wrote {}", output.display()),

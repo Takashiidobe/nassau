@@ -19,4 +19,9 @@ impl BrowserRepl {
         serde_wasm_bindgen::to_value(&self.session.submit(source))
             .map_err(|error| JsValue::from_str(&error.to_string()))
     }
+
+    pub fn completions(&self, prefix: &str) -> Result<JsValue, JsValue> {
+        serde_wasm_bindgen::to_value(&self.session.completions(prefix))
+            .map_err(|error| JsValue::from_str(&error.to_string()))
+    }
 }

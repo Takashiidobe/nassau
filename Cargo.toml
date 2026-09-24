@@ -14,7 +14,7 @@ resolver = "3"
 
 [features]
 default = ["native"]
-native = ["dep:nassau-runtime", "dep:clap", "dep:cranelift-codegen", "dep:cranelift-control", "dep:cranelift-frontend", "dep:cranelift-jit", "dep:cranelift-module", "dep:cranelift-native", "dep:cranelift-object", "miette/fancy"]
+native = ["dep:nassau-runtime", "dep:clap", "dep:cranelift-codegen", "dep:cranelift-control", "dep:cranelift-frontend", "dep:cranelift-jit", "dep:cranelift-module", "dep:cranelift-native", "dep:cranelift-object", "dep:reedline", "dep:directories", "dep:nu-ansi-term", "miette/fancy"]
 web = ["dep:wasm-bindgen", "dep:serde", "dep:serde-wasm-bindgen"]
 
 [[bin]]
@@ -38,6 +38,9 @@ boa_gc = "0.22.0"
 wasm-bindgen = { version = "0.2", optional = true }
 serde = { version = "1", features = ["derive"], optional = true }
 serde-wasm-bindgen = { version = "0.6", optional = true }
+reedline = { version = "0.52.1", optional = true }
+directories = { version = "6", optional = true }
+nu-ansi-term = { version = "0.50", optional = true }
 
 [dev-dependencies]
 libtest-mimic = "0.8"

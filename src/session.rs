@@ -66,6 +66,10 @@ impl<B: Backend> Session<B> {
         session
     }
 
+    pub fn completions(&self, prefix: &str) -> Vec<String> {
+        self.types.completions(prefix)
+    }
+
     fn load_basis(&mut self) {
         let basis = Basis::check(&mut self.types);
         let module = basis

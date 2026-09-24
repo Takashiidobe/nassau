@@ -10,7 +10,16 @@ try {
 }
 
 onmessage = ({ data }) => {
-  if (data.type !== 'submit' || !repl) return;
+  if (!repl) return;
+  if (data.type === 'complete') {
+    try {
+      postMessage({ type: 'completions', requestId: data.requestId, names: repl.completions(data.prefix) });
+    } catch (error) {
+      postMessage({ type: 'completions', requestId: data.requestId, names: [], error: error.message ?? String(error) });
+    }
+    return;
+  }
+  if (data.type !== 'submit') return;
   const start = performance.now();
   try {
     const response = repl.submit(data.source);

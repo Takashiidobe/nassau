@@ -2355,6 +2355,73 @@ impl Session {
         }
     }
 
+    pub fn completion_names(&self) -> Vec<String> {
+        let mut names = Vec::new();
+        let mut seen = HashSet::new();
+        for entry in self.infer.values.iter().rev() {
+            if seen.insert(entry.name.clone()) {
+                names.push(entry.name.clone());
+            }
+        }
+        for (name, _) in self.infer.types.iter().rev() {
+            if seen.insert(name.clone()) {
+                names.push(name.clone());
+            }
+        }
+        for (name, _) in self.infer.functors.iter().rev() {
+            if seen.insert(name.clone()) {
+                names.push(name.clone());
+            }
+        }
+        for (name, _) in self.infer.signatures.iter().rev() {
+            if seen.insert(name.clone()) {
+                names.push(name.clone());
+            }
+        }
+        let mut seen_structures = HashSet::new();
+        for (name, structure) in self.infer.structs.iter().rev() {
+            if seen_structures.insert(name.clone()) {
+                names.push(name.clone());
+                Self::collect_structure_completions(name, structure, &mut names);
+            }
+        }
+        names.extend(
+            "abstype and andalso as case datatype do else end eqtype exception fn fun functor handle if in include let local nonfix of op open orelse raise rec sharing sig signature struct structure then type val where while with withtype"
+                .split_whitespace()
+                .map(str::to_owned),
+        );
+        names.sort();
+        names.dedup();
+        names
+    }
+
+    fn collect_structure_completions(path: &str, structure: &StructEnv, names: &mut Vec<String>) {
+        names.extend(
+            structure
+                .values
+                .iter()
+                .map(|entry| format!("{path}.{}", entry.name)),
+        );
+        names.extend(
+            structure
+                .types
+                .iter()
+                .map(|(name, _)| format!("{path}.{name}")),
+        );
+        for (name, nested) in &structure.structs {
+            let nested_path = format!("{path}.{name}");
+            names.push(nested_path.clone());
+            Self::collect_structure_completions(&nested_path, nested, names);
+        }
+    }
+
+    pub fn completions(&self, prefix: &str) -> Vec<String> {
+        self.completion_names()
+            .into_iter()
+            .filter(|name| name.starts_with(prefix))
+            .collect()
+    }
+
     pub fn binding_type(&self, ty: &Ty) -> Ty {
         match ty {
             Ty::Con { name, stamp, args } => {

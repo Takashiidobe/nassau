@@ -1267,6 +1267,7 @@ dependencies = [
  "cranelift-module",
  "cranelift-native",
  "cranelift-object",
+ "crossterm",
  "directories",
  "libtest-mimic",
  "miette",

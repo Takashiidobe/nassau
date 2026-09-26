@@ -1,9 +1,11 @@
 use std::io::{self, BufRead, IsTerminal, Write};
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use crate::codegen::{Codegen, CodegenOptions, OptLevel, Symbols};
 use crate::runtime;
+use crossterm::event::{Event, KeyCode as CrosstermKeyCode};
 use nassau::core;
 use nassau::error::LexerErrorKind;
 use nassau::lexer::{Lexer, TokenKind};
@@ -12,10 +14,10 @@ use nassau::session::{Backend, Execution, Session};
 use nassau::value;
 use nu_ansi_term::{Color, Style};
 use reedline::{
-    ColumnarMenu, Completer, CompletionResult, DefaultPrompt, DefaultPromptSegment,
-    FileBackedHistory, Highlighter, KeyCode, KeyModifiers, MenuBuilder, Reedline, ReedlineEvent,
-    ReedlineMenu, Signal, Span as CompletionSpan, StyledText, Suggestion, ValidationResult,
-    Validator, default_emacs_keybindings,
+    ColumnarMenu, Completer, CompletionResult, DefaultPrompt, DefaultPromptSegment, EditCommand,
+    EditMode, FileBackedHistory, Highlighter, KeyCode, KeyModifiers, MenuBuilder, PromptEditMode,
+    Reedline, ReedlineEvent, ReedlineMenu, ReedlineRawEvent, Signal, Span as CompletionSpan,
+    StyledText, Suggestion, ValidationResult, Validator, default_emacs_keybindings,
 };
 
 struct SmlValidator;
@@ -65,10 +67,48 @@ fn completion_char(ch: char) -> bool {
     ch.is_alphanumeric() || matches!(ch, '_' | '\'' | '.')
 }
 
-struct SmlHighlighter;
+struct SmlEmacs {
+    emacs: reedline::Emacs,
+    auto_submit: Arc<AtomicBool>,
+}
+
+impl EditMode for SmlEmacs {
+    fn parse_event(&mut self, event: ReedlineRawEvent) -> ReedlineEvent {
+        match Event::from(event) {
+            Event::Key(key)
+                if key.code == CrosstermKeyCode::Char(';')
+                    && matches!(key.modifiers, KeyModifiers::NONE | KeyModifiers::SHIFT) =>
+            {
+                let insert = ReedlineEvent::Edit(vec![EditCommand::InsertChar(';')]);
+                if self.auto_submit.swap(false, Ordering::Relaxed) {
+                    ReedlineEvent::Multiple(vec![insert, ReedlineEvent::Enter])
+                } else {
+                    insert
+                }
+            }
+            event => {
+                self.auto_submit.store(false, Ordering::Relaxed);
+                ReedlineRawEvent::try_from(event)
+                    .map_or(ReedlineEvent::None, |event| self.emacs.parse_event(event))
+            }
+        }
+    }
+
+    fn edit_mode(&self) -> PromptEditMode {
+        PromptEditMode::Emacs
+    }
+}
+
+struct SmlHighlighter {
+    auto_submit: Arc<AtomicBool>,
+}
 
 impl Highlighter for SmlHighlighter {
-    fn highlight(&self, line: &str, _cursor: usize) -> StyledText {
+    fn highlight(&self, line: &str, cursor: usize) -> StyledText {
+        self.auto_submit.store(
+            can_auto_submit_double_semicolon(line, cursor),
+            Ordering::Relaxed,
+        );
         let (tokens, error_range, error_style) =
             match Lexer::new(line, Path::new("<repl>")).tokenize() {
                 Ok(tokens) => (tokens, None, None),
@@ -156,6 +196,18 @@ impl Highlighter for SmlHighlighter {
         }
         styled
     }
+}
+
+fn can_auto_submit_double_semicolon(line: &str, cursor: usize) -> bool {
+    if cursor != line.len() || !line.ends_with(';') || line.ends_with(";;") {
+        return false;
+    }
+    let Ok(tokens) = Lexer::new(line, Path::new("<repl>")).tokenize() else {
+        return false;
+    };
+    tokens.last().is_some_and(|token| {
+        matches!(&token.value, TokenKind::Semicolon) && token.end.offset == line.len()
+    })
 }
 
 fn comment_ranges(source: &str) -> Vec<std::ops::Range<usize>> {
@@ -316,6 +368,7 @@ fn terminal<B: Backend>(mut session: Session<B>) -> miette::Result<i32> {
         names: Arc::clone(&completion_names),
     };
     let menu = Box::new(ColumnarMenu::default().with_name("sml_completions"));
+    let auto_submit = Arc::new(AtomicBool::new(false));
     let mut keybindings = default_emacs_keybindings();
     keybindings.add_binding(
         KeyModifiers::NONE,
@@ -328,10 +381,15 @@ fn terminal<B: Backend>(mut session: Session<B>) -> miette::Result<i32> {
     let mut editor = Reedline::create()
         .with_history(Box::new(history))
         .with_completer(Box::new(completer))
-        .with_highlighter(Box::new(SmlHighlighter))
+        .with_highlighter(Box::new(SmlHighlighter {
+            auto_submit: Arc::clone(&auto_submit),
+        }))
         .with_validator(Box::new(SmlValidator))
         .with_menu(ReedlineMenu::EngineCompleter(menu))
-        .with_edit_mode(Box::new(reedline::Emacs::new(keybindings)));
+        .with_edit_mode(Box::new(SmlEmacs {
+            emacs: reedline::Emacs::new(keybindings),
+            auto_submit,
+        }));
     let prompt = DefaultPrompt::new(
         DefaultPromptSegment::Basic("nassau".to_owned()),
         DefaultPromptSegment::Empty,

@@ -37,6 +37,23 @@ cargo test --test repl
 
 The test uses `smlnj` from `PATH` and skips if `smlnj` is not installed.
 
+## Fixture expectations
+
+Fixtures carry their expected output as FileCheck comments at the end of the
+file (`CHECK-EXIT`, `CHECK-STDOUT`, `CHECK-STDERR` for compiled programs,
+`CHECK-ERR` for `invalid-*` fixtures, `CHECK-REPL` for `tests/repl`). LLVM's
+`FileCheck` must be on `PATH` (or set `FILECHECK`). Regenerate them from
+SML/NJ with:
+
+```sh
+tools/update_filecheck.py                     # every fixture
+tools/update_filecheck.py 'tests/repl/*.sml'  # a glob or a single file
+tools/update_filecheck.py --check             # fail if any block is stale
+```
+
+A `(* XFAIL: reason *)` line marks a REPL fixture whose output is known to
+differ from SML/NJ; it fails the suite once it starts passing.
+
 ## Features
 
 - Integer arithmetic supports `+`, `-`, `*`, and `div`.

@@ -1,4 +1,3 @@
-(* exit_code: 18 *)
 val _ = print "hello, world\n"
 val quotient = 24 div 3
 val product = quotient * 4
@@ -14,3 +13,5 @@ val greaterOrEqual = quotient >= 8
 val lessOrEqual = quotient <= 8
 val notEqual = quotient <> 9
 val _ = Posix.Process.exit (Word8.fromInt answer)
+(* CHECK-EXIT: 18 *)
+(* CHECK-STDOUT: hello, world *)

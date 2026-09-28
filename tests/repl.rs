@@ -1,3 +1,5 @@
+mod common;
+
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -27,6 +29,13 @@ fn smlnj_source(source: &str) -> String {
     repl_source(source)
 }
 
+/// `(* XFAIL: reason *)` marks a fixture whose REPL output is known to differ.
+fn has_xfail(source: &str) -> bool {
+    source
+        .lines()
+        .any(|line| line.trim_start().starts_with("(* XFAIL"))
+}
+
 fn run_with_input(command: &mut Command, input: &str) -> std::io::Result<Output> {
     let mut child = command
         .stdin(Stdio::piped())
@@ -53,6 +62,22 @@ fn compare_repl(fixture: &Path, smlnj: &str) {
     .unwrap_or_else(|error| panic!("run SML/NJ ({smlnj}) for {}: {error}", fixture.display()));
     assert!(nassau.status.success(), "{}", fixture.display());
     assert!(reference.status.success(), "{}", fixture.display());
+
+    // Drop the prompts so the transcript compares like SML/NJ's.
+    let transcript = String::from_utf8_lossy(&nassau.stdout)
+        .replace("nassau> ", "")
+        .trim_end()
+        .to_owned()
+        + "\n";
+    let result = common::check_stream(fixture, &source, "CHECK-REPL", transcript.as_bytes(), true);
+    match (has_xfail(&source), result) {
+        (false, Ok(())) | (true, Err(_)) => {}
+        (false, Err(error)) => panic!("{error}"),
+        (true, Ok(())) => panic!(
+            "{}: XFAIL fixture now passes; remove its XFAIL line",
+            fixture.display()
+        ),
+    }
 }
 
 #[test]

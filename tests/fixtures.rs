@@ -52,6 +52,11 @@ fn is_parser_fixture(fixture: &Path) -> bool {
     in_directory(fixture, "parser")
 }
 
+/// Type fixtures are checked through `--dump-types`, not compiled and run.
+fn is_types_fixture(fixture: &Path) -> bool {
+    in_directory(fixture, "types")
+}
+
 fn is_lists_fixture(fixture: &Path) -> bool {
     in_directory(fixture, "lists")
 }
@@ -139,6 +144,9 @@ fn compare_fixture(fixture: &Path, smlnj: &str) {
     if is_parser_fixture(fixture) {
         nassau_command.arg("--dump-ast");
     }
+    if is_types_fixture(fixture) {
+        nassau_command.arg("--dump-types");
+    }
     let nassau = nassau_command
         .arg(fixture)
         .current_dir(directory)
@@ -165,6 +173,7 @@ fn compare_fixture(fixture: &Path, smlnj: &str) {
         || is_lists_fixture(fixture)
         || is_lexer_fixture(fixture)
         || is_parser_fixture(fixture)
+        || is_types_fixture(fixture)
     {
         assert_eq!(
             reference.status.success(),
@@ -188,7 +197,7 @@ fn compare_fixture(fixture: &Path, smlnj: &str) {
         return;
     }
 
-    if is_parser_fixture(fixture) && valid {
+    if (is_parser_fixture(fixture) || is_types_fixture(fixture)) && valid {
         common::check_stream(fixture, &source, "CHECK-STDOUT", &nassau.stdout, true)
             .unwrap_or_else(|error| panic!("{error}"));
         common::check_stream(fixture, &source, "CHECK-STDERR", &nassau.stderr, true)

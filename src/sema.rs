@@ -150,9 +150,10 @@ impl Analyzer {
                         }
                         DeclKind::Abstype { .. } => "abstype declarations",
                         DeclKind::Exception(_) => "exception declarations",
-                        DeclKind::Structure(_) | DeclKind::Signature(_) | DeclKind::Open(_) => {
-                            "module declarations"
-                        }
+                        DeclKind::Structure(_)
+                        | DeclKind::Signature(_)
+                        | DeclKind::Functor(_)
+                        | DeclKind::Open(_) => "module declarations",
                         DeclKind::Local(..) => "local declarations",
                         DeclKind::Fixity { .. } => "fixity declarations",
                     };

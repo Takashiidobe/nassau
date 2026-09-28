@@ -10,14 +10,16 @@
 //! fresh type for each abstract one, so nothing outside can see through it.
 
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use miette::SourceSpan;
 
 use super::{
-    Alias, DataInfo, Entry, Infer, Res, Scheme, TyCon, Type, TypeEntry, TypeError, arrow, con,
+    Alias, DataInfo, Entry, Infer, Mark, Res, Scheme, TyCon, Type, TypeEntry, TypeError, arrow, con,
 };
 use crate::parser::{
-    SigBinding, SigExp, SigExpKind, Spec, SpecKind, StrExp, StrExpKind, StructBinding, WhereType,
+    FunctorBinding, FunctorParameter, SigBinding, SigExp, SigExpKind, Spec, SpecKind, StrExp,
+    StrExpKind, StructBinding, WhereType,
 };
 
 /// What a structure exports.
@@ -66,6 +68,28 @@ enum SigItem {
     },
 }
 
+/// A functor: its parameter, its body, and the environment it was declared
+/// in. Each application elaborates the body again in that environment, with
+/// the parameter bound to the argument, so datatypes the body declares are
+/// new types each time.
+pub(super) struct Functor {
+    /// `None` when the parameter is a list of specifications, whose names
+    /// the body sees unqualified.
+    parameter: Option<String>,
+    sig: Sig,
+    body: StrExp,
+    scope: Scope,
+}
+
+/// A copy of the environment a functor was declared in.
+struct Scope {
+    values: Vec<Entry>,
+    types: Vec<(String, TypeEntry)>,
+    structs: Vec<(String, StructEnv)>,
+    signatures: Vec<(String, Sig)>,
+    functors: Vec<(String, Rc<Functor>)>,
+}
+
 /// What each flexible type constructor (by stamp) stands for: a type over
 /// the given parameters.
 type Realization = HashMap<usize, (Vec<usize>, Type)>;
@@ -83,6 +107,65 @@ impl Infer {
         }
         self.structs.extend(built);
         Ok(())
+    }
+
+    pub(super) fn infer_functors(&mut self, bindings: &[FunctorBinding]) -> Res<()> {
+        let mut built = Vec::new();
+        for binding in bindings {
+            let (parameter, signature) = match &binding.parameter {
+                FunctorParameter::Named(name, signature) => (Some(name.clone()), signature),
+                FunctorParameter::Specs(signature) => (None, signature),
+            };
+            let sig = self.elab_sigexp(signature)?;
+            // The body must make sense for any argument that matches, so it
+            // is checked once with the parameter's abstract types.
+            let mark = self.mark();
+            let env = self.sig_env(&sig.items);
+            // Errors in the body name the parameter's types `X.t`.
+            if let Some(name) = &parameter {
+                self.assign_paths(&env, name, 0);
+            }
+            self.bind_parameter(parameter.as_deref(), env);
+            let checked = self.elab_strexp(&binding.body);
+            self.release(mark);
+            checked?;
+            let scope = Scope {
+                values: self.values.clone(),
+                types: self.types.clone(),
+                structs: self.structs.clone(),
+                signatures: self.signatures.clone(),
+                functors: self.functors.clone(),
+            };
+            built.push((
+                binding.name.clone(),
+                Rc::new(Functor {
+                    parameter,
+                    sig,
+                    body: binding.body.clone(),
+                    scope,
+                }),
+            ));
+        }
+        self.functors.extend(built);
+        Ok(())
+    }
+
+    fn bind_parameter(&mut self, parameter: Option<&str>, env: StructEnv) {
+        match parameter {
+            Some(name) => self.structs.push((name.to_string(), env)),
+            None => self.extend_env(&env),
+        }
+    }
+
+    /// Replaces the environment with `scope`, returning the old one.
+    fn swap_scope(&mut self, scope: Scope) -> Scope {
+        Scope {
+            values: std::mem::replace(&mut self.values, scope.values),
+            types: std::mem::replace(&mut self.types, scope.types),
+            structs: std::mem::replace(&mut self.structs, scope.structs),
+            signatures: std::mem::replace(&mut self.signatures, scope.signatures),
+            functors: std::mem::replace(&mut self.functors, scope.functors),
+        }
     }
 
     pub(super) fn infer_signatures(&mut self, bindings: &[SigBinding]) -> Res<()> {
@@ -138,6 +221,31 @@ impl Infer {
                 self.release(mark);
                 Ok(env)
             }
+            StrExpKind::Apply(name, argument) => {
+                let Some(functor) = self
+                    .functors
+                    .iter()
+                    .rev()
+                    .find(|(known, _)| known == name)
+                    .map(|(_, functor)| functor.clone())
+                else {
+                    return Err((TypeError::UnboundFunctor(name.clone()), exp.source_span()));
+                };
+                let actual = self.elab_strexp(argument)?;
+                let parameter =
+                    self.ascribe(&actual, &functor.sig, false, argument.source_span())?;
+                let saved = self.swap_scope(Scope {
+                    values: functor.scope.values.clone(),
+                    types: functor.scope.types.clone(),
+                    structs: functor.scope.structs.clone(),
+                    signatures: functor.scope.signatures.clone(),
+                    functors: functor.scope.functors.clone(),
+                });
+                self.bind_parameter(functor.parameter.as_deref(), parameter);
+                let result = self.elab_strexp(&functor.body);
+                self.swap_scope(saved);
+                result
+            }
             StrExpKind::Name(path) => self
                 .lookup_struct(path)
                 .cloned()
@@ -164,7 +272,7 @@ impl Infer {
     }
 
     /// What was bound since `mark`; a later binding of a name hides earlier ones.
-    fn collect_since(&self, mark: (usize, usize, usize)) -> StructEnv {
+    fn collect_since(&self, mark: Mark) -> StructEnv {
         fn latest<T>(items: &[T], name: impl Fn(&T) -> &str) -> Vec<T>
         where
             T: Clone,
@@ -181,9 +289,9 @@ impl Infer {
             kept
         }
         StructEnv {
-            values: latest(&self.values[mark.0..], |entry| &entry.name),
-            types: latest(&self.types[mark.1..], |(name, _)| name),
-            structs: latest(&self.structs[mark.2..], |(name, _)| name),
+            values: latest(&self.values[mark.values..], |entry| &entry.name),
+            types: latest(&self.types[mark.types..], |(name, _)| name),
+            structs: latest(&self.structs[mark.structs..], |(name, _)| name),
         }
     }
 
@@ -218,12 +326,7 @@ impl Infer {
 
     /// The specifications see the ones before them, so after each the
     /// environment is rebuilt from the items so far.
-    fn elab_specs(
-        &mut self,
-        specs: &[Spec],
-        base: (usize, usize, usize),
-        items: &mut Vec<SigItem>,
-    ) -> Res<()> {
+    fn elab_specs(&mut self, specs: &[Spec], base: Mark, items: &mut Vec<SigItem>) -> Res<()> {
         for spec in specs {
             self.elab_spec(spec, items)?;
             self.release(base);
@@ -344,6 +447,9 @@ impl Infer {
                 items.extend(sig.items);
             }
             SpecKind::Sharing(names) => self.share(items, names, spec.source_span())?,
+            SpecKind::SharingStructures(paths) => {
+                self.share_structures(items, paths, spec.source_span())?;
+            }
         }
         Ok(())
     }
@@ -569,6 +675,40 @@ impl Infer {
             }
         }
         self.apply_realization(items, &real);
+        Ok(())
+    }
+
+    /// `sharing A = B`: each type both structures specify becomes one type.
+    fn share_structures(
+        &mut self,
+        items: &mut [SigItem],
+        paths: &[String],
+        span: SourceSpan,
+    ) -> Res<()> {
+        let mut specified = Vec::new();
+        for path in paths {
+            let Some(found) = struct_items(items, path) else {
+                return Err((
+                    TypeError::BadRefinement(
+                        path.clone(),
+                        "it is not a structure specification".into(),
+                    ),
+                    span,
+                ));
+            };
+            let mut names = Vec::new();
+            type_paths(found, "", &mut names);
+            specified.push(names);
+        }
+        let common: Vec<String> = specified[0]
+            .iter()
+            .filter(|name| specified[1..].iter().all(|other| other.contains(name)))
+            .cloned()
+            .collect();
+        for name in common {
+            let shared: Vec<String> = paths.iter().map(|path| format!("{path}.{name}")).collect();
+            self.share(items, &shared, span)?;
+        }
         Ok(())
     }
 
@@ -1130,5 +1270,32 @@ fn sealed_tycon(sealed: &Realization, stamp: usize) -> TyCon {
     match &sealed[&stamp].1 {
         Type::Con(tycon, _) => tycon.clone(),
         _ => unreachable!("sealing maps to a type constructor"),
+    }
+}
+
+/// The specifications of the structure at `path` in a signature.
+fn struct_items<'a>(items: &'a [SigItem], path: &str) -> Option<&'a [SigItem]> {
+    let mut scope = items;
+    for part in path.split('.') {
+        scope = scope.iter().rev().find_map(|item| match item {
+            SigItem::Struct { name, sig } if name == part => Some(sig.items.as_slice()),
+            _ => None,
+        })?;
+    }
+    Some(scope)
+}
+
+/// The paths, relative to `items`, of every type they specify.
+fn type_paths(items: &[SigItem], prefix: &str, out: &mut Vec<String>) {
+    for item in items {
+        match item {
+            SigItem::Type { name, .. } | SigItem::Datatype { name, .. } => {
+                out.push(format!("{prefix}{name}"));
+            }
+            SigItem::Struct { name, sig } => {
+                type_paths(&sig.items, &format!("{prefix}{name}."), out)
+            }
+            SigItem::Val { .. } | SigItem::Exception { .. } => {}
+        }
     }
 }

@@ -1,5 +1,6 @@
 mod ast_dump;
 mod codegen;
+mod constructors;
 mod error;
 mod infer;
 mod lexer;

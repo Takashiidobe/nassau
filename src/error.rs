@@ -68,11 +68,19 @@ pub enum MatchErrorKind {
 }
 
 #[derive(Clone, Debug, ThisError)]
+#[expect(
+    clippy::enum_variant_names,
+    reason = "each variant names what was declared twice"
+)]
 pub enum ScopeErrorKind {
     #[error("duplicate variable '{0}' in pattern")]
     DuplicateVariable(String),
     #[error("duplicate function name '{0}'")]
     DuplicateFunction(String),
+    #[error("duplicate constructor name '{0}' in datatype declaration")]
+    DuplicateConstructor(String),
+    #[error("duplicate type name '{0}' in type declaration")]
+    DuplicateType(String),
 }
 
 #[derive(Debug, ThisError)]

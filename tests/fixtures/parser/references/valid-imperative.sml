@@ -1,0 +1,20 @@
+val counter = ref 0
+val loop = while !counter < 10 do counter := !counter + 1
+val nested = while !counter > 0 do (while !counter > 5 do counter := !counter - 2; counter := !counter - 1)
+val sequence = (counter := 1; counter := 2; !counter)
+val before_value = (!counter) before (counter := 0)
+val chained_before = 1 before () before ()
+val ignored = (ignore (counter := 5); !counter)
+val in_let = let val i = ref 0 val acc = ref 0 in (while !i < 3 do (acc := !acc + !i; i := !i + 1); !acc) end
+val guarded = if !counter > 0 then counter := 0 else ()
+val unit_seq = ((); ())
+(* CHECK-STDOUT: (val counter (app ref 0)) *)
+(* CHECK-STDOUT-NEXT: (val loop (while (< (app ! counter) 10) (:= counter (+ (app ! counter) 1)))) *)
+(* CHECK-STDOUT-NEXT: (val nested (while (> (app ! counter) 0) (seq (while (> (app ! counter) 5) (:= counter (- (app ! counter) 2))) (:= counter (- (app ! counter) 1))))) *)
+(* CHECK-STDOUT-NEXT: (val sequence (seq (:= counter 1) (:= counter 2) (app ! counter))) *)
+(* CHECK-STDOUT-NEXT: (val before_value (before (app ! counter) (:= counter 0))) *)
+(* CHECK-STDOUT-NEXT: (val chained_before (before (before 1 ()) ())) *)
+(* CHECK-STDOUT-NEXT: (val ignored (seq (app ignore (:= counter 5)) (app ! counter))) *)
+(* CHECK-STDOUT-NEXT: (val in_let (let ((val i (app ref 0)) (val acc (app ref 0))) (seq (while (< (app ! i) 3) (seq (:= acc (+ (app ! acc) (app ! i))) (:= i (+ (app ! i) 1)))) (app ! acc)))) *)
+(* CHECK-STDOUT-NEXT: (val guarded (if (> (app ! counter) 0) (:= counter 0) ())) *)
+(* CHECK-STDOUT-NEXT: (val unit_seq (seq () ())) *)

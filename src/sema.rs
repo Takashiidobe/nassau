@@ -45,6 +45,8 @@ pub enum SemanticError {
     InvalidComparison(#[from] ComparisonTypeError),
     #[error("integer literal does not fit in i32")]
     IntegerOutOfRange,
+    #[error("{0} is not supported yet")]
+    Unsupported(&'static str),
 }
 
 #[derive(Debug, ThisError)]
@@ -260,6 +262,32 @@ fn analyze_expr<'a>(
             expect_type(analyze_expr(expr, scopes)?, Type::Integer, expr)?;
             Ok(Type::Unit)
         }
+        // Parsed in full, but the type checker and backend do not handle these yet.
+        other => Err((SemanticError::Unsupported(unsupported_name(other)), expr)),
+    }
+}
+
+fn unsupported_name(kind: &ExprKind) -> &'static str {
+    match kind {
+        ExprKind::Character(_) => "character literals",
+        ExprKind::Word(_) => "word literals",
+        ExprKind::Unit => "the unit value",
+        ExprKind::Tuple(_) => "tuples",
+        ExprKind::Record(_) => "records",
+        ExprKind::Selector(_) => "record selectors",
+        ExprKind::Apply(..) => "function application",
+        ExprKind::Infix(..) => "this infix operator",
+        ExprKind::AndAlso(..) => "andalso",
+        ExprKind::OrElse(..) => "orelse",
+        ExprKind::Sequence(_) => "expression sequences",
+        ExprKind::Let(..) => "let expressions",
+        ExprKind::Case(..) => "case expressions",
+        ExprKind::Fn(_) => "fn expressions",
+        ExprKind::While(..) => "while loops",
+        ExprKind::Raise(_) => "raise",
+        ExprKind::Handle(..) => "handle",
+        ExprKind::Typed(..) => "type annotations",
+        _ => "this expression",
     }
 }
 

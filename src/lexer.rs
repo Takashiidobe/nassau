@@ -422,9 +422,9 @@ impl<'a> Lexer<'a> {
                         "abstype" | "and" | "andalso" | "as" | "case" | "datatype" | "do"
                         | "end" | "exception" | "fn" | "fun" | "functor" | "handle" | "in"
                         | "infix" | "infixr" | "let" | "local" | "nonfix" | "of" | "op"
-                        | "open" | "orelse" | "raise" | "rec" | "sharing" | "sig" | "signature"
-                        | "struct" | "structure" | "type" | "where" | "while" | "with"
-                        | "withtype" => TokenKind::Reserved(word),
+                        | "eqtype" | "include" | "open" | "orelse" | "raise" | "rec"
+                        | "sharing" | "sig" | "signature" | "struct" | "structure" | "type"
+                        | "where" | "while" | "with" | "withtype" => TokenKind::Reserved(word),
                         _ => TokenKind::Identifier(word),
                     }
                 }

@@ -11,6 +11,7 @@ pub type Ty = Span<TyKind>;
 /// One `pattern => expression` arm of a `case`, `fn` or `handle`.
 pub type Rule = (Pat, Expr);
 pub type Decl = Span<DeclKind>;
+pub type Constructor = Span<ConstructorKind>;
 
 #[derive(Debug)]
 pub enum ExprKind {
@@ -111,6 +112,25 @@ pub enum DeclKind {
     /// functions, each with one or more clauses.
     Fun(Vec<FunBinding>),
     Type(Vec<TypeBinding>),
+    /// `datatype 'a t = A | B of 'a and ... [withtype ...]`. The `withtype`
+    /// abbreviations may be used by the constructors' argument types.
+    Datatype {
+        bindings: Vec<DataBinding>,
+        withtype: Vec<TypeBinding>,
+    },
+    /// `datatype t = datatype u`: `t` is another name for the datatype `u`,
+    /// with the same constructors.
+    DatatypeCopy {
+        name: String,
+        original: String,
+    },
+    /// `abstype datbind with decls end`: like `datatype`, but the constructors
+    /// are only visible in `decls` and the type no longer admits equality.
+    Abstype {
+        bindings: Vec<DataBinding>,
+        withtype: Vec<TypeBinding>,
+        body: Vec<Decl>,
+    },
     /// `local private in public end`: only `public` is visible afterwards.
     Local(Vec<Decl>, Vec<Decl>),
     Fixity {
@@ -131,6 +151,19 @@ pub struct FunBinding {
 pub struct FunClause {
     pub parameters: Vec<Pat>,
     pub body: Expr,
+}
+
+#[derive(Debug)]
+pub struct DataBinding {
+    pub parameters: Vec<String>,
+    pub name: String,
+    pub constructors: Vec<Constructor>,
+}
+
+#[derive(Debug)]
+pub struct ConstructorKind {
+    pub name: String,
+    pub argument: Option<Ty>,
 }
 
 #[derive(Debug)]
@@ -412,10 +445,8 @@ impl Parser {
                     DeclKind::Local(private, public)
                 }
                 "infix" | "infixr" | "nonfix" => self.parse_fixity_decl(&word)?,
-                "datatype" | "abstype" => {
-                    self.index -= 1;
-                    return Err(self.error(ParseErrorKind::Unsupported("datatype declarations")));
-                }
+                "datatype" => self.parse_datatype_decl()?,
+                "abstype" => self.parse_abstype_decl()?,
                 "exception" => {
                     self.index -= 1;
                     return Err(self.error(ParseErrorKind::Unsupported("exception declarations")));
@@ -616,36 +647,40 @@ impl Parser {
     }
 
     /// After `type`: `type ('a, 'b) pair = 'a * 'b and ...`.
+    /// An optional `'a` or `('a, 'b)` before a type name.
+    fn parse_type_parameters(&mut self) -> Result<Vec<String>, ParseError> {
+        let mut parameters = Vec::new();
+        match self.peek().cloned() {
+            Some(TokenKind::TypeVariable(name)) => {
+                self.index += 1;
+                parameters.push(name);
+            }
+            Some(TokenKind::LeftParen) => {
+                self.index += 1;
+                loop {
+                    let Some(TokenKind::TypeVariable(name)) = self.peek().cloned() else {
+                        return Err(self.error(ParseErrorKind::Expect("a type variable".into())));
+                    };
+                    self.index += 1;
+                    parameters.push(name);
+                    if !self.eat(&TokenKind::Comma) {
+                        break;
+                    }
+                }
+                self.expect(
+                    TokenKind::RightParen,
+                    ParseErrorKind::Expect(") after type parameters".into()),
+                )?;
+            }
+            _ => {}
+        }
+        Ok(parameters)
+    }
+
     fn parse_type_decl(&mut self) -> Result<DeclKind, ParseError> {
         let mut bindings = Vec::new();
         loop {
-            let mut parameters = Vec::new();
-            match self.peek().cloned() {
-                Some(TokenKind::TypeVariable(name)) => {
-                    self.index += 1;
-                    parameters.push(name);
-                }
-                Some(TokenKind::LeftParen) => {
-                    self.index += 1;
-                    loop {
-                        let Some(TokenKind::TypeVariable(name)) = self.peek().cloned() else {
-                            return Err(
-                                self.error(ParseErrorKind::Expect("a type variable".into()))
-                            );
-                        };
-                        self.index += 1;
-                        parameters.push(name);
-                        if !self.eat(&TokenKind::Comma) {
-                            break;
-                        }
-                    }
-                    self.expect(
-                        TokenKind::RightParen,
-                        ParseErrorKind::Expect(") after type parameters".into()),
-                    )?;
-                }
-                _ => {}
-            }
+            let parameters = self.parse_type_parameters()?;
             let Some(TokenKind::Identifier(name)) = self.peek().cloned() else {
                 return Err(self.error(ParseErrorKind::Expect("a type name".into())));
             };
@@ -668,6 +703,103 @@ impl Parser {
     }
 
     /// After `infix`, `infixr` or `nonfix`: `infix 6 ++ --`.
+    /// After `datatype`: a `datatype ... and ...` group or a replication.
+    fn parse_datatype_decl(&mut self) -> Result<DeclKind, ParseError> {
+        if let Some(TokenKind::Identifier(name)) = self.peek().cloned()
+            && matches!(self.peek_at(1), Some(TokenKind::Equals))
+            && matches!(self.peek_at(2), Some(TokenKind::Reserved(word)) if word == "datatype")
+        {
+            self.index += 3;
+            let Some(TokenKind::Identifier(original)) = self.peek().cloned() else {
+                return Err(self.error(ParseErrorKind::Expect("a datatype name".into())));
+            };
+            self.index += 1;
+            return Ok(DeclKind::DatatypeCopy { name, original });
+        }
+        let (bindings, withtype) = self.parse_datbinds()?;
+        Ok(DeclKind::Datatype { bindings, withtype })
+    }
+
+    /// After `abstype`: `datbind [withtype typbind] with decls end`.
+    fn parse_abstype_decl(&mut self) -> Result<DeclKind, ParseError> {
+        let (bindings, withtype) = self.parse_datbinds()?;
+        self.expect_reserved("with")?;
+        let saved = self.fixity.clone();
+        let body = self.parse_decls_until("end")?;
+        self.expect_reserved("end")?;
+        self.fixity = saved;
+        Ok(DeclKind::Abstype {
+            bindings,
+            withtype,
+            body,
+        })
+    }
+
+    /// `[tyvars] name = con [of ty] | ... {and ...}` and an optional `withtype`.
+    fn parse_datbinds(&mut self) -> Result<(Vec<DataBinding>, Vec<TypeBinding>), ParseError> {
+        let mut bindings = Vec::new();
+        loop {
+            let parameters = self.parse_type_parameters()?;
+            let Some(TokenKind::Identifier(name)) = self.peek().cloned() else {
+                return Err(self.error(ParseErrorKind::Expect("a datatype name".into())));
+            };
+            self.index += 1;
+            self.expect(
+                TokenKind::Equals,
+                ParseErrorKind::Expect("= after datatype name".into()),
+            )?;
+            let mut constructors = vec![self.parse_constructor()?];
+            while self.eat(&TokenKind::Bar) {
+                constructors.push(self.parse_constructor()?);
+            }
+            bindings.push(DataBinding {
+                parameters,
+                name,
+                constructors,
+            });
+            if !self.at_reserved("and") {
+                break;
+            }
+            self.index += 1;
+        }
+        let mut withtype = Vec::new();
+        if self.at_reserved("withtype") {
+            self.index += 1;
+            match self.parse_type_decl()? {
+                DeclKind::Type(bindings) => withtype = bindings,
+                _ => unreachable!("parse_type_decl returns a type declaration"),
+            }
+        }
+        Ok((bindings, withtype))
+    }
+
+    /// `[op] con [of ty]`.
+    fn parse_constructor(&mut self) -> Result<Constructor, ParseError> {
+        let Some(token) = self.tokens.get(self.index).cloned() else {
+            return Err(self.error(ParseErrorKind::Expect("a constructor name".into())));
+        };
+        let start = token.start.clone();
+        if self.at_reserved("op") {
+            self.index += 1;
+        }
+        let name = match self.peek().cloned() {
+            Some(TokenKind::Identifier(name) | TokenKind::SymbolicIdentifier(name)) => name,
+            _ => return Err(self.error(ParseErrorKind::Expect("a constructor name".into()))),
+        };
+        self.index += 1;
+        let argument = if self.at_reserved("of") {
+            self.index += 1;
+            Some(self.parse_ty()?)
+        } else {
+            None
+        };
+        Ok(Span::new(
+            start,
+            self.previous_end(),
+            ConstructorKind { name, argument },
+        ))
+    }
+
     fn parse_fixity_decl(&mut self, word: &str) -> Result<DeclKind, ParseError> {
         let kind = match word {
             "infix" => FixityKind::Infix,
@@ -1250,20 +1382,33 @@ impl Parser {
         self.parse_cons_pat()
     }
 
-    /// `::` is the only infix constructor until fixity declarations exist.
+    /// Infix constructor patterns, by the fixities in scope: `x :: xs`, `a ++ b`.
     fn parse_cons_pat(&mut self) -> Result<Pat, ParseError> {
-        let head = self.parse_app_pat()?;
-        if matches!(self.peek(), Some(TokenKind::SymbolicIdentifier(name)) if name == "::") {
+        self.parse_infix_pat(0)
+    }
+
+    fn parse_infix_pat(&mut self, minimum: u8) -> Result<Pat, ParseError> {
+        let mut lhs = self.parse_app_pat()?;
+        while let Some(TokenKind::Identifier(_) | TokenKind::SymbolicIdentifier(_)) = self.peek()
+            && let Some((name, precedence, right)) =
+                self.peek().and_then(|kind| self.infix_info(kind))
+        {
+            if precedence < minimum {
+                break;
+            }
             self.index += 1;
-            let tail = self.parse_cons_pat()?;
-            let (start, end) = (head.start.clone(), tail.end.clone());
-            return Ok(Span::new(
-                start,
-                end,
-                PatKind::Cons(Box::new(head), Box::new(tail)),
-            ));
+            let rhs = self.parse_infix_pat(if right { precedence } else { precedence + 1 })?;
+            let (start, end) = (lhs.start.clone(), rhs.end.clone());
+            let kind = if name == "::" {
+                PatKind::Cons(Box::new(lhs), Box::new(rhs))
+            } else {
+                // An infix constructor is a constructor applied to a pair.
+                let pair = Span::new(start.clone(), end.clone(), PatKind::Tuple(vec![lhs, rhs]));
+                PatKind::Constructor(name, Box::new(pair))
+            };
+            lhs = Span::new(start, end, kind);
         }
-        Ok(head)
+        Ok(lhs)
     }
 
     /// A constructor applied to one atomic pattern: `SOME x`, `Fail _`.
@@ -1288,7 +1433,6 @@ impl Parser {
         match self.peek() {
             Some(
                 TokenKind::Underscore
-                | TokenKind::Identifier(_)
                 | TokenKind::Integer(_)
                 | TokenKind::Word(_)
                 | TokenKind::String(_)
@@ -1299,6 +1443,7 @@ impl Parser {
                 | TokenKind::LeftBracket
                 | TokenKind::LeftBrace,
             ) => true,
+            Some(TokenKind::Identifier(name)) => !self.fixity.contains_key(name),
             Some(TokenKind::Reserved(word)) => word == "op",
             _ => false,
         }

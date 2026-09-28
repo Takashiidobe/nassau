@@ -3,7 +3,8 @@
 //! Spans are left out so the output is stable and easy to assert on.
 
 use crate::parser::{
-    Decl, DeclKind, Expr, ExprKind, FixityKind, Pat, PatKind, Program, Rule, StmtKind, Ty, TyKind,
+    DataBinding, Decl, DeclKind, Expr, ExprKind, FixityKind, Pat, PatKind, Program, Rule, StmtKind,
+    Ty, TyKind,
 };
 
 pub fn program(program: &Program) -> String {
@@ -134,19 +135,29 @@ fn decl_text(declaration: &Decl) -> String {
                 .collect::<Vec<_>>();
             list("fun", &bindings)
         }
-        DeclKind::Type(bindings) => {
-            let bindings = bindings
-                .iter()
-                .map(|binding| {
-                    format!(
-                        "({} ({}) {})",
-                        binding.name,
-                        binding.parameters.join(" "),
-                        ty_text(&binding.ty)
-                    )
-                })
-                .collect::<Vec<_>>();
-            list("type", &bindings)
+        DeclKind::Type(bindings) => list("type", &type_bindings(bindings)),
+        DeclKind::Datatype { bindings, withtype } => {
+            let mut parts = data_bindings(bindings);
+            if !withtype.is_empty() {
+                parts.push(list("withtype", &type_bindings(withtype)));
+            }
+            list("datatype", &parts)
+        }
+        DeclKind::DatatypeCopy { name, original } => format!("(datatype-copy {name} {original})"),
+        DeclKind::Abstype {
+            bindings,
+            withtype,
+            body,
+        } => {
+            let mut parts = data_bindings(bindings);
+            if !withtype.is_empty() {
+                parts.push(list("withtype", &type_bindings(withtype)));
+            }
+            parts.push(list(
+                "with",
+                &body.iter().map(decl_text).collect::<Vec<_>>(),
+            ));
+            list("abstype", &parts)
         }
         DeclKind::Local(private, public) => {
             let text = |declarations: &[Decl]| {
@@ -168,6 +179,36 @@ fn decl_text(declaration: &Decl) -> String {
             FixityKind::Infixr => format!("(infixr {precedence} {})", names.join(" ")),
         },
     }
+}
+
+fn type_bindings(bindings: &[crate::parser::TypeBinding]) -> Vec<String> {
+    bindings
+        .iter()
+        .map(|binding| {
+            format!(
+                "({} ({}) {})",
+                binding.name,
+                binding.parameters.join(" "),
+                ty_text(&binding.ty)
+            )
+        })
+        .collect()
+}
+
+fn data_bindings(bindings: &[DataBinding]) -> Vec<String> {
+    bindings
+        .iter()
+        .map(|binding| {
+            let mut parts = vec![format!("({})", binding.parameters.join(" "))];
+            for constructor in &binding.constructors {
+                parts.push(match &constructor.value.argument {
+                    Some(argument) => format!("({} {})", constructor.value.name, ty_text(argument)),
+                    None => format!("({})", constructor.value.name),
+                });
+            }
+            list(&binding.name, &parts)
+        })
+        .collect()
 }
 
 fn list_with(head: &str, first: String, rules: &[Rule]) -> String {

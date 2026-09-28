@@ -1,17 +1,17 @@
 //! Exhaustiveness and redundancy checking for `case`, `fn` and `handle`.
 //!
 //! This is the classic pattern-matrix "usefulness" algorithm. It works on the
-//! shape of the patterns alone, before types are known, so it only knows the
-//! constructor families of the built-in types (`bool`, `list`, `option`,
-//! `order`, and single-constructor tuples and records). Any other constructor
-//! belongs to an open family: it can be matched redundantly, but never
-//! exhaustively without a catch-all. Datatype declarations will extend
-//! `family` once they exist.
+//! shape of the patterns alone, before types are known, so it learns the
+//! constructor families from the declarations in scope (`bool`, `list`,
+//! `option`, `order` and every `datatype`, plus single-constructor tuples and
+//! records). Constructors of open types, such as exceptions, can be matched
+//! redundantly but never exhaustively without a catch-all.
 //!
 //! As in SML/NJ, a redundant rule is an error and a non-exhaustive match is
 //! only a warning (`handle` re-raises, so it is never non-exhaustive). Like
 //! SML/NJ, refutable `val` patterns are not reported.
 
+use crate::constructors::Constructors;
 use crate::parser::{Decl, DeclKind, ExprKind, Pat, PatKind, Program};
 use crate::walk::{Node, walk_program};
 
@@ -30,13 +30,14 @@ pub struct MatchDiagnostic {
 
 pub fn check_program(program: &Program) -> Vec<MatchDiagnostic> {
     let mut out = Vec::new();
-    walk_program(program, &mut |node| match node {
+    walk_program(program, &mut |node, env| match node {
         Node::Expr(expr) => match &expr.value {
             ExprKind::Case(_, rules) | ExprKind::Fn(rules) => {
                 check_rules(
                     rules.iter().map(|(pattern, _)| pattern),
                     (&expr.start, expr.source_span()),
                     true,
+                    env,
                     &mut out,
                 );
             }
@@ -45,17 +46,18 @@ pub fn check_program(program: &Program) -> Vec<MatchDiagnostic> {
                     rules.iter().map(|(pattern, _)| pattern),
                     (&expr.start, expr.source_span()),
                     false,
+                    env,
                     &mut out,
                 );
             }
             _ => {}
         },
-        Node::Decl(declaration) => check_declaration(declaration, &mut out),
+        Node::Decl(declaration) => check_declaration(declaration, env, &mut out),
     });
     out
 }
 
-fn check_declaration(declaration: &Decl, out: &mut Vec<MatchDiagnostic>) {
+fn check_declaration(declaration: &Decl, env: &Constructors, out: &mut Vec<MatchDiagnostic>) {
     match &declaration.value {
         DeclKind::Fun(bindings) => {
             for binding in bindings {
@@ -74,12 +76,12 @@ fn check_declaration(declaration: &Decl, out: &mut Vec<MatchDiagnostic>) {
                         clause
                             .parameters
                             .iter()
-                            .map(|p| convert(p, &labels))
+                            .map(|p| convert(p, &labels, env))
                             .collect()
                     })
                     .collect();
                 for (index, clause) in binding.clauses.iter().enumerate() {
-                    if !useful(&rows[..index], &rows[index]) {
+                    if !useful(&rows[..index], &rows[index], env) {
                         let first = &clause.parameters[0];
                         out.push(diagnostic(
                             MatchDiagnosticKind::Redundant,
@@ -89,7 +91,7 @@ fn check_declaration(declaration: &Decl, out: &mut Vec<MatchDiagnostic>) {
                     }
                 }
                 let arity = rows[0].len();
-                if useful(&rows, &wildcards(arity)) {
+                if useful(&rows, &wildcards(arity), env) {
                     let first = &binding.clauses[0];
                     let start = &first.parameters[0].start;
                     let last = &binding.clauses[binding.clauses.len() - 1].body;
@@ -103,6 +105,9 @@ fn check_declaration(declaration: &Decl, out: &mut Vec<MatchDiagnostic>) {
         }
         DeclKind::Val { .. }
         | DeclKind::Type(_)
+        | DeclKind::Datatype { .. }
+        | DeclKind::DatatypeCopy { .. }
+        | DeclKind::Abstype { .. }
         | DeclKind::Local(..)
         | DeclKind::Fixity { .. } => {}
     }
@@ -125,6 +130,7 @@ fn check_rules<'a>(
     patterns: impl Iterator<Item = &'a Pat> + Clone,
     whole: (&crate::span::Loc, miette::SourceSpan),
     must_be_exhaustive: bool,
+    env: &Constructors,
     out: &mut Vec<MatchDiagnostic>,
 ) {
     let mut labels = Vec::new();
@@ -135,11 +141,11 @@ fn check_rules<'a>(
     let patterns: Vec<&Pat> = patterns.collect();
     let rows: Vec<Vec<P>> = patterns
         .iter()
-        .map(|pattern| vec![convert(pattern, &labels)])
+        .map(|pattern| vec![convert(pattern, &labels, env)])
         .collect();
 
     for (index, pattern) in patterns.iter().enumerate() {
-        if !useful(&rows[..index], &rows[index]) {
+        if !useful(&rows[..index], &rows[index], env) {
             out.push(diagnostic(
                 MatchDiagnosticKind::Redundant,
                 &pattern.start,
@@ -147,7 +153,7 @@ fn check_rules<'a>(
             ));
         }
     }
-    if must_be_exhaustive && useful(&rows, &[P::Wild]) {
+    if must_be_exhaustive && useful(&rows, &[P::Wild], env) {
         out.push(diagnostic(
             MatchDiagnosticKind::NonExhaustive,
             whole.0,
@@ -210,37 +216,15 @@ enum Head {
     Literal(String),
 }
 
-/// The constructors of a built-in type, given the name of one of them.
-fn family(name: &str) -> Option<&'static [(&'static str, usize)]> {
-    match name {
-        "true" | "false" => Some(&[("true", 0), ("false", 0)]),
-        "nil" | "::" => Some(&[("nil", 0), ("::", 2)]),
-        "NONE" | "SOME" => Some(&[("NONE", 0), ("SOME", 1)]),
-        "LESS" | "EQUAL" | "GREATER" => Some(&[("LESS", 0), ("EQUAL", 0), ("GREATER", 0)]),
-        _ => None,
-    }
-}
-
-/// Without an environment, a capitalised or qualified name (`Div`, `Foo.Bar`) is
-/// taken to be a constructor, such as a Basis exception. Taking it for a variable
-/// instead would report the rules after it as redundant. Once datatype and
-/// exception declarations exist this should look the name up instead.
-pub fn looks_like_constructor(name: &str) -> bool {
-    name.contains('.') || name.starts_with(|first: char| first.is_ascii_uppercase())
-}
-
-fn convert(pattern: &Pat, labels: &[String]) -> P {
+fn convert(pattern: &Pat, labels: &[String], env: &Constructors) -> P {
     let named = |name: &str, arguments: Vec<P>| {
         P::Con(Head::Named(name.into(), arguments.len()), arguments)
     };
     match &pattern.value {
         PatKind::Wildcard => P::Wild,
-        PatKind::Variable(name) => match family(name) {
-            // A nullary constructor of a built-in type, not a variable.
-            Some(constructors) if constructors.contains(&(name.as_str(), 0)) => named(name, vec![]),
-            _ if looks_like_constructor(name) => named(name, vec![]),
-            _ => P::Wild,
-        },
+        // A nullary constructor in scope, not a variable.
+        PatKind::Variable(name) if env.is_constructor(name) => named(name, vec![]),
+        PatKind::Variable(_) => P::Wild,
         PatKind::Integer(value) => P::Con(Head::Literal(format!("int {value}")), vec![]),
         PatKind::Word(value) => P::Con(Head::Literal(format!("word {value}")), vec![]),
         PatKind::String(value) => P::Con(Head::Literal(format!("string {value}")), vec![]),
@@ -249,10 +233,13 @@ fn convert(pattern: &Pat, labels: &[String]) -> P {
         PatKind::Unit => P::Con(Head::Tuple(0), vec![]),
         PatKind::Tuple(items) => P::Con(
             Head::Tuple(items.len()),
-            items.iter().map(|item| convert(item, labels)).collect(),
+            items
+                .iter()
+                .map(|item| convert(item, labels, env))
+                .collect(),
         ),
         PatKind::List(items) => items.iter().rev().fold(named("nil", vec![]), |tail, item| {
-            named("::", vec![convert(item, labels), tail])
+            named("::", vec![convert(item, labels, env), tail])
         }),
         PatKind::Record(fields, _) => P::Con(
             Head::Tuple(labels.len()),
@@ -262,15 +249,16 @@ fn convert(pattern: &Pat, labels: &[String]) -> P {
                     fields
                         .iter()
                         .find(|(field, _)| field == label)
-                        .map_or(P::Wild, |(_, inner)| convert(inner, labels))
+                        .map_or(P::Wild, |(_, inner)| convert(inner, labels, env))
                 })
                 .collect(),
         ),
-        PatKind::Constructor(name, argument) => named(name, vec![convert(argument, labels)]),
-        PatKind::Cons(head, tail) => {
-            named("::", vec![convert(head, labels), convert(tail, labels)])
-        }
-        PatKind::Layered(_, _, inner) | PatKind::Typed(inner, _) => convert(inner, labels),
+        PatKind::Constructor(name, argument) => named(name, vec![convert(argument, labels, env)]),
+        PatKind::Cons(head, tail) => named(
+            "::",
+            vec![convert(head, labels, env), convert(tail, labels, env)],
+        ),
+        PatKind::Layered(_, _, inner) | PatKind::Typed(inner, _) => convert(inner, labels, env),
     }
 }
 
@@ -305,7 +293,7 @@ fn default_rows(rows: &[Vec<P>]) -> Vec<Vec<P>> {
 }
 
 /// Whether some value matches `vector` but none of `rows`.
-fn useful(rows: &[Vec<P>], vector: &[P]) -> bool {
+fn useful(rows: &[Vec<P>], vector: &[P], env: &Constructors) -> bool {
     let Some((first, rest)) = vector.split_first() else {
         return rows.is_empty();
     };
@@ -314,7 +302,7 @@ fn useful(rows: &[Vec<P>], vector: &[P]) -> bool {
             let arity = arguments.len();
             let specialized = specialize(rows, head, arity);
             let next: Vec<P> = arguments.iter().chain(rest).cloned().collect();
-            useful(&specialized, &next)
+            useful(&specialized, &next, env)
         }
         P::Wild => {
             let heads: Vec<&Head> = rows
@@ -324,16 +312,16 @@ fn useful(rows: &[Vec<P>], vector: &[P]) -> bool {
                     P::Wild => None,
                 })
                 .collect();
-            match complete_signature(&heads) {
+            match complete_signature(&heads, env) {
                 Some(constructors) => constructors.iter().any(|(head, arity)| {
                     let specialized = specialize(rows, head, *arity);
                     let next: Vec<P> = wildcards(*arity)
                         .into_iter()
                         .chain(rest.iter().cloned())
                         .collect();
-                    useful(&specialized, &next)
+                    useful(&specialized, &next, env)
                 }),
-                None => useful(&default_rows(rows), rest),
+                None => useful(&default_rows(rows), rest, env),
             }
         }
     }
@@ -341,11 +329,11 @@ fn useful(rows: &[Vec<P>], vector: &[P]) -> bool {
 
 /// All constructors of the column's type, when the column already names every
 /// one of them; `None` when a constructor may be missing.
-fn complete_signature(heads: &[&Head]) -> Option<Vec<(Head, usize)>> {
+fn complete_signature(heads: &[&Head], env: &Constructors) -> Option<Vec<(Head, usize)>> {
     match heads.first()? {
         Head::Tuple(arity) => Some(vec![(Head::Tuple(*arity), *arity)]),
         Head::Named(name, _) => {
-            let constructors = family(name)?;
+            let constructors = env.family_of(name)?;
             constructors
                 .iter()
                 .all(|(constructor, _)| {
@@ -357,7 +345,7 @@ fn complete_signature(heads: &[&Head]) -> Option<Vec<(Head, usize)>> {
                     constructors
                         .iter()
                         .map(|(constructor, arity)| {
-                            (Head::Named((*constructor).into(), *arity), *arity)
+                            (Head::Named(constructor.clone(), *arity), *arity)
                         })
                         .collect()
                 })

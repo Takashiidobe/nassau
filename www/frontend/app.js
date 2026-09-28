@@ -3,6 +3,7 @@ const transcript = $('transcript');
 const decoder = new TextDecoder();
 const history = [];
 let editor, inputRow, worker, ready = false, busy = false, exited = false, activeEntry;
+let completionMenu;
 let historyIndex = 0, draft = '', exampleRequest = 0, promptId = 0;
 let completionRequestId = 0, completionCycle = null;
 const completionRequests = new Map();
@@ -35,7 +36,10 @@ function configureEditor(textarea) {
   });
   cm.on('change', (cm, change) => {
     if (cm !== editor) return;
-    if (change.origin !== 'complete') completionCycle = null;
+    if (change.origin !== 'complete') {
+      completionCycle = null;
+      hideCompletions();
+    }
     scroll();
     if (change.origin === '+input' && endsCommand(cm)) {
       queueMicrotask(() => { if (cm === editor && endsCommand(cm)) run(); });
@@ -57,8 +61,14 @@ function newPrompt(source = '') {
   const label = document.createElement('label'); label.className = 'prompt'; label.textContent = 'nassau>';
   const shell = document.createElement('div'); shell.className = 'editor-shell';
   const textarea = document.createElement('textarea');
+  completionCycle = null;
+  completionMenu = document.createElement('div');
+  completionMenu.className = 'completion-menu';
+  completionMenu.hidden = true;
+  completionMenu.setAttribute('role', 'listbox');
+  completionMenu.setAttribute('aria-label', 'Tab completion candidates');
   textarea.id = `source-${++promptId}`; textarea.spellcheck = false; textarea.value = source;
-  label.htmlFor = textarea.id; shell.append(textarea); inputRow.append(label, shell);
+  label.htmlFor = textarea.id; shell.append(textarea, completionMenu); inputRow.append(label, shell);
   transcript.append(inputRow);
   editor = configureEditor(textarea);
   historyIndex = history.length; draft = source;
@@ -85,12 +95,14 @@ function complete(cm) {
     completionCycle.index = next;
     completionCycle.value = completionCycle.names[next];
     completionCycle.cursor = cm.getCursor();
+    updateCompletions();
     return;
   }
   const before = cm.getLine(cursor.line).slice(0, cursor.ch);
   const match = before.match(/[A-Za-z0-9_'.]+$/);
   const prefix = match?.[0] ?? '';
   if (!prefix) { cm.replaceSelection('  '); return; }
+  hideCompletions();
   const requestId = ++completionRequestId;
   completionRequests.set(requestId, { cm, cursor, from: { line: cursor.line, ch: cursor.ch - prefix.length }, prefix, source: cm.getValue() });
   worker.postMessage({ type: 'complete', requestId, prefix });
@@ -99,15 +111,6 @@ function applyCompletion(cm, from, cursor, value) {
   cm.replaceRange(value, from, cursor, 'complete');
   cm.setCursor({ line: from.line, ch: from.ch + value.length });
 }
-function commonPrefix(names) {
-  let prefix = names[0] ?? '';
-  for (const name of names.slice(1)) {
-    let length = 0;
-    while (length < prefix.length && prefix[length] === name[length]) length++;
-    prefix = prefix.slice(0, length);
-  }
-  return prefix;
-}
 function receiveCompletions(data) {
   const request = completionRequests.get(data.requestId);
   completionRequests.delete(data.requestId);
@@ -115,20 +118,33 @@ function receiveCompletions(data) {
   const cursor = request.cm.getCursor();
   if (cursor.line !== request.cursor.line || cursor.ch !== request.cursor.ch) return;
   const names = [...new Set(data.names)].filter(name => name.startsWith(request.prefix) && name !== request.prefix);
-  if (!names.length) { applyCompletion(request.cm, request.from, request.cursor, request.prefix + '  '); return; }
-  completionCycle = { cm: request.cm, from: request.from, names, index: -1, cursor: request.cursor, value: request.prefix };
-  const prefix = commonPrefix(names);
-  if (prefix.length > request.prefix.length) {
-    applyCompletion(request.cm, request.from, request.cursor, prefix);
-    completionCycle.value = prefix;
-    completionCycle.cursor = request.cm.getCursor();
-  } else {
-    const next = 0;
-    applyCompletion(request.cm, request.from, request.cursor, names[next]);
-    completionCycle.index = next;
-    completionCycle.value = names[next];
-    completionCycle.cursor = request.cm.getCursor();
-  }
+  if (!names.length) { hideCompletions(); return; }
+  completionCycle = { cm: request.cm, from: request.from, names, index: 0, cursor: request.cursor, value: names[0] };
+  applyCompletion(request.cm, request.from, request.cursor, names[0]);
+  completionCycle.cursor = request.cm.getCursor();
+  updateCompletions();
+}
+function updateCompletions() {
+  if (!completionMenu || !completionCycle) return;
+  completionMenu.replaceChildren();
+  completionCycle.names.forEach((name, index) => {
+    const item = document.createElement('span');
+    item.className = 'completion-item';
+    if (index === completionCycle.index) item.classList.add('selected');
+    item.setAttribute('role', 'option');
+    item.setAttribute('aria-selected', String(index === completionCycle.index));
+    item.setAttribute('aria-setsize', String(completionCycle.names.length));
+    item.setAttribute('aria-posinset', String(index + 1));
+    item.textContent = name;
+    completionMenu.append(item);
+  });
+  completionMenu.hidden = false;
+  completionMenu.querySelector('.selected')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+}
+function hideCompletions() {
+  if (!completionMenu) return;
+  completionMenu.hidden = true;
+  completionMenu.replaceChildren();
 }
 function append(parent, text, kind) {
   const pre = document.createElement('pre'); pre.className = kind;

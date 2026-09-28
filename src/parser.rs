@@ -102,6 +102,39 @@ impl Parser {
         Span::new(start, end, kind)
     }
 
+    fn integer_value(literal: &str) -> Option<i64> {
+        let (negative, literal) = literal
+            .strip_prefix('~')
+            .map_or((false, literal), |literal| (true, literal));
+        let (radix, digits) = if let Some(digits) = literal
+            .strip_prefix("0x")
+            .or_else(|| literal.strip_prefix("0X"))
+        {
+            (16, digits)
+        } else {
+            (10, literal)
+        };
+        let value = u64::from_str_radix(digits, radix).ok()?;
+        if negative {
+            if value == (i64::MAX as u64) + 1 {
+                Some(i64::MIN)
+            } else if value <= i64::MAX as u64 {
+                Some(-(value as i64))
+            } else {
+                None
+            }
+        } else {
+            i64::try_from(value).ok()
+        }
+    }
+
+    fn real_value(literal: &str) -> Result<f64, ParseErrorKind> {
+        literal
+            .replace('~', "-")
+            .parse::<f64>()
+            .map_err(|_| ParseErrorKind::InvalidRealLiteral)
+    }
+
     fn expect(&mut self, expected: TokenKind, kind: ParseErrorKind) -> Result<Token, ParseError> {
         let Some(token) = self.tokens.get(self.index) else {
             return Err(self.error(kind));
@@ -115,8 +148,10 @@ impl Parser {
 
     pub fn parse(mut self) -> Result<Program, ParseError> {
         if self.tokens.len() == 1
-            && let TokenKind::Integer(value) = self.tokens[0].value
+            && let TokenKind::Integer(ref literal) = self.tokens[0].value
         {
+            let value = Self::integer_value(literal)
+                .ok_or_else(|| self.error_kind(ParseErrorKind::IntegerOutOfRange))?;
             let result = i32::try_from(value)
                 .map_err(|_| self.error_kind(ParseErrorKind::IntegerOutOfRange))?;
             return Ok(Program {
@@ -311,18 +346,28 @@ impl Parser {
                     TokenKind::Integer(value) => Ok(Span::new(
                         token.start,
                         integer.end,
-                        ExprKind::Integer(-value),
+                        ExprKind::Integer(
+                            Self::integer_value(&value)
+                                .and_then(i64::checked_neg)
+                                .ok_or_else(|| self.error(ParseErrorKind::IntegerOutOfRange))?,
+                        ),
                     )),
                     TokenKind::Real(value) => {
+                        let value = Self::real_value(&value).map_err(|kind| self.error(kind))?;
                         Ok(Span::new(token.start, integer.end, ExprKind::Real(-value)))
                     }
                     _ => Err(self.error(ParseErrorKind::Expect("a number after unary '-'".into()))),
                 }
             }
             TokenKind::Integer(value) => {
+                let value = Self::integer_value(&value)
+                    .ok_or_else(|| self.error(ParseErrorKind::IntegerOutOfRange))?;
                 Ok(Span::new(token.start, token.end, ExprKind::Integer(value)))
             }
-            TokenKind::Real(value) => Ok(Span::new(token.start, token.end, ExprKind::Real(value))),
+            TokenKind::Real(value) => {
+                let value = Self::real_value(&value).map_err(|kind| self.error(kind))?;
+                Ok(Span::new(token.start, token.end, ExprKind::Real(value)))
+            }
             TokenKind::True => Ok(Span::new(token.start, token.end, ExprKind::Boolean(true))),
             TokenKind::False => Ok(Span::new(token.start, token.end, ExprKind::Boolean(false))),
             TokenKind::LeftBracket => {

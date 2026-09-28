@@ -1,0 +1,16 @@
+Val
+Identifier("escapes")
+Equals
+String("\u{7}\u{8}\t\n\u{b}\u{c}\r\\\"\u{1}A")
+Val
+Identifier("gap")
+Equals
+String("helloworld")
+Val
+Identifier("character")
+Equals
+Character('z')
+Val
+Identifier("escapedCharacter")
+Equals
+Character('\u{1}')

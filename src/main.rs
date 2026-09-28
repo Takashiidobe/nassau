@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 
 use crate::codegen::{Codegen, CodegenOptions, OptLevel};
 use crate::error::SourceError;
+use crate::lexer::Lexer;
 use crate::parser::Parser as SmlParser;
 use clap::Parser;
 
@@ -31,6 +32,8 @@ struct Cli {
     asm: bool,
     #[arg(long, help = "Print Cranelift IR before optimization")]
     dump_ir: bool,
+    #[arg(long, help = "Print the lexical tokens for a source file")]
+    dump_tokens: bool,
     #[arg(long, help = "Print Cranelift IR after optimization")]
     dump_optimized_ir: bool,
     #[arg(long, help = "Verify IR before and after optimization")]
@@ -100,8 +103,31 @@ fn run(cli: &Cli) -> miette::Result<PathBuf> {
     Ok(output)
 }
 
+fn dump_tokens(input: &Path) -> miette::Result<()> {
+    let source = fs::read_to_string(input).map_err(|error| miette::miette!("{error}"))?;
+    let named_source = miette::NamedSource::new(input.display().to_string(), source.clone());
+    let tokens = Lexer::new(&source, input).tokenize().map_err(|error| {
+        miette::Report::new(SourceError::from_span(error)).with_source_code(named_source)
+    })?;
+    for token in tokens {
+        println!("{:?}", token.value);
+    }
+    Ok(())
+}
+
 fn main() {
     let cli = Cli::parse();
+    if cli.dump_tokens {
+        let Some(input) = cli.input.as_ref() else {
+            eprintln!("--dump-tokens requires a source file");
+            std::process::exit(2);
+        };
+        if let Err(error) = dump_tokens(input) {
+            eprintln!("{error:?}");
+            std::process::exit(1);
+        }
+        return;
+    }
     if cli.input.is_none() {
         if let Err(error) = repl::run(
             cli.opt_level,

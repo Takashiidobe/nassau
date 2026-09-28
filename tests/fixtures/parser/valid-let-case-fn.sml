@@ -9,8 +9,8 @@ val anonymous = fn x => x + 1
 val typed_argument = fn (x : int) => x
 val multiple = fn 0 => "zero" | _ => "other"
 (* CHECK-STDOUT: (val xs (list 1 2 3)) *)
-(* CHECK-STDOUT-NEXT: (val bound (let ((x 1) (_ 2)) (seq (+ x 1) x))) *)
-(* CHECK-STDOUT-NEXT: (val shadowed (let ((x 1)) (let ((x 2)) x))) *)
+(* CHECK-STDOUT-NEXT: (val bound (let ((val x 1) (val _ 2)) (seq (+ x 1) x))) *)
+(* CHECK-STDOUT-NEXT: (val shadowed (let ((val x 1)) (let ((val x 2)) x))) *)
 (* CHECK-STDOUT-NEXT: (val matched (case xs ((list) 0) ((:: x rest) x))) *)
 (* CHECK-STDOUT-NEXT: (val numeric_match (case 1 (0 "zero") (_ "other"))) *)
 (* CHECK-STDOUT-NEXT: (val tuple_match (case (tuple 1 2) ((tuple a b) (+ a b)))) *)

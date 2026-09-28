@@ -9,9 +9,11 @@
 //! `family` once they exist.
 //!
 //! As in SML/NJ, a redundant rule is an error and a non-exhaustive match is
-//! only a warning (`handle` re-raises, so it is never non-exhaustive).
+//! only a warning (`handle` re-raises, so it is never non-exhaustive). Like
+//! SML/NJ, refutable `val` patterns are not reported.
 
-use crate::parser::{Expr, ExprKind, Pat, PatKind, Program, Rule, StmtKind};
+use crate::parser::{Decl, DeclKind, ExprKind, Pat, PatKind, Program};
+use crate::walk::{Node, walk_program};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MatchDiagnosticKind {
@@ -27,118 +29,136 @@ pub struct MatchDiagnostic {
 }
 
 pub fn check_program(program: &Program) -> Vec<MatchDiagnostic> {
-    let mut diagnostics = Vec::new();
-    for statement in &program.statements {
-        match &statement.value {
-            StmtKind::Val(_, expr) | StmtKind::Print(expr) | StmtKind::Exit(expr) => {
-                visit(expr, &mut diagnostics);
+    let mut out = Vec::new();
+    walk_program(program, &mut |node| match node {
+        Node::Expr(expr) => match &expr.value {
+            ExprKind::Case(_, rules) | ExprKind::Fn(rules) => {
+                check_rules(
+                    rules.iter().map(|(pattern, _)| pattern),
+                    (&expr.start, expr.source_span()),
+                    true,
+                    &mut out,
+                );
+            }
+            ExprKind::Handle(_, rules) => {
+                check_rules(
+                    rules.iter().map(|(pattern, _)| pattern),
+                    (&expr.start, expr.source_span()),
+                    false,
+                    &mut out,
+                );
+            }
+            _ => {}
+        },
+        Node::Decl(declaration) => check_declaration(declaration, &mut out),
+    });
+    out
+}
+
+fn check_declaration(declaration: &Decl, out: &mut Vec<MatchDiagnostic>) {
+    match &declaration.value {
+        DeclKind::Fun(bindings) => {
+            for binding in bindings {
+                let mut labels = Vec::new();
+                for clause in &binding.clauses {
+                    clause
+                        .parameters
+                        .iter()
+                        .for_each(|p| collect_labels(p, &mut labels));
+                }
+                sort_labels(&mut labels);
+                let rows: Vec<Vec<P>> = binding
+                    .clauses
+                    .iter()
+                    .map(|clause| {
+                        clause
+                            .parameters
+                            .iter()
+                            .map(|p| convert(p, &labels))
+                            .collect()
+                    })
+                    .collect();
+                for (index, clause) in binding.clauses.iter().enumerate() {
+                    if !useful(&rows[..index], &rows[index]) {
+                        let first = &clause.parameters[0];
+                        out.push(diagnostic(
+                            MatchDiagnosticKind::Redundant,
+                            &first.start,
+                            first.source_span(),
+                        ));
+                    }
+                }
+                let arity = rows[0].len();
+                if useful(&rows, &wildcards(arity)) {
+                    let first = &binding.clauses[0];
+                    let start = &first.parameters[0].start;
+                    let last = &binding.clauses[binding.clauses.len() - 1].body;
+                    out.push(diagnostic(
+                        MatchDiagnosticKind::NonExhaustive,
+                        start,
+                        (start.offset, last.end.offset - start.offset).into(),
+                    ));
+                }
             }
         }
-    }
-    diagnostics
-}
-
-fn visit(expr: &Expr, out: &mut Vec<MatchDiagnostic>) {
-    match &expr.value {
-        ExprKind::Add(lhs, rhs)
-        | ExprKind::Subtract(lhs, rhs)
-        | ExprKind::Multiply(lhs, rhs)
-        | ExprKind::Divide(lhs, rhs)
-        | ExprKind::IntDivide(lhs, rhs)
-        | ExprKind::Greater(lhs, rhs)
-        | ExprKind::GreaterEqual(lhs, rhs)
-        | ExprKind::Less(lhs, rhs)
-        | ExprKind::LessEqual(lhs, rhs)
-        | ExprKind::Equal(lhs, rhs)
-        | ExprKind::NotEqual(lhs, rhs)
-        | ExprKind::Infix(_, lhs, rhs)
-        | ExprKind::AndAlso(lhs, rhs)
-        | ExprKind::OrElse(lhs, rhs)
-        | ExprKind::Apply(lhs, rhs)
-        | ExprKind::While(lhs, rhs) => {
-            visit(lhs, out);
-            visit(rhs, out);
-        }
-        ExprKind::If(condition, consequent, alternative) => {
-            visit(condition, out);
-            visit(consequent, out);
-            visit(alternative, out);
-        }
-        ExprKind::List(items) | ExprKind::Tuple(items) | ExprKind::Sequence(items) => {
-            items.iter().for_each(|item| visit(item, out));
-        }
-        ExprKind::Record(fields) => fields.iter().for_each(|(_, value)| visit(value, out)),
-        ExprKind::Word8FromInt(inner)
-        | ExprKind::PosixExit(inner)
-        | ExprKind::Raise(inner)
-        | ExprKind::Typed(inner, _) => visit(inner, out),
-        ExprKind::Let(bindings, body) => {
-            bindings.iter().for_each(|(_, value)| visit(value, out));
-            visit(body, out);
-        }
-        ExprKind::Case(scrutinee, rules) => {
-            visit(scrutinee, out);
-            check_rules(rules, expr, true, out);
-            rules.iter().for_each(|(_, body)| visit(body, out));
-        }
-        ExprKind::Fn(rules) => {
-            check_rules(rules, expr, true, out);
-            rules.iter().for_each(|(_, body)| visit(body, out));
-        }
-        ExprKind::Handle(body, rules) => {
-            visit(body, out);
-            check_rules(rules, expr, false, out);
-            rules
-                .iter()
-                .for_each(|(_, rule_body)| visit(rule_body, out));
-        }
-        ExprKind::Integer(_)
-        | ExprKind::Real(_)
-        | ExprKind::Boolean(_)
-        | ExprKind::Variable(_)
-        | ExprKind::String(_)
-        | ExprKind::Character(_)
-        | ExprKind::Word(_)
-        | ExprKind::Unit
-        | ExprKind::Selector(_) => {}
+        DeclKind::Val { .. }
+        | DeclKind::Type(_)
+        | DeclKind::Local(..)
+        | DeclKind::Fixity { .. } => {}
     }
 }
 
-fn check_rules(
-    rules: &[Rule],
-    whole: &Expr,
+fn diagnostic(
+    kind: MatchDiagnosticKind,
+    start: &crate::span::Loc,
+    span: miette::SourceSpan,
+) -> MatchDiagnostic {
+    MatchDiagnostic {
+        kind,
+        line: start.line,
+        column: start.column,
+        span,
+    }
+}
+
+fn check_rules<'a>(
+    patterns: impl Iterator<Item = &'a Pat> + Clone,
+    whole: (&crate::span::Loc, miette::SourceSpan),
     must_be_exhaustive: bool,
     out: &mut Vec<MatchDiagnostic>,
 ) {
     let mut labels = Vec::new();
-    for (pattern, _) in rules {
+    for pattern in patterns.clone() {
         collect_labels(pattern, &mut labels);
     }
-    labels.sort_by(|a, b| label_order(a, b));
-    labels.dedup();
-    let rows: Vec<Vec<P>> = rules
+    sort_labels(&mut labels);
+    let patterns: Vec<&Pat> = patterns.collect();
+    let rows: Vec<Vec<P>> = patterns
         .iter()
-        .map(|(pattern, _)| vec![convert(pattern, &labels)])
+        .map(|pattern| vec![convert(pattern, &labels)])
         .collect();
 
-    for (index, (pattern, _)) in rules.iter().enumerate() {
+    for (index, pattern) in patterns.iter().enumerate() {
         if !useful(&rows[..index], &rows[index]) {
-            out.push(MatchDiagnostic {
-                kind: MatchDiagnosticKind::Redundant,
-                line: pattern.start.line,
-                column: pattern.start.column,
-                span: pattern.source_span(),
-            });
+            out.push(diagnostic(
+                MatchDiagnosticKind::Redundant,
+                &pattern.start,
+                pattern.source_span(),
+            ));
         }
     }
     if must_be_exhaustive && useful(&rows, &[P::Wild]) {
-        out.push(MatchDiagnostic {
-            kind: MatchDiagnosticKind::NonExhaustive,
-            line: whole.start.line,
-            column: whole.start.column,
-            span: whole.source_span(),
-        });
+        out.push(diagnostic(
+            MatchDiagnosticKind::NonExhaustive,
+            whole.0,
+            whole.1,
+        ));
     }
+}
+
+fn sort_labels(labels: &mut Vec<String>) {
+    labels.sort_by(|a, b| label_order(a, b));
+    labels.dedup();
 }
 
 /// Numeric labels (tuple fields) sort numerically, the rest alphabetically.
@@ -205,7 +225,7 @@ fn family(name: &str) -> Option<&'static [(&'static str, usize)]> {
 /// taken to be a constructor, such as a Basis exception. Taking it for a variable
 /// instead would report the rules after it as redundant. Once datatype and
 /// exception declarations exist this should look the name up instead.
-fn looks_like_constructor(name: &str) -> bool {
+pub fn looks_like_constructor(name: &str) -> bool {
     name.contains('.') || name.starts_with(|first: char| first.is_ascii_uppercase())
 }
 

@@ -65,9 +65,8 @@ impl Repl {
         let named_source = miette::NamedSource::new(format!("<repl:{chunk}>"), source.to_owned());
         analyzer
             .analyze_program(&program)
-            .map_err(|(error, expr)| {
-                miette::Report::new(SourceError::new(error, expr.source_span()))
-                    .with_source_code(named_source)
+            .map_err(|(error, span)| {
+                miette::Report::new(SourceError::new(error, span)).with_source_code(named_source)
             })?;
         let name = format!("nassau_repl_{chunk}");
         let function = self

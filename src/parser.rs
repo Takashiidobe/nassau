@@ -10,8 +10,7 @@ pub type Pat = Span<PatKind>;
 pub type Ty = Span<TyKind>;
 /// One `pattern => expression` arm of a `case`, `fn` or `handle`.
 pub type Rule = (Pat, Expr);
-/// A `val` binding inside `let`; `None` is the wildcard pattern.
-pub type Binding = (Option<String>, Expr);
+pub type Decl = Span<DeclKind>;
 
 #[derive(Debug)]
 pub enum ExprKind {
@@ -48,7 +47,7 @@ pub enum ExprKind {
     AndAlso(Box<Expr>, Box<Expr>),
     OrElse(Box<Expr>, Box<Expr>),
     Sequence(Vec<Expr>),
-    Let(Vec<Binding>, Box<Expr>),
+    Let(Vec<Decl>, Box<Expr>),
     Case(Box<Expr>, Vec<Rule>),
     Fn(Vec<Rule>),
     While(Box<Expr>, Box<Expr>),
@@ -95,6 +94,57 @@ pub enum StmtKind {
     Val(String, Expr),
     Print(Expr),
     Exit(Expr),
+    /// Any other declaration; the backend does not handle these yet.
+    Declaration(Decl),
+}
+
+#[derive(Debug)]
+pub enum DeclKind {
+    /// `val pat = exp and ...`. Without `rec`, the right-hand sides cannot see
+    /// the names the patterns bind; with `rec` (whose right-hand sides must be
+    /// `fn`), they see their own.
+    Val {
+        recursive: bool,
+        bindings: Vec<(Pat, Expr)>,
+    },
+    /// `fun f p = e | f q = e' and g ...`: an `and` group of mutually recursive
+    /// functions, each with one or more clauses.
+    Fun(Vec<FunBinding>),
+    Type(Vec<TypeBinding>),
+    /// `local private in public end`: only `public` is visible afterwards.
+    Local(Vec<Decl>, Vec<Decl>),
+    Fixity {
+        kind: FixityKind,
+        precedence: u8,
+        names: Vec<String>,
+    },
+}
+
+#[derive(Debug)]
+pub struct FunBinding {
+    pub name: String,
+    pub clauses: Vec<FunClause>,
+}
+
+/// One clause; `fun f x : t = e` keeps its result type as `e : t`.
+#[derive(Debug)]
+pub struct FunClause {
+    pub parameters: Vec<Pat>,
+    pub body: Expr,
+}
+
+#[derive(Debug)]
+pub struct TypeBinding {
+    pub parameters: Vec<String>,
+    pub name: String,
+    pub ty: Ty,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum FixityKind {
+    Infix,
+    Infixr,
+    Nonfix,
 }
 
 #[derive(Debug)]
@@ -116,6 +166,8 @@ pub struct Parser {
     index: usize,
     allow_implicit_val: bool,
     file: PathBuf,
+    /// Precedence and right-associativity of every infix name in scope.
+    fixity: std::collections::HashMap<String, (u8, bool)>,
 }
 
 impl Parser {
@@ -125,6 +177,7 @@ impl Parser {
             index: 0,
             allow_implicit_val: false,
             file,
+            fixity: Self::default_fixity(),
         }
     }
 
@@ -220,51 +273,18 @@ impl Parser {
         }
         let mut statements = Vec::new();
         while self.index < self.tokens.len() {
-            if self.tokens[self.index].value == TokenKind::Semicolon {
-                self.index += 1;
+            if self.eat(&TokenKind::Semicolon) {
                 continue;
             }
-            let start = if self.tokens[self.index].value == TokenKind::Val {
-                self.expect(
-                    TokenKind::Val,
-                    ParseErrorKind::Expect("a val declaration".into()),
-                )?
-                .start
+            let declaration = if self.starts_decl() {
+                self.parse_decl()?
             } else if self.allow_implicit_val {
-                self.tokens[self.index].start.clone()
+                let start = self.tokens[self.index].start.clone();
+                self.parse_val_decl(start)?
             } else {
-                return Err(self.error(ParseErrorKind::Expect("a val declaration".into())));
+                return Err(self.error(ParseErrorKind::Expect("a declaration".into())));
             };
-            if matches!(
-                self.tokens.get(self.index).map(|token| &token.value),
-                Some(TokenKind::Underscore)
-            ) {
-                self.index += 1;
-                self.expect(
-                    TokenKind::Equals,
-                    ParseErrorKind::Expect("= after val pattern".into()),
-                )?;
-                let kind = self.parse_effect()?;
-                let end = self.tokens[self.index - 1].end.clone();
-                statements.push(Span::new(start, end, kind));
-                continue;
-            }
-            let name = match self.tokens.get(self.index).map(|token| &token.value) {
-                Some(TokenKind::Identifier(name)) => name.clone(),
-                _ => {
-                    return Err(self.error(ParseErrorKind::Expect(
-                        "a variable name or wildcard pattern".into(),
-                    )));
-                }
-            };
-            self.index += 1;
-            self.expect(
-                TokenKind::Equals,
-                ParseErrorKind::Expect("= after val name".into()),
-            )?;
-            let expr = self.parse_expr()?;
-            let end = expr.end.clone();
-            statements.push(Span::new(start, end, StmtKind::Val(name, expr)));
+            statements.push(Self::lower_statement(declaration));
         }
         if statements.is_empty() {
             return Err(self.error(ParseErrorKind::Expect("a program".into())));
@@ -275,34 +295,430 @@ impl Parser {
         })
     }
 
-    fn parse_effect(&mut self) -> Result<StmtKind, ParseError> {
-        let identifier = self
-            .tokens
-            .get(self.index)
-            .ok_or_else(|| {
-                self.error(ParseErrorKind::Expect("print or Posix.Process.exit".into()))
-            })?
-            .clone();
-        match &identifier.value {
-            TokenKind::Identifier(name) if name == "print" => {
-                self.index += 1;
-                let token = self.expect_string(ParseErrorKind::Expect(
-                    "a string literal after print".into(),
-                ))?;
-                let TokenKind::String(value) = token.value else {
+    /// Recognises the declarations the backend already handles (`val x = e`,
+    /// `val _ = print "..."` and `val _ = Posix.Process.exit (Word8.fromInt e)`)
+    /// and keeps every other declaration as it was parsed.
+    fn lower_statement(declaration: Decl) -> Stmt {
+        let (start, end) = (declaration.start.clone(), declaration.end.clone());
+        if let DeclKind::Val {
+            recursive: false,
+            bindings,
+        } = &declaration.value
+            && let [(pattern, expr)] = bindings.as_slice()
+        {
+            let simple = match &pattern.value {
+                PatKind::Variable(name) => !name.contains('.'),
+                PatKind::Wildcard => Self::is_effect(expr),
+                _ => false,
+            };
+            if simple {
+                let DeclKind::Val { mut bindings, .. } = declaration.value else {
                     unreachable!()
                 };
-                Ok(StmtKind::Print(Span::new(
-                    token.start,
-                    token.end,
-                    ExprKind::String(value),
-                )))
+                let (pattern, expr) = bindings.pop().expect("one binding");
+                let kind = match pattern.value {
+                    PatKind::Variable(name) => StmtKind::Val(name, expr),
+                    _ => Self::lower_effect(expr),
+                };
+                return Span::new(start, end, kind);
             }
-            TokenKind::Identifier(name) if name == "Posix" => {
-                Ok(StmtKind::Exit(self.parse_posix_exit()?))
-            }
-            _ => Err(self.error(ParseErrorKind::Expect("print or Posix.Process.exit".into()))),
         }
+        Span::new(start, end, StmtKind::Declaration(declaration))
+    }
+
+    fn is_effect(expr: &Expr) -> bool {
+        let ExprKind::Apply(function, argument) = &expr.value else {
+            return false;
+        };
+        match (&function.value, &argument.value) {
+            (ExprKind::Variable(name), ExprKind::String(_)) => name == "print",
+            (ExprKind::Variable(name), ExprKind::Apply(inner, _)) => {
+                name == "Posix.Process.exit"
+                    && matches!(&inner.value, ExprKind::Variable(n) if n == "Word8.fromInt")
+            }
+            _ => false,
+        }
+    }
+
+    /// `print "text"` and `Posix.Process.exit (Word8.fromInt e)` as the
+    /// backend's effect statements; the caller has checked `is_effect`.
+    fn lower_effect(expr: Expr) -> StmtKind {
+        let ExprKind::Apply(function, argument) = expr.value else {
+            unreachable!()
+        };
+        if matches!(argument.value, ExprKind::String(_)) {
+            return StmtKind::Print(*argument);
+        }
+        let Expr {
+            start,
+            end,
+            value: ExprKind::Apply(_, integer),
+        } = *argument
+        else {
+            unreachable!()
+        };
+        let word8 = Span::new(start, end.clone(), ExprKind::Word8FromInt(integer));
+        StmtKind::Exit(Span::new(
+            function.start,
+            end,
+            ExprKind::PosixExit(Box::new(word8)),
+        ))
+    }
+
+    fn starts_decl(&self) -> bool {
+        match self.peek() {
+            Some(TokenKind::Val) => true,
+            Some(TokenKind::Reserved(word)) => matches!(
+                word.as_str(),
+                "fun"
+                    | "type"
+                    | "local"
+                    | "infix"
+                    | "infixr"
+                    | "nonfix"
+                    | "datatype"
+                    | "exception"
+                    | "structure"
+                    | "signature"
+                    | "functor"
+                    | "open"
+                    | "abstype"
+                    | "eqtype"
+            ),
+            _ => false,
+        }
+    }
+
+    /// One declaration, with fixity changes made by `infix`/`nonfix` recorded.
+    fn parse_decl(&mut self) -> Result<Decl, ParseError> {
+        let Some(token) = self.tokens.get(self.index).cloned() else {
+            return Err(self.error(ParseErrorKind::Expect("a declaration".into())));
+        };
+        self.index += 1;
+        let start = token.start.clone();
+        let kind = match token.value {
+            TokenKind::Val => return self.parse_val_decl(start),
+            TokenKind::Reserved(word) => match word.as_str() {
+                "fun" => self.parse_fun_decl()?,
+                "type" => self.parse_type_decl()?,
+                "local" => {
+                    let saved = self.fixity.clone();
+                    let private = self.parse_decls_until("in")?;
+                    self.expect_reserved("in")?;
+                    let public = self.parse_decls_until("end")?;
+                    self.expect_reserved("end")?;
+                    // Fixity set in the private part scopes over the public part only.
+                    self.fixity = saved;
+                    DeclKind::Local(private, public)
+                }
+                "infix" | "infixr" | "nonfix" => self.parse_fixity_decl(&word)?,
+                "datatype" | "abstype" => {
+                    self.index -= 1;
+                    return Err(self.error(ParseErrorKind::Unsupported("datatype declarations")));
+                }
+                "exception" => {
+                    self.index -= 1;
+                    return Err(self.error(ParseErrorKind::Unsupported("exception declarations")));
+                }
+                _ => {
+                    self.index -= 1;
+                    return Err(self.error(ParseErrorKind::Unsupported("module declarations")));
+                }
+            },
+            _ => {
+                self.index -= 1;
+                return Err(self.error(ParseErrorKind::Expect("a declaration".into())));
+            }
+        };
+        Ok(Span::new(start, self.previous_end(), kind))
+    }
+
+    /// Declarations up to (not including) the reserved word `terminator`.
+    fn parse_decls_until(&mut self, terminator: &str) -> Result<Vec<Decl>, ParseError> {
+        let mut declarations = Vec::new();
+        loop {
+            if self.eat(&TokenKind::Semicolon) {
+                continue;
+            }
+            if self.at_reserved(terminator) {
+                return Ok(declarations);
+            }
+            if !self.starts_decl() {
+                return Err(self.error(ParseErrorKind::Expect(format!(
+                    "a declaration or {terminator}"
+                ))));
+            }
+            declarations.push(self.parse_decl()?);
+        }
+    }
+
+    /// After `val` (or at the start of an implicit REPL `val`).
+    fn parse_val_decl(&mut self, start: crate::span::Loc) -> Result<Decl, ParseError> {
+        let recursive = self.at_reserved("rec");
+        if recursive {
+            self.index += 1;
+        }
+        let mut bindings = Vec::new();
+        loop {
+            let pattern = self.parse_pat()?;
+            self.expect(
+                TokenKind::Equals,
+                ParseErrorKind::Expect("= after val pattern".into()),
+            )?;
+            let expr = self.parse_expr()?;
+            if recursive && !matches!(expr.value, ExprKind::Fn(_)) {
+                self.index -= 1;
+                return Err(self.error(ParseErrorKind::Expect(
+                    "a fn expression after val rec".into(),
+                )));
+            }
+            bindings.push((pattern, expr));
+            if !self.at_reserved("and") {
+                break;
+            }
+            self.index += 1;
+        }
+        Ok(Span::new(
+            start,
+            self.previous_end(),
+            DeclKind::Val {
+                recursive,
+                bindings,
+            },
+        ))
+    }
+
+    /// After `fun`: `f p1 p2 = e | f q1 q2 = e' and g ...`.
+    fn parse_fun_decl(&mut self) -> Result<DeclKind, ParseError> {
+        let mut bindings = Vec::new();
+        loop {
+            let mut name: Option<String> = None;
+            let mut clauses: Vec<FunClause> = Vec::new();
+            loop {
+                let (clause_name, parameters) = self.parse_fun_head()?;
+                let mut body_ty = None;
+                if self.eat(&TokenKind::Colon) {
+                    body_ty = Some(self.parse_ty()?);
+                }
+                self.expect(
+                    TokenKind::Equals,
+                    ParseErrorKind::Expect("= after function parameters".into()),
+                )?;
+                let mut body = self.parse_expr()?;
+                if let Some(ty) = body_ty {
+                    let (start, end) = (body.start.clone(), ty.end.clone());
+                    body = Span::new(start, end, ExprKind::Typed(Box::new(body), ty));
+                }
+                match &name {
+                    Some(previous) if *previous != clause_name => {
+                        return Err(self.error(ParseErrorKind::Expect(
+                            "every clause to define the same function".into(),
+                        )));
+                    }
+                    _ => name = Some(clause_name),
+                }
+                if let Some(first) = clauses.first()
+                    && first.parameters.len() != parameters.len()
+                {
+                    return Err(self.error(ParseErrorKind::Expect(
+                        "every clause to have the same number of parameters".into(),
+                    )));
+                }
+                clauses.push(FunClause { parameters, body });
+                if !self.eat(&TokenKind::Bar) {
+                    break;
+                }
+            }
+            bindings.push(FunBinding {
+                name: name.expect("at least one clause"),
+                clauses,
+            });
+            if !self.at_reserved("and") {
+                return Ok(DeclKind::Fun(bindings));
+            }
+            self.index += 1;
+        }
+    }
+
+    /// The left of a `fun` clause: `f p1 .. pn`, `p1 ++ p2`, or `(p1 ++ p2) p3 ..`.
+    fn parse_fun_head(&mut self) -> Result<(String, Vec<Pat>), ParseError> {
+        if self.at(&TokenKind::LeftParen) {
+            let saved = self.index;
+            match self.parse_parenthesised_infix_head() {
+                Ok(head) => return Ok(head),
+                Err(_) => self.index = saved,
+            }
+        }
+        if self.eat_reserved("op") {
+            let name = self.function_name()?;
+            return Ok((name, self.parse_parameters()?));
+        }
+        let first = self.parse_atpat()?;
+        if let Some(name) = self.peek().and_then(|kind| self.infix_name(kind)) {
+            self.index += 1;
+            let second = self.parse_atpat()?;
+            return Ok((name, vec![Self::tuple_pat(first, second)]));
+        }
+        let PatKind::Variable(name) = first.value else {
+            return Err(self.error(ParseErrorKind::Expect("a function name".into())));
+        };
+        Ok((name, self.parse_parameters()?))
+    }
+
+    fn parse_parenthesised_infix_head(&mut self) -> Result<(String, Vec<Pat>), ParseError> {
+        self.expect(TokenKind::LeftParen, ParseErrorKind::Expect("(".into()))?;
+        let first = self.parse_atpat()?;
+        let Some(name) = self.peek().and_then(|kind| self.infix_name(kind)) else {
+            return Err(self.error(ParseErrorKind::Expect("an infix function name".into())));
+        };
+        self.index += 1;
+        let second = self.parse_atpat()?;
+        self.expect(
+            TokenKind::RightParen,
+            ParseErrorKind::Expect(") after infix function head".into()),
+        )?;
+        let mut parameters = vec![Self::tuple_pat(first, second)];
+        while self.starts_atpat() {
+            parameters.push(self.parse_atpat()?);
+        }
+        Ok((name, parameters))
+    }
+
+    fn tuple_pat(first: Pat, second: Pat) -> Pat {
+        let (start, end) = (first.start.clone(), second.end.clone());
+        Span::new(start, end, PatKind::Tuple(vec![first, second]))
+    }
+
+    fn function_name(&mut self) -> Result<String, ParseError> {
+        let name = match self.peek() {
+            Some(TokenKind::Identifier(name) | TokenKind::SymbolicIdentifier(name)) => name.clone(),
+            Some(kind) => match Self::token_name(kind) {
+                Some(name) => name,
+                None => return Err(self.error(ParseErrorKind::Expect("a function name".into()))),
+            },
+            None => return Err(self.error(ParseErrorKind::Expect("a function name".into()))),
+        };
+        self.index += 1;
+        Ok(name)
+    }
+
+    fn parse_parameters(&mut self) -> Result<Vec<Pat>, ParseError> {
+        let mut parameters = Vec::new();
+        while self.starts_atpat() {
+            parameters.push(self.parse_atpat()?);
+        }
+        if parameters.is_empty() {
+            return Err(self.error(ParseErrorKind::Expect(
+                "at least one function parameter".into(),
+            )));
+        }
+        Ok(parameters)
+    }
+
+    /// After `type`: `type ('a, 'b) pair = 'a * 'b and ...`.
+    fn parse_type_decl(&mut self) -> Result<DeclKind, ParseError> {
+        let mut bindings = Vec::new();
+        loop {
+            let mut parameters = Vec::new();
+            match self.peek().cloned() {
+                Some(TokenKind::TypeVariable(name)) => {
+                    self.index += 1;
+                    parameters.push(name);
+                }
+                Some(TokenKind::LeftParen) => {
+                    self.index += 1;
+                    loop {
+                        let Some(TokenKind::TypeVariable(name)) = self.peek().cloned() else {
+                            return Err(
+                                self.error(ParseErrorKind::Expect("a type variable".into()))
+                            );
+                        };
+                        self.index += 1;
+                        parameters.push(name);
+                        if !self.eat(&TokenKind::Comma) {
+                            break;
+                        }
+                    }
+                    self.expect(
+                        TokenKind::RightParen,
+                        ParseErrorKind::Expect(") after type parameters".into()),
+                    )?;
+                }
+                _ => {}
+            }
+            let Some(TokenKind::Identifier(name)) = self.peek().cloned() else {
+                return Err(self.error(ParseErrorKind::Expect("a type name".into())));
+            };
+            self.index += 1;
+            self.expect(
+                TokenKind::Equals,
+                ParseErrorKind::Expect("= after type name".into()),
+            )?;
+            let ty = self.parse_ty()?;
+            bindings.push(TypeBinding {
+                parameters,
+                name,
+                ty,
+            });
+            if !self.at_reserved("and") {
+                return Ok(DeclKind::Type(bindings));
+            }
+            self.index += 1;
+        }
+    }
+
+    /// After `infix`, `infixr` or `nonfix`: `infix 6 ++ --`.
+    fn parse_fixity_decl(&mut self, word: &str) -> Result<DeclKind, ParseError> {
+        let kind = match word {
+            "infix" => FixityKind::Infix,
+            "infixr" => FixityKind::Infixr,
+            _ => FixityKind::Nonfix,
+        };
+        let mut precedence = 0;
+        if kind != FixityKind::Nonfix
+            && let Some(TokenKind::Integer(digits)) = self.peek().cloned()
+        {
+            precedence = digits
+                .parse::<u8>()
+                .ok()
+                .filter(|precedence| *precedence <= 9)
+                .ok_or_else(|| {
+                    self.error(ParseErrorKind::Expect("a precedence from 0 to 9".into()))
+                })?;
+            self.index += 1;
+        }
+        let mut names = Vec::new();
+        while let Some(name) = self.peek().and_then(Self::token_name) {
+            self.index += 1;
+            names.push(name);
+        }
+        if names.is_empty() {
+            return Err(self.error(ParseErrorKind::Expect("an operator name".into())));
+        }
+        for name in &names {
+            match kind {
+                FixityKind::Nonfix => {
+                    self.fixity.remove(name);
+                }
+                _ => {
+                    self.fixity
+                        .insert(name.clone(), (precedence, kind == FixityKind::Infixr));
+                }
+            }
+        }
+        Ok(DeclKind::Fixity {
+            kind,
+            precedence,
+            names,
+        })
+    }
+
+    fn eat_reserved(&mut self, word: &str) -> bool {
+        let found = self.at_reserved(word);
+        if found {
+            self.index += 1;
+        }
+        found
     }
 
     fn peek(&self) -> Option<&TokenKind> {
@@ -352,36 +768,65 @@ impl Parser {
         Ok(label)
     }
 
-    /// The name, precedence and right-associativity of a default infix operator.
-    fn infix_info(kind: &TokenKind) -> Option<(String, u8, bool)> {
-        let (name, precedence, right) = match kind {
-            TokenKind::Star => ("*", 7, false),
-            TokenKind::Slash => ("/", 7, false),
-            TokenKind::Div => ("div", 7, false),
-            TokenKind::Plus => ("+", 6, false),
-            TokenKind::Minus => ("-", 6, false),
-            TokenKind::Equals => ("=", 4, false),
-            TokenKind::NotEquals => ("<>", 4, false),
-            TokenKind::Greater => (">", 4, false),
-            TokenKind::GreaterEqual => (">=", 4, false),
-            TokenKind::Less => ("<", 4, false),
-            TokenKind::LessEqual => ("<=", 4, false),
-            TokenKind::SymbolicIdentifier(name) => match name.as_str() {
-                "::" => ("::", 5, true),
-                "@" => ("@", 5, true),
-                "^" => ("^", 6, false),
-                ":=" => (":=", 3, false),
+    /// The fixities the Definition's initial basis declares.
+    fn default_fixity() -> std::collections::HashMap<String, (u8, bool)> {
+        [
+            ("*", 7, false),
+            ("/", 7, false),
+            ("div", 7, false),
+            ("mod", 7, false),
+            ("+", 6, false),
+            ("-", 6, false),
+            ("^", 6, false),
+            ("::", 5, true),
+            ("@", 5, true),
+            ("=", 4, false),
+            ("<>", 4, false),
+            (">", 4, false),
+            (">=", 4, false),
+            ("<", 4, false),
+            ("<=", 4, false),
+            (":=", 3, false),
+            ("o", 3, false),
+            ("before", 0, false),
+        ]
+        .into_iter()
+        .map(|(name, precedence, right)| (name.to_owned(), (precedence, right)))
+        .collect()
+    }
+
+    /// The name a token spells when used as an operator or identifier.
+    fn token_name(kind: &TokenKind) -> Option<String> {
+        Some(
+            match kind {
+                TokenKind::Star => "*",
+                TokenKind::Slash => "/",
+                TokenKind::Div => "div",
+                TokenKind::Plus => "+",
+                TokenKind::Minus => "-",
+                TokenKind::Equals => "=",
+                TokenKind::NotEquals => "<>",
+                TokenKind::Greater => ">",
+                TokenKind::GreaterEqual => ">=",
+                TokenKind::Less => "<",
+                TokenKind::LessEqual => "<=",
+                TokenKind::Tilde => "~",
+                TokenKind::SymbolicIdentifier(name) | TokenKind::Identifier(name) => name,
                 _ => return None,
-            },
-            TokenKind::Identifier(name) => match name.as_str() {
-                "mod" => ("mod", 7, false),
-                "o" => ("o", 3, false),
-                "before" => ("before", 0, false),
-                _ => return None,
-            },
-            _ => return None,
-        };
-        Some((name.to_owned(), precedence, right))
+            }
+            .to_owned(),
+        )
+    }
+
+    /// The name, precedence and right-associativity of `kind` if it is infix here.
+    fn infix_info(&self, kind: &TokenKind) -> Option<(String, u8, bool)> {
+        let name = Self::token_name(kind)?;
+        let (precedence, right) = *self.fixity.get(&name)?;
+        Some((name, precedence, right))
+    }
+
+    fn infix_name(&self, kind: &TokenKind) -> Option<String> {
+        self.infix_info(kind).map(|(name, _, _)| name)
     }
 
     fn build_infix(name: String, lhs: Expr, rhs: Expr) -> Expr {
@@ -455,7 +900,9 @@ impl Parser {
     /// Precedence climbing over the default fixities of the Definition.
     fn parse_infix(&mut self, minimum: u8) -> Result<Expr, ParseError> {
         let mut lhs = self.parse_application()?;
-        while let Some((name, precedence, right)) = self.peek().and_then(Self::infix_info) {
+        while let Some((name, precedence, right)) =
+            self.peek().and_then(|kind| self.infix_info(kind))
+        {
             if precedence < minimum {
                 break;
             }
@@ -573,7 +1020,9 @@ impl Parser {
                 | TokenKind::LeftBrace
                 | TokenKind::Hash,
             ) => true,
-            Some(TokenKind::Identifier(_)) => self.peek().and_then(Self::infix_info).is_none(),
+            Some(TokenKind::Identifier(_) | TokenKind::SymbolicIdentifier(_)) => {
+                self.peek().and_then(|kind| self.infix_info(kind)).is_none()
+            }
             Some(TokenKind::Reserved(word)) => word == "op" || word == "let",
             _ => false,
         }
@@ -599,6 +1048,15 @@ impl Parser {
             TokenKind::True => ExprKind::Boolean(true),
             TokenKind::False => ExprKind::Boolean(false),
             TokenKind::Tilde => ExprKind::Variable("~".into()),
+            TokenKind::SymbolicIdentifier(name) | TokenKind::Identifier(name)
+                if self.fixity.contains_key(&name) =>
+            {
+                self.index -= 1;
+                return Err(self.error(ParseErrorKind::Expect(
+                    "an expression; an infix identifier needs op".into(),
+                )));
+            }
+            TokenKind::SymbolicIdentifier(name) => ExprKind::Variable(name),
             TokenKind::Identifier(mut name) => {
                 while self.at(&TokenKind::Dot)
                     && let Some(TokenKind::Identifier(part)) = self.peek_at(1)
@@ -613,17 +1071,8 @@ impl Parser {
                 let Some(operator) = self.tokens.get(self.index).cloned() else {
                     return Err(self.error(ParseErrorKind::Expect("an operator after op".into())));
                 };
-                let name = match &operator.value {
-                    TokenKind::Tilde => "~".to_owned(),
-                    TokenKind::Identifier(name) => name.clone(),
-                    other => match Self::infix_info(other) {
-                        Some((name, _, _)) => name,
-                        None => {
-                            return Err(
-                                self.error(ParseErrorKind::Expect("an operator after op".into()))
-                            );
-                        }
-                    },
+                let Some(name) = Self::token_name(&operator.value) else {
+                    return Err(self.error(ParseErrorKind::Expect("an operator after op".into())));
                 };
                 self.index += 1;
                 end = operator.end;
@@ -719,31 +1168,16 @@ impl Parser {
     }
 
     fn parse_let(&mut self, start: crate::span::Loc) -> Result<Expr, ParseError> {
-        let mut bindings = Vec::new();
-        while self.eat(&TokenKind::Val) {
-            let name = match self.peek() {
-                Some(TokenKind::Underscore) => None,
-                Some(TokenKind::Identifier(name)) => Some(name.clone()),
-                _ => {
-                    return Err(self.error(ParseErrorKind::Expect(
-                        "a variable name or wildcard pattern".into(),
-                    )));
-                }
-            };
-            self.index += 1;
-            self.expect(
-                TokenKind::Equals,
-                ParseErrorKind::Expect("= after val name".into()),
-            )?;
-            bindings.push((name, self.parse_expr()?));
-            self.eat(&TokenKind::Semicolon);
-        }
+        // Fixity declared inside `let` ends with it.
+        let saved = self.fixity.clone();
+        let declarations = self.parse_decls_until("in")?;
         self.expect_reserved("in")?;
         let mut body = vec![self.parse_expr()?];
         while self.eat(&TokenKind::Semicolon) {
             body.push(self.parse_expr()?);
         }
         self.expect_reserved("end")?;
+        self.fixity = saved;
         let end = self.previous_end();
         let body = if body.len() == 1 {
             body.pop().expect("one expression")
@@ -754,7 +1188,7 @@ impl Parser {
         Ok(Span::new(
             start,
             end,
-            ExprKind::Let(bindings, Box::new(body)),
+            ExprKind::Let(declarations, Box::new(body)),
         ))
     }
 
@@ -879,6 +1313,12 @@ impl Parser {
         let kind = match token.value {
             TokenKind::Underscore => PatKind::Wildcard,
             TokenKind::Identifier(mut name) => {
+                if self.fixity.contains_key(&name) {
+                    self.index -= 1;
+                    return Err(self.error(ParseErrorKind::Expect(
+                        "a pattern; an infix identifier needs op".into(),
+                    )));
+                }
                 while self.at(&TokenKind::Dot)
                     && let Some(TokenKind::Identifier(part)) = self.peek_at(1)
                 {
@@ -888,7 +1328,7 @@ impl Parser {
                 PatKind::Variable(name)
             }
             TokenKind::Reserved(word) if word == "op" => {
-                let Some(TokenKind::Identifier(name)) = self.peek().cloned() else {
+                let Some(name) = self.peek().and_then(Self::token_name) else {
                     return Err(self.error(ParseErrorKind::Expect("a name after op".into())));
                 };
                 self.index += 1;
@@ -1119,73 +1559,5 @@ impl Parser {
             );
         }
         Ok(ty)
-    }
-
-    fn expect_string(&mut self, kind: ParseErrorKind) -> Result<Token, ParseError> {
-        let Some(token) = self.tokens.get(self.index) else {
-            return Err(self.error(kind));
-        };
-        if !matches!(token.value, TokenKind::String(_)) {
-            return Err(self.error(kind));
-        }
-        self.index += 1;
-        Ok(token.clone())
-    }
-
-    fn parse_posix_exit(&mut self) -> Result<Expr, ParseError> {
-        let start = self
-            .expect(
-                TokenKind::Identifier("Posix".into()),
-                ParseErrorKind::Expect("Posix.Process.exit".into()),
-            )?
-            .start;
-        self.expect(
-            TokenKind::Dot,
-            ParseErrorKind::Expect(". after Posix".into()),
-        )?;
-        self.expect(
-            TokenKind::Identifier("Process".into()),
-            ParseErrorKind::Expect("Process after Posix.".into()),
-        )?;
-        self.expect(
-            TokenKind::Dot,
-            ParseErrorKind::Expect(". after Posix.Process".into()),
-        )?;
-        self.expect(
-            TokenKind::Identifier("exit".into()),
-            ParseErrorKind::Expect("exit after Posix.Process.".into()),
-        )?;
-        self.expect(
-            TokenKind::LeftParen,
-            ParseErrorKind::Expect("( before exit status".into()),
-        )?;
-        let word8_start = self
-            .expect(
-                TokenKind::Identifier("Word8".into()),
-                ParseErrorKind::Expect("Word8.fromInt".into()),
-            )?
-            .start;
-        self.expect(
-            TokenKind::Dot,
-            ParseErrorKind::Expect(". after Word8".into()),
-        )?;
-        self.expect(
-            TokenKind::Identifier("fromInt".into()),
-            ParseErrorKind::Expect("fromInt after Word8.".into()),
-        )?;
-        let integer = self.parse_expr()?;
-        let word8_end = integer.end.clone();
-        let word8 = Span::new(
-            word8_start,
-            word8_end,
-            ExprKind::Word8FromInt(Box::new(integer)),
-        );
-        let end = self
-            .expect(
-                TokenKind::RightParen,
-                ParseErrorKind::Expect(") after exit status".into()),
-            )?
-            .end;
-        Ok(Span::new(start, end, ExprKind::PosixExit(Box::new(word8))))
     }
 }

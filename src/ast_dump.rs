@@ -2,7 +2,9 @@
 //!
 //! Spans are left out so the output is stable and easy to assert on.
 
-use crate::parser::{Expr, ExprKind, Pat, PatKind, Program, Rule, StmtKind, Ty, TyKind};
+use crate::parser::{
+    Decl, DeclKind, Expr, ExprKind, FixityKind, Pat, PatKind, Program, Rule, StmtKind, Ty, TyKind,
+};
 
 pub fn program(program: &Program) -> String {
     if program.statements.is_empty() {
@@ -14,6 +16,7 @@ pub fn program(program: &Program) -> String {
             StmtKind::Val(name, expr) => format!("(val {name} {})", expr_text(expr)),
             StmtKind::Print(expr) => format!("(print {})", expr_text(expr)),
             StmtKind::Exit(expr) => format!("(exit {})", expr_text(expr)),
+            StmtKind::Declaration(declaration) => decl_text(declaration),
         };
         out.push('\n');
     }
@@ -76,14 +79,9 @@ fn expr_text(expr: &Expr) -> String {
                 .collect::<Vec<_>>(),
         ),
         ExprKind::Selector(label) => format!("(# {label})"),
-        ExprKind::Let(bindings, body) => {
-            let bindings = bindings
-                .iter()
-                .map(|(name, value)| {
-                    format!("({} {})", name.as_deref().unwrap_or("_"), expr_text(value))
-                })
-                .collect::<Vec<_>>();
-            format!("(let ({}) {})", bindings.join(" "), expr_text(body))
+        ExprKind::Let(declarations, body) => {
+            let declarations = declarations.iter().map(decl_text).collect::<Vec<_>>();
+            format!("(let ({}) {})", declarations.join(" "), expr_text(body))
         }
         ExprKind::Case(scrutinee, rules) => list_with("case", expr_text(scrutinee), rules),
         ExprKind::Fn(rules) => list_with("fn", String::new(), rules),
@@ -92,6 +90,83 @@ fn expr_text(expr: &Expr) -> String {
         ExprKind::Typed(inner, ty) => format!("(: {} {})", expr_text(inner), ty_text(ty)),
         ExprKind::Word8FromInt(inner) => format!("(Word8.fromInt {})", expr_text(inner)),
         ExprKind::PosixExit(inner) => format!("(Posix.Process.exit {})", expr_text(inner)),
+    }
+}
+
+fn decl_text(declaration: &Decl) -> String {
+    let group = |bindings: &[(Pat, Expr)]| {
+        bindings
+            .iter()
+            .map(|(pattern, expr)| format!("({} {})", pat_text(pattern), expr_text(expr)))
+            .collect::<Vec<_>>()
+    };
+    match &declaration.value {
+        DeclKind::Val {
+            recursive: false,
+            bindings,
+        } if bindings.len() == 1 => format!(
+            "(val {} {})",
+            pat_text(&bindings[0].0),
+            expr_text(&bindings[0].1)
+        ),
+        DeclKind::Val {
+            recursive,
+            bindings,
+        } => list(
+            if *recursive { "val-rec" } else { "val-and" },
+            &group(bindings),
+        ),
+        DeclKind::Fun(bindings) => {
+            let bindings = bindings
+                .iter()
+                .map(|binding| {
+                    let clauses = binding
+                        .clauses
+                        .iter()
+                        .map(|clause| {
+                            let parameters: Vec<String> =
+                                clause.parameters.iter().map(pat_text).collect();
+                            format!("(({}) {})", parameters.join(" "), expr_text(&clause.body))
+                        })
+                        .collect::<Vec<_>>();
+                    format!("({} {})", binding.name, clauses.join(" "))
+                })
+                .collect::<Vec<_>>();
+            list("fun", &bindings)
+        }
+        DeclKind::Type(bindings) => {
+            let bindings = bindings
+                .iter()
+                .map(|binding| {
+                    format!(
+                        "({} ({}) {})",
+                        binding.name,
+                        binding.parameters.join(" "),
+                        ty_text(&binding.ty)
+                    )
+                })
+                .collect::<Vec<_>>();
+            list("type", &bindings)
+        }
+        DeclKind::Local(private, public) => {
+            let text = |declarations: &[Decl]| {
+                declarations
+                    .iter()
+                    .map(decl_text)
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            };
+            format!("(local ({}) ({}))", text(private), text(public))
+        }
+        DeclKind::Fixity {
+            kind,
+            precedence,
+            names,
+        } => match kind {
+            FixityKind::Nonfix => format!("(nonfix {})", names.join(" ")),
+            FixityKind::Infix => format!("(infix {precedence} {})", names.join(" ")),
+            FixityKind::Infixr => format!("(infixr {precedence} {})", names.join(" ")),
+        },
     }
 }
 

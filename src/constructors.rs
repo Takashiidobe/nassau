@@ -29,6 +29,7 @@ pub struct Constructors {
 }
 
 /// What a scope declared, set aside to be restored after an enclosing scope ends.
+#[derive(Clone)]
 pub struct Declared {
     entries: Vec<(String, Option<Family>)>,
     datatypes: Vec<(String, Family)>,
@@ -257,24 +258,28 @@ impl Constructors {
         }
     }
 
+    /// Exceptions are constructors of one open type: any number more can be
+    /// declared, so no set of them is ever exhaustive.
+    pub fn declare_exceptions<'a>(&mut self, names: impl Iterator<Item = &'a str>) {
+        for name in names {
+            self.entries.push(Entry {
+                name: name.to_owned(),
+                family: None,
+            });
+        }
+    }
+
     /// Records the constructors a declaration brings into scope.
     pub fn declare(&mut self, declaration: &DeclKind) {
         match declaration {
             DeclKind::Datatype { bindings, .. } => self.declare_datatypes(bindings),
             DeclKind::DatatypeCopy { name, original } => self.declare_copy(name, original),
             DeclKind::Exception(bindings) => {
-                // Exceptions are constructors of one open type: any number
-                // more can be declared, so no set of them is ever exhaustive.
-                for binding in bindings {
-                    debug_assert!(matches!(
-                        binding.kind,
-                        ExceptionKind::Fresh(_) | ExceptionKind::Copy(_)
-                    ));
-                    self.entries.push(Entry {
-                        name: binding.name.clone(),
-                        family: None,
-                    });
-                }
+                debug_assert!(bindings.iter().all(|binding| matches!(
+                    binding.kind,
+                    ExceptionKind::Fresh(_) | ExceptionKind::Copy(_)
+                )));
+                self.declare_exceptions(bindings.iter().map(|binding| binding.name.as_str()));
             }
             _ => {}
         }

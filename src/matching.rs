@@ -112,6 +112,7 @@ fn check_declaration(declaration: &Decl, env: &Constructors, out: &mut Vec<Match
         | DeclKind::Local(..)
         | DeclKind::Structure(_)
         | DeclKind::Signature(_)
+        | DeclKind::Functor(_)
         | DeclKind::Open(_)
         | DeclKind::Fixity { .. } => {}
     }

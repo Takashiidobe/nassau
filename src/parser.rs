@@ -16,7 +16,7 @@ pub type StrExp = Span<StrExpKind>;
 pub type SigExp = Span<SigExpKind>;
 pub type Spec = Span<SpecKind>;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum ExprKind {
     Integer(i64),
     Real(f64),
@@ -60,7 +60,7 @@ pub enum ExprKind {
     Typed(Box<Expr>, Ty),
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum PatKind {
     Wildcard,
     /// A variable, or a nullary constructor such as `nil`; the two are only
@@ -84,7 +84,7 @@ pub enum PatKind {
     Typed(Box<Pat>, Ty),
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum TyKind {
     Variable(String),
     Constructor(String, Vec<Ty>),
@@ -93,7 +93,7 @@ pub enum TyKind {
     Record(Vec<(String, Ty)>),
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum StmtKind {
     Val(String, Expr),
     Print(Expr),
@@ -102,7 +102,7 @@ pub enum StmtKind {
     Declaration(Decl),
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum DeclKind {
     /// `val pat = exp and ...`. Without `rec`, the right-hand sides cannot see
     /// the names the patterns bind; with `rec` (whose right-hand sides must be
@@ -142,6 +142,9 @@ pub enum DeclKind {
     Structure(Vec<StructBinding>),
     /// `signature S = sigexp and ...`.
     Signature(Vec<SigBinding>),
+    /// `functor F (X : sig) [: sig] = strexp and ...`; a result signature is
+    /// folded into the body as an ascription.
+    Functor(Vec<FunctorBinding>),
     /// `open A B.C`: brings the names of structures into scope.
     Open(Vec<String>),
     /// `local private in public end`: only `public` is visible afterwards.
@@ -153,32 +156,47 @@ pub enum DeclKind {
     },
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct FunBinding {
     pub name: String,
     pub clauses: Vec<FunClause>,
 }
 
 /// One clause; `fun f x : t = e` keeps its result type as `e : t`.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct FunClause {
     pub parameters: Vec<Pat>,
     pub body: Expr,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct StructBinding {
     pub name: String,
     pub body: StrExp,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
+pub struct FunctorBinding {
+    pub name: String,
+    pub parameter: FunctorParameter,
+    pub body: StrExp,
+}
+
+#[derive(Clone, Debug)]
+pub enum FunctorParameter {
+    /// `(X : sigexp)`.
+    Named(String, SigExp),
+    /// `(specs)`: the specified names are visible in the body unqualified.
+    Specs(SigExp),
+}
+
+#[derive(Clone, Debug)]
 pub struct SigBinding {
     pub name: String,
     pub body: SigExp,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum StrExpKind {
     /// `struct decs end`.
     Struct(Vec<Decl>),
@@ -192,9 +210,11 @@ pub enum StrExpKind {
     },
     /// `let decs in strexp end`.
     Let(Vec<Decl>, Box<StrExp>),
+    /// `F (strexp)`; `F (decs)` is parsed as `F (struct decs end)`.
+    Apply(String, Box<StrExp>),
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum SigExpKind {
     /// `sig specs end`.
     Sig(Vec<Spec>),
@@ -203,14 +223,14 @@ pub enum SigExpKind {
     Where(Box<SigExp>, Vec<WhereType>),
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct WhereType {
     pub parameters: Vec<String>,
     pub name: String,
     pub ty: Ty,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum SpecKind {
     Val(Vec<(String, Ty)>),
     /// `type 'a t`, `eqtype 'a t` or `type 'a t = ty`.
@@ -225,9 +245,11 @@ pub enum SpecKind {
     Include(SigExp),
     /// `sharing type t1 = t2 = ...`.
     Sharing(Vec<String>),
+    /// `sharing A = B = ...`: every type the structures both specify is shared.
+    SharingStructures(Vec<String>),
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct TypeSpec {
     pub parameters: Vec<String>,
     pub name: String,
@@ -237,13 +259,13 @@ pub struct TypeSpec {
     pub definition: Option<Ty>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ExceptionBinding {
     pub name: String,
     pub kind: ExceptionKind,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum ExceptionKind {
     /// A new exception, carrying a value of the given type if any.
     Fresh(Option<Ty>),
@@ -251,20 +273,20 @@ pub enum ExceptionKind {
     Copy(String),
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct DataBinding {
     pub parameters: Vec<String>,
     pub name: String,
     pub constructors: Vec<Constructor>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ConstructorKind {
     pub name: String,
     pub argument: Option<Ty>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct TypeBinding {
     pub parameters: Vec<String>,
     pub name: String,
@@ -278,7 +300,7 @@ pub enum FixityKind {
     Nonfix,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Program {
     pub statements: Vec<Stmt>,
     pub result: i32,
@@ -549,13 +571,14 @@ impl Parser {
                 "abstype" => self.parse_abstype_decl()?,
                 "exception" => self.parse_exception_decl()?,
                 "structure" => self.parse_structure_decl()?,
-                "signature" if self.nesting > 0 => {
+                "signature" | "functor" if self.nesting > 0 => {
                     self.index -= 1;
-                    return Err(self.error(ParseErrorKind::Expect(
-                        "a declaration; signatures can only be declared at the top level".into(),
-                    )));
+                    return Err(self.error(ParseErrorKind::Expect(format!(
+                        "a declaration; {word}s can only be declared at the top level"
+                    ))));
                 }
                 "signature" => self.parse_signature_decl()?,
+                "functor" => self.parse_functor_decl()?,
                 "open" => self.parse_open_decl()?,
                 _ => {
                     self.index -= 1;
@@ -974,10 +997,20 @@ impl Parser {
                 StrExpKind::Let(declarations, Box::new(inner)),
             )
         } else if let Some(name) = self.parse_long_name() {
-            if self.at(&TokenKind::LeftParen) {
-                return Err(self.error(ParseErrorKind::Unsupported("functor applications")));
+            if self.eat(&TokenKind::LeftParen) {
+                let argument = self.parse_functor_argument()?;
+                self.expect(
+                    TokenKind::RightParen,
+                    ParseErrorKind::Expect(") after the functor argument".into()),
+                )?;
+                Span::new(
+                    start.clone(),
+                    self.previous_end(),
+                    StrExpKind::Apply(name, Box::new(argument)),
+                )
+            } else {
+                Span::new(start.clone(), self.previous_end(), StrExpKind::Name(name))
             }
-            Span::new(start.clone(), self.previous_end(), StrExpKind::Name(name))
         } else {
             return Err(self.error(ParseErrorKind::Expect("a structure expression".into())));
         };
@@ -999,6 +1032,109 @@ impl Parser {
             );
         }
         Ok(body)
+    }
+
+    /// Inside `F ( ... )`: a structure expression, or declarations that
+    /// form the body of an anonymous structure.
+    fn parse_functor_argument(&mut self) -> Result<StrExp, ParseError> {
+        let Some(token) = self.tokens.get(self.index).cloned() else {
+            return Err(self.error(ParseErrorKind::Expect("a functor argument".into())));
+        };
+        if self.at(&TokenKind::RightParen) || self.starts_decl() || self.at(&TokenKind::Semicolon) {
+            let mut declarations = Vec::new();
+            self.nesting += 1;
+            let result = loop {
+                if self.eat(&TokenKind::Semicolon) {
+                    continue;
+                }
+                if self.at(&TokenKind::RightParen) {
+                    break Ok(());
+                }
+                if !self.starts_decl() {
+                    break Err(self.error(ParseErrorKind::Expect("a declaration or )".into())));
+                }
+                match self.parse_decl() {
+                    Ok(declaration) => declarations.push(declaration),
+                    Err(error) => break Err(error),
+                }
+            };
+            self.nesting -= 1;
+            result?;
+            let end = self.previous_end();
+            return Ok(Span::new(
+                token.start,
+                end,
+                StrExpKind::Struct(declarations),
+            ));
+        }
+        self.parse_strexp()
+    }
+
+    /// After `functor`: `F (param) [: sigexp | :> sigexp] = strexp {and ...}`.
+    fn parse_functor_decl(&mut self) -> Result<DeclKind, ParseError> {
+        let mut bindings = Vec::new();
+        loop {
+            let name = self.parse_binder("a functor name")?;
+            let open = self.expect(
+                TokenKind::LeftParen,
+                ParseErrorKind::Expect("( after the functor name".into()),
+            )?;
+            let parameter = if let Some(TokenKind::Identifier(parameter)) = self.peek().cloned()
+                && matches!(self.peek_at(1), Some(TokenKind::Colon))
+            {
+                self.index += 2;
+                FunctorParameter::Named(parameter, self.parse_sigexp()?)
+            } else {
+                let specs = self.parse_specs()?;
+                FunctorParameter::Specs(Span::new(
+                    open.start.clone(),
+                    self.previous_end(),
+                    SigExpKind::Sig(specs),
+                ))
+            };
+            self.expect(
+                TokenKind::RightParen,
+                ParseErrorKind::Expect(") after the functor parameter".into()),
+            )?;
+            let ascription = match self.peek() {
+                Some(TokenKind::Colon) => Some(false),
+                Some(TokenKind::OpaqueAscription) => Some(true),
+                _ => None,
+            };
+            let ascribed = match ascription {
+                Some(opaque) => {
+                    self.index += 1;
+                    Some((self.parse_sigexp()?, opaque))
+                }
+                None => None,
+            };
+            self.expect(
+                TokenKind::Equals,
+                ParseErrorKind::Expect("= after the functor parameter".into()),
+            )?;
+            let mut body = self.parse_strexp()?;
+            if let Some((signature, opaque)) = ascribed {
+                let (start, end) = (body.start.clone(), signature.end.clone());
+                body = Span::new(
+                    start,
+                    end,
+                    StrExpKind::Ascribed {
+                        body: Box::new(body),
+                        signature,
+                        opaque,
+                    },
+                );
+            }
+            bindings.push(FunctorBinding {
+                name,
+                parameter,
+                body,
+            });
+            if !self.at_reserved("and") {
+                return Ok(DeclKind::Functor(bindings));
+            }
+            self.index += 1;
+        }
     }
 
     /// After `signature`: `S = sigexp {and ...}`.
@@ -1087,7 +1223,7 @@ impl Parser {
             if self.eat(&TokenKind::Semicolon) {
                 continue;
             }
-            if self.at_reserved("end") {
+            if self.at_reserved("end") || self.at(&TokenKind::RightParen) {
                 return Ok(specs);
             }
             specs.push(self.parse_spec()?);
@@ -1210,12 +1346,7 @@ impl Parser {
                 }
                 "sharing" => {
                     self.index += 1;
-                    if !self.at_reserved("type") {
-                        return Err(self.error(ParseErrorKind::Unsupported(
-                            "sharing constraints on structures",
-                        )));
-                    }
-                    self.index += 1;
+                    let types = self.eat_reserved("type");
                     let mut names = Vec::new();
                     loop {
                         let Some(name) = self.parse_long_name() else {
@@ -1227,11 +1358,13 @@ impl Parser {
                         }
                     }
                     if names.len() < 2 {
-                        return Err(
-                            self.error(ParseErrorKind::Expect("= and another type name".into()))
-                        );
+                        return Err(self.error(ParseErrorKind::Expect("= and another name".into())));
                     }
-                    SpecKind::Sharing(names)
+                    if types {
+                        SpecKind::Sharing(names)
+                    } else {
+                        SpecKind::SharingStructures(names)
+                    }
                 }
                 _ => return Err(self.error(ParseErrorKind::Expect("a specification".into()))),
             },

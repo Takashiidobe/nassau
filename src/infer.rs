@@ -19,7 +19,7 @@ use crate::parser::{
     DataBinding, Decl, DeclKind, ExceptionKind, Expr, ExprKind, Pat, PatKind, Program, Rule,
     StmtKind, Ty as SyntaxTy, TyKind,
 };
-use modules::{Sig, StructEnv};
+use modules::{Functor, Sig, StructEnv};
 
 #[derive(Debug, ThisError)]
 pub enum TypeError {
@@ -61,6 +61,8 @@ pub enum TypeError {
     MissingSpecification(String),
     #[error("{name} does not match its specification: {reason}")]
     SpecificationMismatch { name: String, reason: String },
+    #[error("unbound functor '{0}'")]
+    UnboundFunctor(String),
     #[error("cannot refine {0}: {1}")]
     BadRefinement(String, String),
     #[error("integer literal does not fit in i32")]
@@ -207,6 +209,16 @@ fn sort_labels<T>(fields: &mut [(String, T)]) {
     fields.sort_by_key(|(label, _)| label_key(label));
 }
 
+/// Lengths of the environment's scopes, to return to when a scope ends.
+#[derive(Clone, Copy)]
+struct Mark {
+    values: usize,
+    types: usize,
+    structs: usize,
+    signatures: usize,
+    functors: usize,
+}
+
 struct Infer {
     vars: Vec<VarInfo>,
     level: usize,
@@ -215,6 +227,7 @@ struct Infer {
     datatypes: HashMap<usize, DataInfo>,
     structs: Vec<(String, StructEnv)>,
     signatures: Vec<(String, Sig)>,
+    functors: Vec<(String, std::rc::Rc<Functor>)>,
     /// The qualified name (`S.t`) of each type constructor a structure declares.
     paths: HashMap<usize, String>,
     next_stamp: usize,
@@ -233,6 +246,7 @@ impl Infer {
             datatypes: HashMap::new(),
             structs: Vec::new(),
             signatures: Vec::new(),
+            functors: Vec::new(),
             paths: HashMap::new(),
             next_stamp: 0,
             overloaded: Vec::new(),
@@ -536,6 +550,8 @@ impl Infer {
         match error {
             UnifyError::Mismatch => {
                 let mut names = Namer::new();
+                self.hide_inaccessible(expected, &mut names);
+                self.hide_inaccessible(found, &mut names);
                 let expected = self.show(expected, &mut names, 0);
                 let found = self.show(found, &mut names, 0);
                 TypeError::Mismatch { expected, found }
@@ -547,10 +563,14 @@ impl Infer {
                 TypeError::Circular { var, ty }
             }
             UnifyError::NotEquality(ty) => {
-                TypeError::NotEquality(self.show(&ty, &mut Namer::new(), 0))
+                let mut names = Namer::new();
+                self.hide_inaccessible(&ty, &mut names);
+                TypeError::NotEquality(self.show(&ty, &mut names, 0))
             }
             UnifyError::NotOverloaded(ty) => {
-                TypeError::NotOverloaded(self.show(&ty, &mut Namer::new(), 0))
+                let mut names = Namer::new();
+                self.hide_inaccessible(&ty, &mut names);
+                TypeError::NotOverloaded(self.show(&ty, &mut names, 0))
             }
         }
     }
@@ -667,14 +687,22 @@ impl Infer {
 
     // --- environment -----------------------------------------------------
 
-    fn mark(&self) -> (usize, usize, usize) {
-        (self.values.len(), self.types.len(), self.structs.len())
+    fn mark(&self) -> Mark {
+        Mark {
+            values: self.values.len(),
+            types: self.types.len(),
+            structs: self.structs.len(),
+            signatures: self.signatures.len(),
+            functors: self.functors.len(),
+        }
     }
 
-    fn release(&mut self, mark: (usize, usize, usize)) {
-        self.values.truncate(mark.0);
-        self.types.truncate(mark.1);
-        self.structs.truncate(mark.2);
+    fn release(&mut self, mark: Mark) {
+        self.values.truncate(mark.values);
+        self.types.truncate(mark.types);
+        self.structs.truncate(mark.structs);
+        self.signatures.truncate(mark.signatures);
+        self.functors.truncate(mark.functors);
     }
 
     fn push_monomorphic(&mut self, name: String, ty: Type) {
@@ -1497,13 +1525,20 @@ impl Infer {
                 for declaration in public {
                     bound.extend(self.infer_decl(declaration)?);
                 }
-                let values: Vec<Entry> = self.values.drain(visible.0..).collect();
-                let types: Vec<(String, TypeEntry)> = self.types.drain(visible.1..).collect();
-                let structs: Vec<(String, StructEnv)> = self.structs.drain(visible.2..).collect();
+                let values: Vec<Entry> = self.values.drain(visible.values..).collect();
+                let types: Vec<(String, TypeEntry)> = self.types.drain(visible.types..).collect();
+                let structs: Vec<(String, StructEnv)> =
+                    self.structs.drain(visible.structs..).collect();
+                let signatures: Vec<(String, Sig)> =
+                    self.signatures.drain(visible.signatures..).collect();
+                let functors: Vec<(String, std::rc::Rc<Functor>)> =
+                    self.functors.drain(visible.functors..).collect();
                 self.release(mark);
                 self.values.extend(values);
                 self.types.extend(types);
                 self.structs.extend(structs);
+                self.signatures.extend(signatures);
+                self.functors.extend(functors);
                 Ok(bound)
             }
             DeclKind::Structure(bindings) => {
@@ -1512,6 +1547,10 @@ impl Infer {
             }
             DeclKind::Signature(bindings) => {
                 self.infer_signatures(bindings)?;
+                Ok(Vec::new())
+            }
+            DeclKind::Functor(bindings) => {
+                self.infer_functors(bindings)?;
                 Ok(Vec::new())
             }
             DeclKind::Open(paths) => {

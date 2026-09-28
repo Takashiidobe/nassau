@@ -7,7 +7,7 @@ as SML comment lines at the end of the file:
     (* CHECK-EXIT: 18 *)                   exit status of the compiled program
     (* CHECK-STDOUT: hello, world *)        stdout of the compiled program
     (* CHECK-STDERR: ... *)                 stderr of the compiled program
-    (* CHECK-ERR: × expected int, ... *)    compiler diagnostic for invalid-* fixtures
+    (* CHECK-ERR: × expected int, ... *)    compiler diagnostic for fixtures under an error/ directory
     (* CHECK-STDOUT: (val x (+ 1 2)) *)    syntax tree (--dump-ast) for tests/fixtures/parser
     (* CHECK-REPL: val x = 1 : int *)       REPL transcript for tests/repl fixtures
 
@@ -188,17 +188,17 @@ class Oracle:
 
 
 def classify(path):
-    relative = path.relative_to(TESTS)
-    parts = relative.parts
-    stem = path.stem
+    parts = path.relative_to(TESTS).parts
     if parts[0] == "repl":
         return "repl"
-    if "lexer" in parts:
-        # Valid lexer fixtures are token snapshots (.tokens), not FileCheck.
-        return "error" if stem.startswith("invalid-") else "skip"
-    if "parser" in parts:
-        return "error" if stem.startswith("invalid-") else "parse"
-    return "error" if stem.startswith("invalid-") else "run"
+    if "error" in parts[:-1]:
+        return "error"
+    # Valid lexer fixtures are token snapshots (.tokens), not FileCheck.
+    if "lexer" in parts[:-1]:
+        return "skip"
+    if "parser" in parts[:-1]:
+        return "parse"
+    return "run"
 
 
 def generate_run(oracle, fixture, warnings):
@@ -224,14 +224,14 @@ def generate_error(oracle, fixture, warnings):
     extra += ["--dump-ast"] if "parser" in parts else []
     result = oracle.nassau_compile(fixture, extra)
     if result.returncode == 0:
-        raise ToolError("Nassau accepted an invalid-* fixture")
+        raise ToolError("Nassau accepted a fixture under error/")
     stderr = ANSI.sub("", decode(result.stderr))
     message = re.search(r"^\s*× (.+)$", stderr, re.M)
     location = re.search(r"\[[^\]\n]*(:\d+:\d+)\]", stderr)
     if not message or not location:
         raise ToolError("unrecognised Nassau diagnostic:\n" + stderr)
     if not oracle.smlnj_rejects(fixture):
-        warnings.append(f"{rel(fixture)}: SML/NJ accepts this invalid-* fixture")
+        warnings.append(f"{rel(fixture)}: SML/NJ accepts this error/ fixture")
     return [
         f"(* CHECK-ERR: × {escape(message.group(1))} *)",
         f"(* CHECK-ERR: {location.group(1)}] *)",
@@ -244,7 +244,7 @@ def generate_parse(oracle, fixture, warnings):
     if result.returncode != 0:
         raise ToolError("Nassau rejected a valid fixture:\n" + decode(result.stderr))
     if oracle.smlnj_rejects(fixture):
-        warnings.append(f"{rel(fixture)}: SML/NJ rejects this valid-* fixture")
+        warnings.append(f"{rel(fixture)}: SML/NJ rejects this valid fixture")
     return stream_lines("CHECK-STDOUT", decode(result.stdout))
 
 

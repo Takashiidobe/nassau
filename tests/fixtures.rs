@@ -28,33 +28,32 @@ fn collect_fixtures(directory: &Path, paths: &mut Vec<PathBuf>) {
     }
 }
 
+/// Whether a directory named `name` appears anywhere below `tests/fixtures`.
+fn in_directory(fixture: &Path, name: &str) -> bool {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    fixture
+        .strip_prefix(&root)
+        .unwrap_or(fixture)
+        .parent()
+        .is_some_and(|directory| directory.iter().any(|part| part == name))
+}
+
+/// Fixtures under an `error/` directory must be rejected; all others accepted.
 fn expected_valid(fixture: &Path) -> bool {
-    match fixture.parent().and_then(Path::file_name) {
-        Some(name) if name == "lists" => fixture
-            .file_stem()
-            .expect("fixture has a file stem")
-            .to_string_lossy()
-            .starts_with("valid-"),
-        Some(name) if name == "lexer" || name == "parser" => fixture
-            .file_stem()
-            .expect("fixture has a file stem")
-            .to_string_lossy()
-            .starts_with("valid-"),
-        _ => !fixture
-            .file_stem()
-            .expect("fixture has a file stem")
-            .to_string_lossy()
-            .starts_with("invalid-"),
-    }
+    !in_directory(fixture, "error")
 }
 
 fn is_lexer_fixture(fixture: &Path) -> bool {
-    fixture.parent().and_then(Path::file_name) == Some(std::ffi::OsStr::new("lexer"))
+    in_directory(fixture, "lexer")
 }
 
 /// Parser fixtures are checked through `--dump-ast`, not compiled and run.
 fn is_parser_fixture(fixture: &Path) -> bool {
-    fixture.parent().and_then(Path::file_name) == Some(std::ffi::OsStr::new("parser"))
+    in_directory(fixture, "parser")
+}
+
+fn is_lists_fixture(fixture: &Path) -> bool {
+    in_directory(fixture, "lists")
 }
 
 fn compare_mlton(fixture: &Path, mlton: &str, valid: bool) {
@@ -163,7 +162,7 @@ fn compare_fixture(fixture: &Path, smlnj: &str) {
         .output()
         .expect("run SML/NJ");
     if !valid
-        || fixture.parent().and_then(Path::file_name) == Some(std::ffi::OsStr::new("lists"))
+        || is_lists_fixture(fixture)
         || is_lexer_fixture(fixture)
         || is_parser_fixture(fixture)
     {
@@ -203,7 +202,7 @@ fn compare_fixture(fixture: &Path, smlnj: &str) {
             .expect("run Nassau output");
         let _ = fs::remove_file(&executable);
         check_program(fixture, &source, &nassau_output);
-        if fixture.parent().and_then(Path::file_name) == Some(std::ffi::OsStr::new("lists")) {
+        if is_lists_fixture(fixture) {
             assert!(nassau_output.status.success(), "{}", fixture.display());
         } else {
             assert_eq!(

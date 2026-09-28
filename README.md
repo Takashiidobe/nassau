@@ -41,7 +41,7 @@ The test uses `smlnj` from `PATH` and skips if `smlnj` is not installed.
 
 Fixtures carry their expected output as FileCheck comments at the end of the
 file (`CHECK-EXIT`, `CHECK-STDOUT`, `CHECK-STDERR` for compiled programs,
-`CHECK-ERR` for `invalid-*` fixtures, `CHECK-REPL` for `tests/repl`). LLVM's
+`CHECK-ERR` for fixtures under an `error/` directory, `CHECK-REPL` for `tests/repl`). LLVM's
 `FileCheck` must be on `PATH` (or set `FILECHECK`). Regenerate them from
 SML/NJ with:
 

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::error::ThisError;
-use crate::parser::{Expr, ExprKind, Program, StmtKind};
+use crate::parser::{DeclKind, Expr, ExprKind, Program, StmtKind};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Type {
@@ -109,22 +109,46 @@ impl Analyzer {
         }
     }
 
-    pub fn analyze_program<'a>(
+    pub fn analyze_program(
         &mut self,
-        program: &'a Program,
-    ) -> Result<(), (SemanticError, &'a Expr)> {
+        program: &Program,
+    ) -> Result<(), (SemanticError, miette::SourceSpan)> {
+        let span_of = |(error, expr): (SemanticError, &Expr)| (error, expr.source_span());
         let mut scopes = self.scopes.clone();
         for statement in &program.statements {
             match &statement.value {
                 StmtKind::Val(name, expr) => {
-                    let ty = analyze_expr(expr, &scopes)?;
+                    let ty = analyze_expr(expr, &scopes).map_err(span_of)?;
                     scopes.last_mut().unwrap().insert(name.clone(), ty);
                 }
                 StmtKind::Print(expr) => {
-                    expect_type(analyze_expr(expr, &scopes)?, Type::String, expr)?;
+                    expect_type(
+                        analyze_expr(expr, &scopes).map_err(span_of)?,
+                        Type::String,
+                        expr,
+                    )
+                    .map_err(span_of)?;
                 }
                 StmtKind::Exit(expr) => {
-                    expect_type(analyze_expr(expr, &scopes)?, Type::Unit, expr)?;
+                    expect_type(
+                        analyze_expr(expr, &scopes).map_err(span_of)?,
+                        Type::Unit,
+                        expr,
+                    )
+                    .map_err(span_of)?;
+                }
+                StmtKind::Declaration(declaration) => {
+                    let name = match &declaration.value {
+                        DeclKind::Val {
+                            recursive: true, ..
+                        } => "val rec declarations",
+                        DeclKind::Val { .. } => "val declarations with patterns",
+                        DeclKind::Fun(_) => "fun declarations",
+                        DeclKind::Type(_) => "type declarations",
+                        DeclKind::Local(..) => "local declarations",
+                        DeclKind::Fixity { .. } => "fixity declarations",
+                    };
+                    return Err((SemanticError::Unsupported(name), declaration.source_span()));
                 }
             }
         }

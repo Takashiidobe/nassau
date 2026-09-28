@@ -55,6 +55,8 @@ pub enum ParseErrorKind {
     IntegerOutOfRange,
     #[error("invalid real literal")]
     InvalidRealLiteral,
+    #[error("{0} are not supported yet")]
+    Unsupported(&'static str),
 }
 
 pub type ParseError = Span<ParseErrorKind>;
@@ -63,6 +65,14 @@ pub type ParseError = Span<ParseErrorKind>;
 pub enum MatchErrorKind {
     #[error("match redundant")]
     Redundant,
+}
+
+#[derive(Clone, Debug, ThisError)]
+pub enum ScopeErrorKind {
+    #[error("duplicate variable '{0}' in pattern")]
+    DuplicateVariable(String),
+    #[error("duplicate function name '{0}'")]
+    DuplicateFunction(String),
 }
 
 #[derive(Debug, ThisError)]

@@ -2,6 +2,8 @@
 
 tests/**/*
 !tests/**/*.*
+!tests/common/
+!tests/repl/
 !tests/fixtures/
 !tests/fixtures/**/
 !tests/fixtures/**/*.sml

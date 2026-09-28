@@ -14,8 +14,8 @@ use miette::SourceSpan;
 
 use crate::error::ThisError;
 use crate::parser::{
-    DataBinding, Decl, DeclKind, Expr, ExprKind, Pat, PatKind, Program, Rule, StmtKind,
-    Ty as SyntaxTy, TyKind,
+    DataBinding, Decl, DeclKind, ExceptionKind, Expr, ExprKind, Pat, PatKind, Program, Rule,
+    StmtKind, Ty as SyntaxTy, TyKind,
 };
 
 #[derive(Debug, ThisError)]
@@ -46,6 +46,8 @@ pub enum TypeError {
         expected: usize,
         found: usize,
     },
+    #[error("'{0}' is not an exception")]
+    NotAnException(String),
     #[error("unbound type variable {0} in type declaration")]
     UnboundTypeVariable(String),
     #[error("integer literal does not fit in i32")]
@@ -1359,6 +1361,10 @@ impl Infer {
                 self.infer_datatypes(bindings, withtype)?;
                 Ok(Vec::new())
             }
+            DeclKind::Exception(bindings) => {
+                self.infer_exceptions(bindings, decl.source_span())?;
+                Ok(Vec::new())
+            }
             DeclKind::DatatypeCopy { name, original } => {
                 self.copy_datatype(name, original, decl.source_span())?;
                 Ok(Vec::new())
@@ -1622,6 +1628,60 @@ impl Infer {
                 }
             }
         }
+    }
+
+    /// Exception constructors are constructors of `exn`; each declaration makes
+    /// new ones, and a replication reuses the type of an existing one.
+    fn infer_exceptions(
+        &mut self,
+        bindings: &[crate::parser::ExceptionBinding],
+        span: SourceSpan,
+    ) -> Res<()> {
+        let mut declared = Vec::new();
+        for binding in bindings {
+            let scheme = match &binding.kind {
+                ExceptionKind::Fresh(None) => Scheme {
+                    vars: Vec::new(),
+                    ty: con("exn"),
+                },
+                ExceptionKind::Fresh(Some(ty)) => {
+                    let mut variables = HashMap::new();
+                    let argument = self.convert(ty, &mut variables)?;
+                    if let Some(name) = variables.keys().next() {
+                        return Err((
+                            TypeError::UnboundTypeVariable(name.clone()),
+                            ty.source_span(),
+                        ));
+                    }
+                    Scheme {
+                        vars: Vec::new(),
+                        ty: arrow(argument, con("exn")),
+                    }
+                }
+                ExceptionKind::Copy(original) => {
+                    let found = self.lookup_constructor(original).filter(|entry| {
+                        let ty = self.prune(&entry.scheme.ty);
+                        let result = match ty {
+                            Type::Arrow(_, result) => self.prune(&result),
+                            other => other,
+                        };
+                        matches!(result, Type::Con(name, _) if name.is("exn"))
+                    });
+                    let Some(entry) = found else {
+                        return Err((TypeError::NotAnException(original.clone()), span));
+                    };
+                    entry.scheme
+                }
+            };
+            declared.push(Entry {
+                name: binding.name.clone(),
+                scheme,
+                constructor: true,
+            });
+        }
+        // Like `and`, the bindings cannot see each other.
+        self.values.extend(declared);
+        Ok(())
     }
 
     /// `datatype t = datatype u`.

@@ -41,7 +41,7 @@ The test uses `smlnj` from `PATH` and skips if `smlnj` is not installed.
 
 Fixtures carry their expected output as FileCheck comments at the end of the
 file (`CHECK-EXIT`, `CHECK-STDOUT`, `CHECK-STDERR` for compiled programs,
-`CHECK-ERR` for fixtures under an `error/` directory, `CHECK-REPL` for `tests/repl`). LLVM's
+`CHECK-ERR` for fixtures under an `error/` directory, and `CHECK-STDOUT` for the inferred types of `tests/fixtures/types`, `CHECK-REPL` for `tests/repl`). LLVM's
 `FileCheck` must be on `PATH` (or set `FILECHECK`). Regenerate them from
 SML/NJ with:
 
@@ -64,4 +64,5 @@ differ from SML/NJ; it fails the suite once it starts passing.
 - The parser accepts the full SML expression syntax (application, default infix fixities, tuples, records, selectors, sequences, `let`, `case`, `fn`, `while`, `raise`/`handle`, type annotations); `--dump-ast` prints the tree. Semantic analysis still rejects the forms it cannot check or compile yet.
 - Patterns (constants, variables, tuples, records with punning and `...`, lists, `::`, constructors, layered `as`, type annotations) are parsed, and `case`/`fn`/`handle` matches are checked like SML/NJ does: a redundant rule is an error and a non-exhaustive match is a warning. Or-patterns are an SML/NJ extension and are not accepted.
 - Declarations are parsed: `val` with patterns and `and` groups, `val rec`, `fun` with clauses, curried and infix definitions and `and` groups, `local`, `type` abbreviations, and `infix`/`infixr`/`nonfix` (scoped by `let` and `local`). Duplicate variables and function names are rejected as in SML/NJ. `datatype`, `exception` and modules are not parsed yet, and the backend still only compiles simple `val` bindings.
+- Types are inferred with Hindley–Milner (`src/infer.rs`) before code generation, and `--dump-types` prints `val name : type` for each top-level binding. It covers polymorphic functions and let-bound values, the value restriction (SML/NJ's `?.X1` dummy types for what cannot be generalised), equality types (`''a`), and overloaded `+ - * < ...` that default to `int`. `tools/update_filecheck.py` cross-checks the printed types against what SML/NJ echoes. Record selectors (`#label`) and flexible record patterns (`...`) are rejected as unsupported, and printed types expand `type` abbreviations where SML/NJ keeps their names. The REPL still uses the older checker.
 - `true` and `false`

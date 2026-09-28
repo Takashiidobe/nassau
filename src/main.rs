@@ -1,6 +1,7 @@
 mod ast_dump;
 mod codegen;
 mod error;
+mod infer;
 mod lexer;
 mod matching;
 mod parser;
@@ -40,6 +41,8 @@ struct Cli {
     dump_tokens: bool,
     #[arg(long, help = "Print the parsed syntax tree for a source file")]
     dump_ast: bool,
+    #[arg(long, help = "Print the inferred type of every top-level binding")]
+    dump_types: bool,
     #[arg(long, help = "Print Cranelift IR after optimization")]
     dump_optimized_ir: bool,
     #[arg(long, help = "Verify IR before and after optimization")]
@@ -118,6 +121,9 @@ fn run(cli: &Cli) -> miette::Result<PathBuf> {
                 .with_source_code(named_source.clone())
         })?;
     check_matches(&program, &named_source)?;
+    infer::check_program(&program).map_err(|(error, span)| {
+        miette::Report::new(SourceError::new(error, span)).with_source_code(named_source.clone())
+    })?;
     sema::Analyzer::new()
         .analyze_program(&program)
         .map_err(|(error, span)| {
@@ -161,6 +167,19 @@ fn parse_file(input: &Path) -> miette::Result<crate::parser::Program> {
     Ok(program)
 }
 
+fn dump_types(input: &Path) -> miette::Result<()> {
+    let program = parse_file(input)?;
+    let source = fs::read_to_string(input).map_err(|error| miette::miette!("{error}"))?;
+    let named_source = miette::NamedSource::new(input.display().to_string(), source);
+    let bindings = infer::check_program(&program).map_err(|(error, span)| {
+        miette::Report::new(SourceError::new(error, span)).with_source_code(named_source)
+    })?;
+    for binding in bindings {
+        println!("val {} : {}", binding.name, binding.ty);
+    }
+    Ok(())
+}
+
 fn dump_tokens(input: &Path) -> miette::Result<()> {
     let source = fs::read_to_string(input).map_err(|error| miette::miette!("{error}"))?;
     let named_source = miette::NamedSource::new(input.display().to_string(), source.clone());
@@ -197,6 +216,17 @@ fn main() {
                 eprintln!("{error:?}");
                 std::process::exit(1);
             }
+        }
+        return;
+    }
+    if cli.dump_types {
+        let Some(input) = cli.input.as_ref() else {
+            eprintln!("--dump-types requires a source file");
+            std::process::exit(2);
+        };
+        if let Err(error) = dump_types(input) {
+            eprintln!("{error:?}");
+            std::process::exit(1);
         }
         return;
     }

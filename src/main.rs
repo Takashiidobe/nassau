@@ -2,6 +2,7 @@ mod ast_dump;
 mod codegen;
 mod error;
 mod lexer;
+mod matching;
 mod parser;
 mod repl;
 mod sema;
@@ -55,6 +56,33 @@ struct Cli {
     objdump: bool,
 }
 
+/// Reports redundant rules as errors and non-exhaustive matches as warnings.
+fn check_matches(
+    program: &crate::parser::Program,
+    named_source: &miette::NamedSource<String>,
+) -> miette::Result<()> {
+    let diagnostics = matching::check_program(program);
+    for diagnostic in &diagnostics {
+        if diagnostic.kind == matching::MatchDiagnosticKind::NonExhaustive {
+            eprintln!(
+                "warning: match nonexhaustive at {}:{}",
+                diagnostic.line, diagnostic.column
+            );
+        }
+    }
+    if let Some(diagnostic) = diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.kind == matching::MatchDiagnosticKind::Redundant)
+    {
+        return Err(miette::Report::new(SourceError::new(
+            error::MatchErrorKind::Redundant,
+            diagnostic.span,
+        ))
+        .with_source_code(named_source.clone()));
+    }
+    Ok(())
+}
+
 fn output_path(input: &Path) -> Result<PathBuf, String> {
     let stem = input
         .file_stem()
@@ -79,6 +107,7 @@ fn run(cli: &Cli) -> miette::Result<PathBuf> {
             miette::Report::new(SourceError::from_span(error))
                 .with_source_code(named_source.clone())
         })?;
+    check_matches(&program, &named_source)?;
     sema::Analyzer::new()
         .analyze_program(&program)
         .map_err(|(error, expr)| {
@@ -109,15 +138,18 @@ fn run(cli: &Cli) -> miette::Result<PathBuf> {
 fn parse_file(input: &Path) -> miette::Result<crate::parser::Program> {
     let source = fs::read_to_string(input).map_err(|error| miette::miette!("{error}"))?;
     let named_source = miette::NamedSource::new(input.display().to_string(), source.clone());
-    SmlParser::from_source(&source, input.to_string_lossy().as_ref())
+    let program = SmlParser::from_source(&source, input.to_string_lossy().as_ref())
         .map_err(|error| {
             miette::Report::new(SourceError::from_span(error))
                 .with_source_code(named_source.clone())
         })?
         .parse()
         .map_err(|error| {
-            miette::Report::new(SourceError::from_span(error)).with_source_code(named_source)
-        })
+            miette::Report::new(SourceError::from_span(error))
+                .with_source_code(named_source.clone())
+        })?;
+    check_matches(&program, &named_source)?;
+    Ok(program)
 }
 
 fn dump_tokens(input: &Path) -> miette::Result<()> {

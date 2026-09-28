@@ -62,4 +62,5 @@ differ from SML/NJ; it fails the suite once it starts passing.
 - Relops, CmpOps like `<=, >=, <, >, =, <>`
 - Basic list construction
 - The parser accepts the full SML expression syntax (application, default infix fixities, tuples, records, selectors, sequences, `let`, `case`, `fn`, `while`, `raise`/`handle`, type annotations); `--dump-ast` prints the tree. Semantic analysis still rejects the forms it cannot check or compile yet.
+- Patterns (constants, variables, tuples, records with punning and `...`, lists, `::`, constructors, layered `as`, type annotations) are parsed, and `case`/`fn`/`handle` matches are checked like SML/NJ does: a redundant rule is an error and a non-exhaustive match is a warning. Or-patterns are an SML/NJ extension and are not accepted.
 - `true` and `false`

@@ -8,7 +8,8 @@ as SML comment lines at the end of the file:
     (* CHECK-STDOUT: hello, world *)        stdout of the compiled program
     (* CHECK-STDERR: ... *)                 stderr of the compiled program
     (* CHECK-ERR: × expected int, ... *)    compiler diagnostic for fixtures under an error/ directory
-    (* CHECK-STDOUT: (val x (+ 1 2)) *)    syntax tree (--dump-ast) for tests/fixtures/parser
+    (* CHECK-STDOUT: (val x (+ 1 2)) *)    syntax tree (--dump-ast) for tests/fixtures/parser,
+                                           with CHECK-STDERR for its match warnings
     (* CHECK-REPL: val x = 1 : int *)       REPL transcript for tests/repl fixtures
 
 Later lines of the same stream use the -NEXT suffix (and -EMPTY for blank
@@ -243,9 +244,20 @@ def generate_parse(oracle, fixture, warnings):
     result = oracle.nassau_compile(fixture, ["--dump-ast"])
     if result.returncode != 0:
         raise ToolError("Nassau rejected a valid fixture:\n" + decode(result.stderr))
-    if oracle.smlnj_rejects(fixture):
+    reference = run([oracle.smlnj, str(fixture)], stdin=b"", cwd=fixture.parent)
+    if reference.returncode != 0:
         warnings.append(f"{rel(fixture)}: SML/NJ rejects this valid fixture")
-    return stream_lines("CHECK-STDOUT", decode(result.stdout))
+    stderr = decode(result.stderr)
+    expected = decode(reference.stdout).count("Warning: match nonexhaustive")
+    if stderr.count("warning: match nonexhaustive") != expected:
+        warnings.append(
+            f"{rel(fixture)}: Nassau reports {stderr.count('warning: match nonexhaustive')} "
+            f"non-exhaustive matches, SML/NJ {expected}"
+        )
+    lines = stream_lines("CHECK-STDOUT", decode(result.stdout))
+    if stderr.strip():
+        lines += stream_lines("CHECK-STDERR", stderr)
+    return lines
 
 
 def generate_repl(oracle, fixture, warnings):
@@ -283,8 +295,8 @@ def find_fixtures(patterns):
                 raise ToolError(f"no files match {pattern!r}")
             found += matches
     paths = []
-    for item in sorted(set(found)):
-        path = Path(item).resolve()
+    for item in sorted({Path(item).resolve() for item in found}):
+        path = Path(item)
         if path.suffix == ".sml" and TESTS in path.parents:
             paths.append(path)
     if not paths:

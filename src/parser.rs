@@ -60,15 +60,24 @@ pub enum ExprKind {
 #[derive(Debug)]
 pub enum PatKind {
     Wildcard,
+    /// A variable, or a nullary constructor such as `nil`; the two are only
+    /// told apart once constructors are known.
     Variable(String),
     Integer(i64),
+    Word(String),
     String(String),
     Character(char),
     Boolean(bool),
     Unit,
     Tuple(Vec<Pat>),
     List(Vec<Pat>),
+    /// `{a = p, b, ...}`; the flag is true when the row list ends in `...`.
+    Record(Vec<(String, Pat)>, bool),
+    /// A constructor applied to an argument pattern.
+    Constructor(String, Box<Pat>),
     Cons(Box<Pat>, Box<Pat>),
+    /// `x as p` or `x : ty as p`.
+    Layered(String, Option<Ty>, Box<Pat>),
     Typed(Box<Pat>, Ty),
 }
 
@@ -764,18 +773,52 @@ impl Parser {
         }
     }
 
+    /// `pat`: the loosest pattern level, where `: ty` and layering apply.
     fn parse_pat(&mut self) -> Result<Pat, ParseError> {
-        let mut pattern = self.parse_cons_pat()?;
+        let mut pattern = self.parse_layered_pat()?;
         while self.eat(&TokenKind::Colon) {
             let ty = self.parse_ty()?;
-            let (start, end) = (pattern.start.clone(), ty.end.clone());
+            let start = pattern.start.clone();
+            if self.at_reserved("as")
+                && let PatKind::Variable(name) = &pattern.value
+            {
+                let name = name.clone();
+                self.index += 1;
+                let inner = self.parse_pat()?;
+                let end = inner.end.clone();
+                return Ok(Span::new(
+                    start,
+                    end,
+                    PatKind::Layered(name, Some(ty), Box::new(inner)),
+                ));
+            }
+            let end = ty.end.clone();
             pattern = Span::new(start, end, PatKind::Typed(Box::new(pattern), ty));
         }
         Ok(pattern)
     }
 
+    /// `vid as pat`, which extends as far right as possible.
+    fn parse_layered_pat(&mut self) -> Result<Pat, ParseError> {
+        if let Some(TokenKind::Identifier(name)) = self.peek().cloned()
+            && matches!(self.peek_at(1), Some(TokenKind::Reserved(word)) if word == "as")
+        {
+            let start = self.tokens[self.index].start.clone();
+            self.index += 2;
+            let inner = self.parse_pat()?;
+            let end = inner.end.clone();
+            return Ok(Span::new(
+                start,
+                end,
+                PatKind::Layered(name, None, Box::new(inner)),
+            ));
+        }
+        self.parse_cons_pat()
+    }
+
+    /// `::` is the only infix constructor until fixity declarations exist.
     fn parse_cons_pat(&mut self) -> Result<Pat, ParseError> {
-        let head = self.parse_atpat()?;
+        let head = self.parse_app_pat()?;
         if matches!(self.peek(), Some(TokenKind::SymbolicIdentifier(name)) if name == "::") {
             self.index += 1;
             let tail = self.parse_cons_pat()?;
@@ -789,6 +832,44 @@ impl Parser {
         Ok(head)
     }
 
+    /// A constructor applied to one atomic pattern: `SOME x`, `Fail _`.
+    fn parse_app_pat(&mut self) -> Result<Pat, ParseError> {
+        let head = self.parse_atpat()?;
+        if let PatKind::Variable(name) = &head.value
+            && self.starts_atpat()
+        {
+            let name = name.clone();
+            let argument = self.parse_atpat()?;
+            let (start, end) = (head.start.clone(), argument.end.clone());
+            return Ok(Span::new(
+                start,
+                end,
+                PatKind::Constructor(name, Box::new(argument)),
+            ));
+        }
+        Ok(head)
+    }
+
+    fn starts_atpat(&self) -> bool {
+        match self.peek() {
+            Some(
+                TokenKind::Underscore
+                | TokenKind::Identifier(_)
+                | TokenKind::Integer(_)
+                | TokenKind::Word(_)
+                | TokenKind::String(_)
+                | TokenKind::Character(_)
+                | TokenKind::True
+                | TokenKind::False
+                | TokenKind::LeftParen
+                | TokenKind::LeftBracket
+                | TokenKind::LeftBrace,
+            ) => true,
+            Some(TokenKind::Reserved(word)) => word == "op",
+            _ => false,
+        }
+    }
+
     fn parse_atpat(&mut self) -> Result<Pat, ParseError> {
         let Some(token) = self.tokens.get(self.index).cloned() else {
             return Err(self.error(ParseErrorKind::Expect("a pattern".into())));
@@ -797,11 +878,27 @@ impl Parser {
         let start = token.start.clone();
         let kind = match token.value {
             TokenKind::Underscore => PatKind::Wildcard,
-            TokenKind::Identifier(name) => PatKind::Variable(name),
+            TokenKind::Identifier(mut name) => {
+                while self.at(&TokenKind::Dot)
+                    && let Some(TokenKind::Identifier(part)) = self.peek_at(1)
+                {
+                    name = format!("{name}.{part}");
+                    self.index += 2;
+                }
+                PatKind::Variable(name)
+            }
+            TokenKind::Reserved(word) if word == "op" => {
+                let Some(TokenKind::Identifier(name)) = self.peek().cloned() else {
+                    return Err(self.error(ParseErrorKind::Expect("a name after op".into())));
+                };
+                self.index += 1;
+                PatKind::Variable(name)
+            }
             TokenKind::Integer(value) => PatKind::Integer(
                 Self::integer_value(&value)
                     .ok_or_else(|| self.error(ParseErrorKind::IntegerOutOfRange))?,
             ),
+            TokenKind::Word(value) => PatKind::Word(value),
             TokenKind::String(value) => PatKind::String(value),
             TokenKind::Character(value) => PatKind::Character(value),
             TokenKind::True => PatKind::Boolean(true),
@@ -841,12 +938,82 @@ impl Parser {
                 }
                 PatKind::List(items)
             }
+            TokenKind::LeftBrace => self.parse_record_pat()?,
+            TokenKind::Real(_) => {
+                self.index -= 1;
+                return Err(self.error(ParseErrorKind::Expect(
+                    "a pattern; real constants cannot be patterns".into(),
+                )));
+            }
             _ => {
                 self.index -= 1;
                 return Err(self.error(ParseErrorKind::Expect("a pattern".into())));
             }
         };
         Ok(Span::new(start, self.previous_end(), kind))
+    }
+
+    /// After `{`: rows of `label = pat` or punned `label [: ty] [as pat]`, then optional `...`.
+    fn parse_record_pat(&mut self) -> Result<PatKind, ParseError> {
+        let mut fields: Vec<(String, Pat)> = Vec::new();
+        let mut flexible = false;
+        if !self.eat(&TokenKind::RightBrace) {
+            loop {
+                if self.eat(&TokenKind::Ellipsis) {
+                    flexible = true;
+                    break;
+                }
+                let start = self.tokens.get(self.index).map(|token| token.start.clone());
+                let punned = matches!(self.peek(), Some(TokenKind::Identifier(_)))
+                    && !matches!(self.peek_at(1), Some(TokenKind::Equals));
+                let label = self.label()?;
+                let pattern = if punned {
+                    let start = start.expect("label token exists");
+                    let mut pattern = Span::new(
+                        start.clone(),
+                        self.previous_end(),
+                        PatKind::Variable(label.clone()),
+                    );
+                    let mut annotation = None;
+                    if self.eat(&TokenKind::Colon) {
+                        annotation = Some(self.parse_ty()?);
+                    }
+                    if self.at_reserved("as") {
+                        self.index += 1;
+                        let inner = self.parse_pat()?;
+                        let end = inner.end.clone();
+                        pattern = Span::new(
+                            start,
+                            end,
+                            PatKind::Layered(label.clone(), annotation, Box::new(inner)),
+                        );
+                    } else if let Some(ty) = annotation {
+                        let end = ty.end.clone();
+                        pattern = Span::new(start, end, PatKind::Typed(Box::new(pattern), ty));
+                    }
+                    pattern
+                } else {
+                    self.expect(
+                        TokenKind::Equals,
+                        ParseErrorKind::Expect("= after record label".into()),
+                    )?;
+                    self.parse_pat()?
+                };
+                fields.push((label, pattern));
+                if !self.eat(&TokenKind::Comma) {
+                    break;
+                }
+            }
+            self.expect(
+                TokenKind::RightBrace,
+                ParseErrorKind::Expect("} after record pattern".into()),
+            )?;
+        }
+        Ok(if fields.is_empty() && !flexible {
+            PatKind::Unit
+        } else {
+            PatKind::Record(fields, flexible)
+        })
     }
 
     fn parse_ty(&mut self) -> Result<Ty, ParseError> {

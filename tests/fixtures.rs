@@ -191,6 +191,8 @@ fn compare_fixture(fixture: &Path, smlnj: &str) {
     if is_parser_fixture(fixture) && valid {
         common::check_stream(fixture, &source, "CHECK-STDOUT", &nassau.stdout, true)
             .unwrap_or_else(|error| panic!("{error}"));
+        common::check_stream(fixture, &source, "CHECK-STDERR", &nassau.stderr, true)
+            .unwrap_or_else(|error| panic!("{error}"));
         return;
     }
 

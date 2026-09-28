@@ -35,7 +35,7 @@ fn expected_valid(fixture: &Path) -> bool {
             .expect("fixture has a file stem")
             .to_string_lossy()
             .starts_with("valid-"),
-        Some(name) if name == "lexer" => fixture
+        Some(name) if name == "lexer" || name == "parser" => fixture
             .file_stem()
             .expect("fixture has a file stem")
             .to_string_lossy()
@@ -50,6 +50,11 @@ fn expected_valid(fixture: &Path) -> bool {
 
 fn is_lexer_fixture(fixture: &Path) -> bool {
     fixture.parent().and_then(Path::file_name) == Some(std::ffi::OsStr::new("lexer"))
+}
+
+/// Parser fixtures are checked through `--dump-ast`, not compiled and run.
+fn is_parser_fixture(fixture: &Path) -> bool {
+    fixture.parent().and_then(Path::file_name) == Some(std::ffi::OsStr::new("parser"))
 }
 
 fn compare_mlton(fixture: &Path, mlton: &str, valid: bool) {
@@ -132,6 +137,9 @@ fn compare_fixture(fixture: &Path, smlnj: &str) {
     if is_lexer_fixture(fixture) {
         nassau_command.arg("--dump-tokens");
     }
+    if is_parser_fixture(fixture) {
+        nassau_command.arg("--dump-ast");
+    }
     let nassau = nassau_command
         .arg(fixture)
         .current_dir(directory)
@@ -157,6 +165,7 @@ fn compare_fixture(fixture: &Path, smlnj: &str) {
     if !valid
         || fixture.parent().and_then(Path::file_name) == Some(std::ffi::OsStr::new("lists"))
         || is_lexer_fixture(fixture)
+        || is_parser_fixture(fixture)
     {
         assert_eq!(
             reference.status.success(),
@@ -177,6 +186,12 @@ fn compare_fixture(fixture: &Path, smlnj: &str) {
             "tokens differ for {}",
             fixture.display()
         );
+        return;
+    }
+
+    if is_parser_fixture(fixture) && valid {
+        common::check_stream(fixture, &source, "CHECK-STDOUT", &nassau.stdout, true)
+            .unwrap_or_else(|error| panic!("{error}"));
         return;
     }
 

@@ -2,8 +2,16 @@
 //! program, shared by the static checks. Each visit also gets the constructors
 //! in scope at that point.
 
+use std::collections::HashSet;
+
 use crate::constructors::Constructors;
-use crate::parser::{Decl, DeclKind, Expr, ExprKind, Program, StmtKind};
+use crate::parser::{
+    Decl, DeclKind, Expr, ExprKind, Program, SigExp, SigExpKind, SpecKind, StmtKind, StrExp,
+    StrExpKind,
+};
+
+/// The signatures declared so far, latest last.
+type Signatures<'a> = Vec<(&'a str, &'a SigExp)>;
 
 #[derive(Clone, Copy)]
 pub enum Node<'a> {
@@ -13,12 +21,15 @@ pub enum Node<'a> {
 
 pub fn walk_program<'a>(program: &'a Program, visit: &mut dyn FnMut(Node<'a>, &Constructors)) {
     let mut env = Constructors::new();
+    let mut sigs = Signatures::new();
     for statement in &program.statements {
         match &statement.value {
             StmtKind::Val(_, expr) | StmtKind::Print(expr) | StmtKind::Exit(expr) => {
-                walk_expr(expr, visit, &mut env);
+                walk_expr(expr, visit, &mut env, &mut sigs);
             }
-            StmtKind::Declaration(declaration) => walk_decl(declaration, visit, &mut env),
+            StmtKind::Declaration(declaration) => {
+                walk_decl(declaration, visit, &mut env, &mut sigs)
+            }
         }
     }
 }
@@ -27,29 +38,30 @@ fn walk_decl<'a>(
     declaration: &'a Decl,
     visit: &mut dyn FnMut(Node<'a>, &Constructors),
     env: &mut Constructors,
+    sigs: &mut Signatures<'a>,
 ) {
     visit(Node::Decl(declaration), env);
     match &declaration.value {
         DeclKind::Val { bindings, .. } => {
             for (_, expr) in bindings {
-                walk_expr(expr, visit, env);
+                walk_expr(expr, visit, env, sigs);
             }
         }
         DeclKind::Fun(bindings) => {
             for binding in bindings {
                 for clause in &binding.clauses {
-                    walk_expr(&clause.body, visit, env);
+                    walk_expr(&clause.body, visit, env, sigs);
                 }
             }
         }
         DeclKind::Local(private, public) => {
             let outer = env.mark();
             for inner in private {
-                walk_decl(inner, visit, env);
+                walk_decl(inner, visit, env, sigs);
             }
             let visible = env.mark();
             for inner in public {
-                walk_decl(inner, visit, env);
+                walk_decl(inner, visit, env, sigs);
             }
             // Only the public part outlives the declaration.
             let kept = env.take_since(visible);
@@ -61,14 +73,115 @@ fn walk_decl<'a>(
             env.declare_datatypes(bindings);
             let after = env.mark();
             for inner in body {
-                walk_decl(inner, visit, env);
+                walk_decl(inner, visit, env, sigs);
             }
             env.hide_constructors(before, after);
         }
         DeclKind::Datatype { .. } | DeclKind::DatatypeCopy { .. } | DeclKind::Exception(_) => {
             env.declare(&declaration.value);
         }
+        DeclKind::Structure(bindings) => {
+            for binding in bindings {
+                let mark = env.mark();
+                walk_strexp(&binding.body, visit, env, sigs);
+                env.qualify_since(mark, &binding.name);
+            }
+        }
+        DeclKind::Signature(bindings) => {
+            for binding in bindings {
+                sigs.push((&binding.name, &binding.body));
+            }
+        }
+        DeclKind::Open(paths) => {
+            for path in paths {
+                env.open(path);
+            }
+        }
         DeclKind::Type(_) | DeclKind::Fixity { .. } => {}
+    }
+}
+
+/// Declares the constructors a structure expression provides, unqualified.
+fn walk_strexp<'a>(
+    body: &'a StrExp,
+    visit: &mut dyn FnMut(Node<'a>, &Constructors),
+    env: &mut Constructors,
+    sigs: &mut Signatures<'a>,
+) {
+    match &body.value {
+        StrExpKind::Struct(declarations) => {
+            for declaration in declarations {
+                walk_decl(declaration, visit, env, sigs);
+            }
+        }
+        StrExpKind::Name(path) => env.open(path),
+        StrExpKind::Ascribed {
+            body, signature, ..
+        } => {
+            let mark = env.mark();
+            walk_strexp(body, visit, env, sigs);
+            let mut visible = HashSet::new();
+            signature_constructors(signature, sigs, "", &mut visible);
+            env.retain_since(mark, &visible);
+        }
+        StrExpKind::Let(declarations, inner) => {
+            let outer = env.mark();
+            for declaration in declarations {
+                walk_decl(declaration, visit, env, sigs);
+            }
+            let visible = env.mark();
+            walk_strexp(inner, visit, env, sigs);
+            let kept = env.take_since(visible);
+            env.release(outer);
+            env.restore(kept);
+        }
+    }
+}
+
+/// The names of the constructors a signature specifies, qualified by `prefix`.
+fn signature_constructors(
+    signature: &SigExp,
+    sigs: &Signatures,
+    prefix: &str,
+    out: &mut HashSet<String>,
+) {
+    match &signature.value {
+        SigExpKind::Name(name) => {
+            if let Some((_, found)) = sigs.iter().rev().find(|(known, _)| known == name) {
+                signature_constructors(found, sigs, prefix, out);
+            }
+        }
+        SigExpKind::Where(inner, _) => signature_constructors(inner, sigs, prefix, out),
+        SigExpKind::Sig(specs) => {
+            for spec in specs {
+                match &spec.value {
+                    SpecKind::Datatype(bindings) => {
+                        for binding in bindings {
+                            for constructor in &binding.constructors {
+                                out.insert(format!("{prefix}{}", constructor.value.name));
+                            }
+                        }
+                    }
+                    SpecKind::Exception(exceptions) => {
+                        for (name, _) in exceptions {
+                            out.insert(format!("{prefix}{name}"));
+                        }
+                    }
+                    SpecKind::Include(inner) => signature_constructors(inner, sigs, prefix, out),
+                    SpecKind::Structure(structures) => {
+                        for (name, inner) in structures {
+                            signature_constructors(inner, sigs, &format!("{prefix}{name}."), out);
+                        }
+                    }
+                    // A copy's constructors come from the original, which is
+                    // not tracked; keep them all visible.
+                    SpecKind::DatatypeCopy { .. }
+                    | SpecKind::Val(_)
+                    | SpecKind::Type(_)
+                    | SpecKind::Sharing(_) => {}
+                }
+            }
+        }
     }
 }
 
@@ -76,6 +189,7 @@ fn walk_expr<'a>(
     expr: &'a Expr,
     visit: &mut dyn FnMut(Node<'a>, &Constructors),
     env: &mut Constructors,
+    sigs: &mut Signatures<'a>,
 ) {
     visit(Node::Expr(expr), env);
     match &expr.value {
@@ -95,45 +209,45 @@ fn walk_expr<'a>(
         | ExprKind::OrElse(lhs, rhs)
         | ExprKind::Apply(lhs, rhs)
         | ExprKind::While(lhs, rhs) => {
-            walk_expr(lhs, visit, env);
-            walk_expr(rhs, visit, env);
+            walk_expr(lhs, visit, env, sigs);
+            walk_expr(rhs, visit, env, sigs);
         }
         ExprKind::If(condition, consequent, alternative) => {
-            walk_expr(condition, visit, env);
-            walk_expr(consequent, visit, env);
-            walk_expr(alternative, visit, env);
+            walk_expr(condition, visit, env, sigs);
+            walk_expr(consequent, visit, env, sigs);
+            walk_expr(alternative, visit, env, sigs);
         }
         ExprKind::List(items) | ExprKind::Tuple(items) | ExprKind::Sequence(items) => {
             for item in items {
-                walk_expr(item, visit, env);
+                walk_expr(item, visit, env, sigs);
             }
         }
         ExprKind::Record(fields) => {
             for (_, value) in fields {
-                walk_expr(value, visit, env);
+                walk_expr(value, visit, env, sigs);
             }
         }
         ExprKind::Word8FromInt(inner)
         | ExprKind::PosixExit(inner)
         | ExprKind::Raise(inner)
-        | ExprKind::Typed(inner, _) => walk_expr(inner, visit, env),
+        | ExprKind::Typed(inner, _) => walk_expr(inner, visit, env, sigs),
         ExprKind::Let(declarations, body) => {
             let mark = env.mark();
             for inner in declarations {
-                walk_decl(inner, visit, env);
+                walk_decl(inner, visit, env, sigs);
             }
-            walk_expr(body, visit, env);
+            walk_expr(body, visit, env, sigs);
             env.release(mark);
         }
         ExprKind::Case(scrutinee, rules) | ExprKind::Handle(scrutinee, rules) => {
-            walk_expr(scrutinee, visit, env);
+            walk_expr(scrutinee, visit, env, sigs);
             for (_, body) in rules {
-                walk_expr(body, visit, env);
+                walk_expr(body, visit, env, sigs);
             }
         }
         ExprKind::Fn(rules) => {
             for (_, body) in rules {
-                walk_expr(body, visit, env);
+                walk_expr(body, visit, env, sigs);
             }
         }
         ExprKind::Integer(_)

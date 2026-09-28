@@ -4,7 +4,7 @@
 
 use crate::parser::{
     DataBinding, Decl, DeclKind, ExceptionKind, Expr, ExprKind, FixityKind, Pat, PatKind, Program,
-    Rule, StmtKind, Ty, TyKind,
+    Rule, SigExp, SigExpKind, Spec, SpecKind, StmtKind, StrExp, StrExpKind, Ty, TyKind,
 };
 
 pub fn program(program: &Program) -> String {
@@ -170,6 +170,21 @@ fn decl_text(declaration: &Decl) -> String {
             ));
             list("abstype", &parts)
         }
+        DeclKind::Structure(bindings) => {
+            let bindings: Vec<String> = bindings
+                .iter()
+                .map(|binding| format!("({} {})", binding.name, strexp_text(&binding.body)))
+                .collect();
+            list("structure", &bindings)
+        }
+        DeclKind::Signature(bindings) => {
+            let bindings: Vec<String> = bindings
+                .iter()
+                .map(|binding| format!("({} {})", binding.name, sigexp_text(&binding.body)))
+                .collect();
+            list("signature", &bindings)
+        }
+        DeclKind::Open(names) => format!("(open {})", names.join(" ")),
         DeclKind::Local(private, public) => {
             let text = |declarations: &[Decl]| {
                 declarations
@@ -189,6 +204,109 @@ fn decl_text(declaration: &Decl) -> String {
             FixityKind::Infix => format!("(infix {precedence} {})", names.join(" ")),
             FixityKind::Infixr => format!("(infixr {precedence} {})", names.join(" ")),
         },
+    }
+}
+
+fn strexp_text(body: &StrExp) -> String {
+    match &body.value {
+        StrExpKind::Struct(declarations) => list(
+            "struct",
+            &declarations.iter().map(decl_text).collect::<Vec<_>>(),
+        ),
+        StrExpKind::Name(name) => name.clone(),
+        StrExpKind::Ascribed {
+            body,
+            signature,
+            opaque,
+        } => format!(
+            "({} {} {})",
+            if *opaque { ":>" } else { ":" },
+            strexp_text(body),
+            sigexp_text(signature)
+        ),
+        StrExpKind::Let(declarations, inner) => format!(
+            "(let ({}) {})",
+            declarations
+                .iter()
+                .map(decl_text)
+                .collect::<Vec<_>>()
+                .join(" "),
+            strexp_text(inner)
+        ),
+    }
+}
+
+fn sigexp_text(body: &SigExp) -> String {
+    match &body.value {
+        SigExpKind::Sig(specs) => list("sig", &specs.iter().map(spec_text).collect::<Vec<_>>()),
+        SigExpKind::Name(name) => name.clone(),
+        SigExpKind::Where(inner, refinements) => {
+            let mut parts = vec![sigexp_text(inner)];
+            parts.extend(refinements.iter().map(|refinement| {
+                format!(
+                    "(type ({}) {} {})",
+                    refinement.parameters.join(" "),
+                    refinement.name,
+                    ty_text(&refinement.ty)
+                )
+            }));
+            list("where", &parts)
+        }
+    }
+}
+
+fn spec_text(spec: &Spec) -> String {
+    match &spec.value {
+        SpecKind::Val(values) => list(
+            "val",
+            &values
+                .iter()
+                .map(|(name, ty)| format!("({name} {})", ty_text(ty)))
+                .collect::<Vec<_>>(),
+        ),
+        SpecKind::Type(specs) => list(
+            "type",
+            &specs
+                .iter()
+                .map(|spec| {
+                    let head = if spec.equality { "eq " } else { "" };
+                    match &spec.definition {
+                        Some(ty) => format!(
+                            "({head}{} ({}) {})",
+                            spec.name,
+                            spec.parameters.join(" "),
+                            ty_text(ty)
+                        ),
+                        None => {
+                            format!("({head}{} ({}))", spec.name, spec.parameters.join(" "))
+                        }
+                    }
+                })
+                .collect::<Vec<_>>(),
+        ),
+        SpecKind::Datatype(bindings) => list("datatype", &data_bindings(bindings)),
+        SpecKind::DatatypeCopy { name, original } => {
+            format!("(datatype-copy {name} {original})")
+        }
+        SpecKind::Exception(exceptions) => list(
+            "exception",
+            &exceptions
+                .iter()
+                .map(|(name, argument)| match argument {
+                    Some(ty) => format!("({name} {})", ty_text(ty)),
+                    None => format!("({name})"),
+                })
+                .collect::<Vec<_>>(),
+        ),
+        SpecKind::Structure(structures) => list(
+            "structure",
+            &structures
+                .iter()
+                .map(|(name, signature)| format!("({name} {})", sigexp_text(signature)))
+                .collect::<Vec<_>>(),
+        ),
+        SpecKind::Include(signature) => format!("(include {})", sigexp_text(signature)),
+        SpecKind::Sharing(names) => format!("(sharing {})", names.join(" ")),
     }
 }
 

@@ -70,6 +70,18 @@ pub fn check_program(program: &Program) -> Vec<ScopeDiagnostic> {
                     constructors.push(name);
                 }
             }
+            DeclKind::Exception(bindings) => {
+                let mut seen: Vec<&str> = Vec::new();
+                for binding in bindings {
+                    if seen.contains(&binding.name.as_str()) {
+                        out.push(ScopeDiagnostic {
+                            kind: ScopeErrorKind::DuplicateException(binding.name.clone()),
+                            span: declaration.source_span(),
+                        });
+                    }
+                    seen.push(&binding.name);
+                }
+            }
             DeclKind::Type(bindings) => {
                 let mut seen: Vec<&str> = Vec::new();
                 for binding in bindings {

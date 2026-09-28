@@ -8,7 +8,7 @@
 
 use std::rc::Rc;
 
-use crate::parser::{DataBinding, DeclKind};
+use crate::parser::{DataBinding, DeclKind, ExceptionKind};
 
 /// The constructors of one datatype with the number of arguments each takes
 /// in a pattern (`::` takes two: its head and tail).
@@ -184,6 +184,20 @@ impl Constructors {
         match declaration {
             DeclKind::Datatype { bindings, .. } => self.declare_datatypes(bindings),
             DeclKind::DatatypeCopy { name, original } => self.declare_copy(name, original),
+            DeclKind::Exception(bindings) => {
+                // Exceptions are constructors of one open type: any number
+                // more can be declared, so no set of them is ever exhaustive.
+                for binding in bindings {
+                    debug_assert!(matches!(
+                        binding.kind,
+                        ExceptionKind::Fresh(_) | ExceptionKind::Copy(_)
+                    ));
+                    self.entries.push(Entry {
+                        name: binding.name.clone(),
+                        family: None,
+                    });
+                }
+            }
             _ => {}
         }
     }

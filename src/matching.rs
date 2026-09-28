@@ -107,6 +107,7 @@ fn check_declaration(declaration: &Decl, env: &Constructors, out: &mut Vec<Match
         | DeclKind::Type(_)
         | DeclKind::Datatype { .. }
         | DeclKind::DatatypeCopy { .. }
+        | DeclKind::Exception(_)
         | DeclKind::Abstype { .. }
         | DeclKind::Local(..)
         | DeclKind::Fixity { .. } => {}

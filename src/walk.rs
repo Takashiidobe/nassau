@@ -65,7 +65,7 @@ fn walk_decl<'a>(
             }
             env.hide_constructors(before, after);
         }
-        DeclKind::Datatype { .. } | DeclKind::DatatypeCopy { .. } => {
+        DeclKind::Datatype { .. } | DeclKind::DatatypeCopy { .. } | DeclKind::Exception(_) => {
             env.declare(&declaration.value);
         }
         DeclKind::Type(_) | DeclKind::Fixity { .. } => {}

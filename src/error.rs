@@ -81,6 +81,8 @@ pub enum ScopeErrorKind {
     DuplicateConstructor(String),
     #[error("duplicate type name '{0}' in type declaration")]
     DuplicateType(String),
+    #[error("duplicate exception name '{0}' in exception declaration")]
+    DuplicateException(String),
 }
 
 #[derive(Debug, ThisError)]

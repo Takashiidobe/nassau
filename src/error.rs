@@ -59,6 +59,12 @@ pub enum ParseErrorKind {
 
 pub type ParseError = Span<ParseErrorKind>;
 
+#[derive(Clone, Copy, Debug, ThisError)]
+pub enum MatchErrorKind {
+    #[error("match redundant")]
+    Redundant,
+}
+
 #[derive(Debug, ThisError)]
 pub enum CodegenError {
     #[error("code generation failed: {0}")]

@@ -113,13 +113,29 @@ fn pat_text(pattern: &Pat) -> String {
         PatKind::Wildcard => "_".into(),
         PatKind::Variable(name) => name.clone(),
         PatKind::Integer(value) => value.to_string(),
+        PatKind::Word(value) => value.clone(),
         PatKind::String(value) => format!("{value:?}"),
         PatKind::Character(value) => format!("#{:?}", value.to_string()),
         PatKind::Boolean(value) => value.to_string(),
         PatKind::Unit => "()".into(),
         PatKind::Tuple(items) => list("tuple", &items.iter().map(pat_text).collect::<Vec<_>>()),
         PatKind::List(items) => list("list", &items.iter().map(pat_text).collect::<Vec<_>>()),
+        PatKind::Record(fields, flexible) => {
+            let mut parts: Vec<String> = fields
+                .iter()
+                .map(|(label, pattern)| format!("({label} {})", pat_text(pattern)))
+                .collect();
+            if *flexible {
+                parts.push("...".into());
+            }
+            list("record", &parts)
+        }
+        PatKind::Constructor(name, argument) => format!("(con {name} {})", pat_text(argument)),
         PatKind::Cons(head, tail) => format!("(:: {} {})", pat_text(head), pat_text(tail)),
+        PatKind::Layered(name, None, inner) => format!("(as {name} {})", pat_text(inner)),
+        PatKind::Layered(name, Some(ty), inner) => {
+            format!("(as {name} {} {})", ty_text(ty), pat_text(inner))
+        }
         PatKind::Typed(inner, ty) => format!("(: {} {})", pat_text(inner), ty_text(ty)),
     }
 }

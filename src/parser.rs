@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use crate::error::{LexerError, ParseError, ParseErrorKind};
 use crate::lexer::{Lexer, Token, TokenKind};
 use crate::span::Span;
+use crate::value;
 
 pub type Expr = Span<ExprKind>;
 pub type Stmt = Span<StmtKind>;
@@ -420,8 +421,10 @@ impl Parser {
         {
             let value = Self::integer_value(literal)
                 .ok_or_else(|| self.error_kind(ParseErrorKind::IntegerOutOfRange))?;
-            let result = i32::try_from(value)
-                .map_err(|_| self.error_kind(ParseErrorKind::IntegerOutOfRange))?;
+            if !value::int_fits(value) {
+                return Err(self.error_kind(ParseErrorKind::IntegerOutOfRange));
+            }
+            let result = value as i32;
             return Ok(Program {
                 statements: Vec::new(),
                 result,

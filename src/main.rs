@@ -10,6 +10,7 @@ mod repl;
 mod scope;
 mod sema;
 mod span;
+mod value;
 mod walk;
 
 use std::fs;

@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use crate::error::ThisError;
 use crate::parser::{DeclKind, Expr, ExprKind, Program, StmtKind};
+use crate::value;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Type {
@@ -43,7 +44,7 @@ pub enum SemanticError {
     InvalidArithmetic(#[from] ArithmeticTypeError),
     #[error(transparent)]
     InvalidComparison(#[from] ComparisonTypeError),
-    #[error("integer literal does not fit in i32")]
+    #[error("int constant too large")]
     IntegerOutOfRange,
     #[error("{0} is not supported yet")]
     Unsupported(&'static str),
@@ -219,9 +220,10 @@ fn analyze_expr<'a>(
     scopes: &[HashMap<String, Type>],
 ) -> Result<Type, (SemanticError, &'a Expr)> {
     match &expr.value {
-        ExprKind::Integer(value) => i32::try_from(*value)
-            .map(|_| Type::Integer)
-            .map_err(|_| (SemanticError::IntegerOutOfRange, expr)),
+        ExprKind::Integer(value) if !value::int_fits(*value) => {
+            Err((SemanticError::IntegerOutOfRange, expr))
+        }
+        ExprKind::Integer(_) => Ok(Type::Integer),
         ExprKind::Real(_) => Ok(Type::Real),
         ExprKind::Boolean(_) => Ok(Type::Boolean),
         ExprKind::String(_) => Ok(Type::String),

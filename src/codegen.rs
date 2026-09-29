@@ -23,6 +23,7 @@ use cranelift_object::{ObjectBuilder, ObjectModule};
 use crate::error::CodegenError;
 use crate::parser::{ExprKind, NumericValue, Program, StmtKind};
 use crate::sema::{self, ArithmeticOperator, ComparisonOperator, Type};
+use crate::value;
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
 pub enum OptLevel {
@@ -475,39 +476,34 @@ impl Codegen {
                 for element in elements {
                     values.push(Self::compile_expr(element, builder, environment)?);
                 }
-                let pointer_ty = environment.pointer_type;
-                let size = (elements.len() + 1) * 8;
-                let allocation = builder.ins().iconst(pointer_ty, size as i64);
-                let allocation = builder.ins().call(environment.allocator, &[allocation]);
-                let pointer = builder.inst_results(allocation)[0];
-                let base = pointer;
-                let length = builder.ins().iconst(types::I64, elements.len() as i64);
-                builder
-                    .ins()
-                    .store(cranelift_codegen::ir::MemFlagsData::new(), length, base, 0);
-                for (index, value) in values.into_iter().enumerate() {
-                    let value = match builder.func.dfg.value_type(value) {
-                        types::I32 => builder.ins().sextend(types::I64, value),
-                        types::I8 => builder.ins().uextend(types::I64, value),
-                        types::F64 => builder.ins().bitcast(
-                            types::I64,
-                            cranelift_codegen::ir::MemFlagsData::new(),
-                            value,
-                        ),
-                        ty if ty == pointer_ty && pointer_ty != types::I64 => {
-                            builder.ins().uextend(types::I64, value)
+                let flags = cranelift_codegen::ir::MemFlagsData::new();
+                // A list is a chain of cons cells ending in nil; elements
+                // are stored as uniform words.
+                let mut list = builder.ins().iconst(types::I64, value::NIL);
+                for value in values.into_iter().rev() {
+                    let head = match builder.func.dfg.value_type(value) {
+                        types::I32 | types::I8 => {
+                            let wide = if builder.func.dfg.value_type(value) == types::I32 {
+                                builder.ins().sextend(types::I64, value)
+                            } else {
+                                builder.ins().uextend(types::I64, value)
+                            };
+                            let shifted = builder.ins().ishl_imm_u(wide, 1);
+                            builder.ins().bor_imm_u(shifted, 1)
                         }
-                        types::I64 => value,
+                        types::F64 => {
+                            let block = Self::allocate(builder, environment, 1, value::KIND_REAL);
+                            builder.ins().store(flags, value, block, 8);
+                            block
+                        }
                         _ => value,
                     };
-                    builder.ins().store(
-                        cranelift_codegen::ir::MemFlagsData::new(),
-                        value,
-                        base,
-                        ((index + 1) * 8) as i32,
-                    );
+                    let cell = Self::allocate(builder, environment, 2, value::KIND_RECORD);
+                    builder.ins().store(flags, head, cell, 8);
+                    builder.ins().store(flags, list, cell, 16);
+                    list = cell;
                 }
-                Ok(pointer)
+                Ok(list)
             }
             ExprKind::If(condition, consequent, alternative) => {
                 let condition = Self::compile_expr(condition, builder, environment)?;
@@ -650,6 +646,27 @@ impl Codegen {
                 "expected an integer or real expression".into(),
             )),
         }
+    }
+
+    /// A heap block of `fields` words after its header.
+    fn allocate(
+        builder: &mut FunctionBuilder<'_>,
+        environment: &ExprEnvironment<'_>,
+        fields: i64,
+        kind: i64,
+    ) -> cranelift_codegen::ir::Value {
+        let size = builder
+            .ins()
+            .iconst(environment.pointer_type, (fields + 1) * 8);
+        let call = builder.ins().call(environment.allocator, &[size]);
+        let block = builder.inst_results(call)[0];
+        let header = builder
+            .ins()
+            .iconst(types::I64, value::header(fields, kind));
+        builder
+            .ins()
+            .store(cranelift_codegen::ir::MemFlagsData::new(), header, block, 0);
+        block
     }
 
     fn print_timings(&self, function: &FunctionBuild, link: Duration, total: Duration) {

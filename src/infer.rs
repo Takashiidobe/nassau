@@ -21,6 +21,7 @@ use crate::parser::{
     StmtKind, Ty as SyntaxTy, TyKind,
 };
 use crate::span::Loc;
+use crate::value;
 use modules::{Functor, Sig, StructEnv};
 
 #[derive(Debug, ThisError)]
@@ -67,7 +68,7 @@ pub enum TypeError {
     UnboundFunctor(String),
     #[error("cannot refine {0}: {1}")]
     BadRefinement(String, String),
-    #[error("integer literal does not fit in i32")]
+    #[error("int constant too large")]
     IntegerOutOfRange,
     #[error("{0} are not supported yet")]
     Unsupported(&'static str),
@@ -1247,6 +1248,9 @@ impl Infer {
                     ty
                 }
             }
+            PatKind::Integer(value) if !value::int_fits(*value) => {
+                return Err((TypeError::IntegerOutOfRange, span));
+            }
             PatKind::Integer(_) => con("int"),
             PatKind::Word(_) => con("word"),
             PatKind::String(_) => con("string"),
@@ -1373,9 +1377,10 @@ impl Infer {
     fn infer_expr_kind(&mut self, expr: &Expr) -> Res<Type> {
         let span = expr.source_span();
         match &expr.value {
-            ExprKind::Integer(value) => i32::try_from(*value)
-                .map(|_| con("int"))
-                .map_err(|_| (TypeError::IntegerOutOfRange, span)),
+            ExprKind::Integer(value) if !value::int_fits(*value) => {
+                Err((TypeError::IntegerOutOfRange, span))
+            }
+            ExprKind::Integer(_) => Ok(con("int")),
             ExprKind::Real(_) => Ok(con("real")),
             ExprKind::Boolean(_) => Ok(con("bool")),
             ExprKind::String(_) => Ok(con("string")),

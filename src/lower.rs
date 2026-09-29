@@ -534,10 +534,6 @@ impl Lowerer<'_> {
         let mut group = Vec::new();
         for definition in &definitions {
             let arity = definition.clauses[0].0.len();
-            if arity != 1 {
-                let (_, body) = definition.clauses[0];
-                return Err(unsupported("curried functions", body));
-            }
             let known = Known {
                 worker: self.session.function_id(),
                 arity,
@@ -567,9 +563,14 @@ impl Lowerer<'_> {
                 .into_iter()
                 .map(|(depth, var)| Atom::Var(self.access(depth, var)))
                 .collect();
+            let code = if known.arity == 1 {
+                known.worker
+            } else {
+                self.curried_entry(definition.name, *known)
+            };
             closures.push(Closure {
                 var: *closure,
-                code: known.worker,
+                code,
                 captured,
             });
         }
@@ -580,6 +581,40 @@ impl Lowerer<'_> {
             }
         }
         Ok(())
+    }
+
+    /// The code of a curried function's closure: stage `k` takes the `k`th
+    /// argument and returns a closure holding the arguments so far, and the
+    /// last stage calls the worker with all of them. Stage 1's environment
+    /// is the function's own closure, which is also the worker's.
+    fn curried_entry(&mut self, name: &str, known: Known) -> FnId {
+        let stages: Vec<FnId> = (0..known.arity)
+            .map(|_| self.session.function_id())
+            .collect();
+        for (index, id) in stages.iter().enumerate() {
+            self.frames.push(Builder::new(*id, name, vec!["env", ""]));
+            let env = Atom::Var(self.frame().params[0]);
+            let argument = Atom::Var(self.frame().params[1]);
+            // The worker's environment and the earlier arguments.
+            let mut held = if index == 0 {
+                vec![env]
+            } else {
+                (1..=index + 1)
+                    .map(|field| self.bind("", Op::Select(env.clone(), field)))
+                    .collect()
+            };
+            held.push(argument);
+            let result = if index + 1 == known.arity {
+                let env = held.remove(0);
+                self.bind("", Op::Call(Callee::Known(known.worker, env), held))
+            } else {
+                self.closure("", stages[index + 1], held)
+            };
+            self.terminate(Term::Return(result));
+            let frame = self.frames.pop().expect("the stage's frame");
+            self.functions.push(frame.finish());
+        }
+        stages[0]
     }
 
     /// Compiles `definition` as the function `id`, taking its closure and one

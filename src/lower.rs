@@ -17,6 +17,10 @@ use crate::infer::{Ty, TypeTable};
 use crate::parser::{Decl, DeclKind, Expr, ExprKind, Pat, PatKind, Program, StmtKind};
 use crate::value;
 
+mod decision;
+
+use decision::Test;
+
 #[derive(Debug, ThisError)]
 pub enum LowerError {
     #[error("{0} are not supported by code generation yet")]
@@ -129,10 +133,14 @@ pub struct Source {
 
 impl Source {
     /// SML/NJ's `line.column` of the byte at `offset`, both counted from 1.
+    /// SML/NJ counts the first line's columns from 2.
     fn position(&self, offset: usize) -> String {
         let before = &self.text[..offset.min(self.text.len())];
         let line = before.matches('\n').count() + 1;
-        let column = before.len() - before.rfind('\n').map_or(0, |newline| newline + 1) + 1;
+        let mut column = before.len() - before.rfind('\n').map_or(0, |newline| newline + 1) + 1;
+        if line == 1 {
+            column += 1;
+        }
         format!("{line}.{column}")
     }
 
@@ -334,13 +342,6 @@ impl Lowerer<'_> {
         self.frame().block(params)
     }
 
-    /// Continues in a new block when `condition` holds, else jumps to `fail`.
-    fn test(&mut self, condition: Atom, fail: BlockId) {
-        let next = self.block(Vec::new());
-        self.terminate(Term::If(condition, next, fail));
-        self.switch(next);
-    }
-
     fn lookup(&self, name: &str) -> Option<Binding> {
         self.scope
             .iter()
@@ -444,21 +445,33 @@ impl Lowerer<'_> {
                 }
                 let mut bound = Vec::new();
                 for ((pattern, expr), value) in bindings.iter().zip(values) {
-                    let fail = self.block(Vec::new());
-                    let mark = self.scope.len();
-                    self.pattern(pattern, value, fail)?;
-                    bound.extend(self.scope.drain(mark..));
-                    let next = self.block(Vec::new());
-                    self.terminate(Term::Jump(next, Vec::new()));
-                    self.switch(fail);
                     let location = format!(
                         "{}:{}-{}",
                         self.source.file,
                         self.source.position(pattern.start.offset),
                         self.source.position(expr.end.offset)
                     );
-                    self.terminate(Term::Fail(crate::core::Failure::Bind, location));
+                    let decided = self.decide(
+                        &[value],
+                        &[vec![pattern]],
+                        crate::core::Failure::Bind,
+                        &location,
+                    )?;
+                    let (Some(next), names) = decided.into_iter().next().expect("one rule") else {
+                        // No value matches: the declaration always raises.
+                        let next = self.block(Vec::new());
+                        self.switch(next);
+                        continue;
+                    };
+                    // The code after the binding continues where the pattern
+                    // matched, with its variables as the block's parameters.
                     self.switch(next);
+                    let params = self.frame().blocks[next].0.clone();
+                    let mark = self.scope.len();
+                    for (name, var) in names.iter().zip(params) {
+                        self.bind_local(name, Atom::Var(var));
+                    }
+                    bound.extend(self.scope.drain(mark..));
                 }
                 self.bind_names(bound, top);
             }
@@ -676,32 +689,6 @@ impl Lowerer<'_> {
 
     // --- matching --------------------------------------------------------
 
-    /// Matches `scrutinees` against each rule's patterns in turn and sends
-    /// the first matching rule's body to `dest`; no match raises `Match`.
-    fn rules(
-        &mut self,
-        scrutinees: &[Atom],
-        rules: &[(Vec<&Pat>, &Expr)],
-        dest: Dest,
-        location: &str,
-    ) -> Res<()> {
-        for (patterns, body) in rules {
-            let fail = self.block(Vec::new());
-            let mark = self.scope.len();
-            for (pattern, scrutinee) in patterns.iter().zip(scrutinees) {
-                self.pattern(pattern, scrutinee.clone(), fail)?;
-            }
-            self.into(body, dest)?;
-            self.scope.truncate(mark);
-            self.switch(fail);
-        }
-        self.terminate(Term::Fail(
-            crate::core::Failure::Match,
-            location.to_string(),
-        ));
-        Ok(())
-    }
-
     /// Binds `name` to `value` in the scope.
     fn bind_local(&mut self, name: &str, value: Atom) -> Var {
         let var = self.var_for(name, value);
@@ -720,108 +707,6 @@ impl Lowerer<'_> {
             },
         ));
         var
-    }
-
-    /// Tests `value` against `pattern`, jumping to `fail` if it does not
-    /// match, and binds the pattern's variables in the scope.
-    fn pattern(&mut self, pattern: &Pat, value: Atom, fail: BlockId) -> Res<()> {
-        match &pattern.value {
-            PatKind::Wildcard | PatKind::Unit => {}
-            PatKind::Variable(name) => match constant(name) {
-                Some(word) => {
-                    let equal =
-                        self.bind("", Op::Prim(Prim::WordEq, vec![value, Atom::Word(word)]));
-                    self.test(equal, fail);
-                }
-                None => {
-                    self.bind_local(name, value);
-                }
-            },
-            PatKind::Integer(_) | PatKind::Boolean(_) | PatKind::Character(_) => {
-                let word = match &pattern.value {
-                    PatKind::Integer(integer) => value::tagged(*integer),
-                    PatKind::Boolean(boolean) => value::tagged(i64::from(*boolean)),
-                    PatKind::Character(character) => {
-                        value::tagged(i64::from(u32::from(*character)))
-                    }
-                    _ => unreachable!(),
-                };
-                let equal = self.bind("", Op::Prim(Prim::WordEq, vec![value, Atom::Word(word)]));
-                self.test(equal, fail);
-            }
-            PatKind::String(text) => {
-                let equal = self.bind(
-                    "",
-                    Op::Prim(Prim::Equal, vec![value, Atom::String(text.clone())]),
-                );
-                self.test(equal, fail);
-            }
-            PatKind::Tuple(items) => {
-                for (index, item) in items.iter().enumerate() {
-                    let field = self.bind("", Op::Select(value.clone(), index));
-                    self.pattern(item, field, fail)?;
-                }
-            }
-            PatKind::Record(fields, _) => {
-                let Some(Ty::Record(labels)) = self.types.pat(pattern).cloned() else {
-                    return Err(unsupported_pattern("this record pattern", pattern));
-                };
-                for (label, item) in fields {
-                    let index = labels
-                        .iter()
-                        .position(|(known, _)| known == label)
-                        .expect("the record type has the pattern's labels");
-                    let field = self.bind("", Op::Select(value.clone(), index));
-                    self.pattern(item, field, fail)?;
-                }
-            }
-            PatKind::List(items) => {
-                let mut list = value;
-                for item in items {
-                    let boxed = self.bind("", Op::Prim(Prim::IsBoxed, vec![list.clone()]));
-                    self.test(boxed, fail);
-                    let head = self.bind("", Op::Select(list.clone(), 0));
-                    self.pattern(item, head, fail)?;
-                    list = self.bind("", Op::Select(list, 1));
-                }
-                let empty = self.bind(
-                    "",
-                    Op::Prim(Prim::WordEq, vec![list, Atom::Word(value::NIL)]),
-                );
-                self.test(empty, fail);
-            }
-            PatKind::Cons(head, tail) => {
-                let boxed = self.bind("", Op::Prim(Prim::IsBoxed, vec![value.clone()]));
-                self.test(boxed, fail);
-                let first = self.bind("", Op::Select(value.clone(), 0));
-                self.pattern(head, first, fail)?;
-                let rest = self.bind("", Op::Select(value, 1));
-                self.pattern(tail, rest, fail)?;
-            }
-            PatKind::Constructor(name, argument) if name == "::" => {
-                // A cons cell is laid out like the pair `(head, tail)`.
-                let boxed = self.bind("", Op::Prim(Prim::IsBoxed, vec![value.clone()]));
-                self.test(boxed, fail);
-                self.pattern(argument, value, fail)?;
-            }
-            PatKind::Constructor(name, argument) if name == "ref" => {
-                let contents = self.bind("", Op::Select(value, 0));
-                self.pattern(argument, contents, fail)?;
-            }
-            PatKind::Layered(name, _, inner) => {
-                let var = self.bind_local(name, value);
-                self.pattern(inner, Atom::Var(var), fail)?;
-            }
-            PatKind::Typed(inner, _) => self.pattern(inner, value, fail)?,
-            PatKind::Word(_) => return Err(unsupported_pattern("word patterns", pattern)),
-            PatKind::Constructor(..) => {
-                return Err(unsupported_pattern(
-                    "datatype constructor patterns",
-                    pattern,
-                ));
-            }
-        }
-        Ok(())
     }
 
     // --- expressions -----------------------------------------------------
@@ -906,10 +791,15 @@ impl Lowerer<'_> {
             ExprKind::Character(value) => Atom::Word(value::tagged(i64::from(u32::from(*value)))),
             ExprKind::String(value) => Atom::String(value.clone()),
             ExprKind::Unit => Atom::Word(value::tagged(0)),
+            ExprKind::Word(text) => match decision::parse_word(text) {
+                Some(word) => Atom::Word(value::tagged(word)),
+                None => return Err(unsupported("this word constant", expr)),
+            },
             ExprKind::Variable(name) => match self.lookup(name) {
                 Some(binding) => self.load(name, &binding),
-                None => match (constant(name), builtin(name)) {
-                    (Some(word), _) => Atom::Word(word),
+                None => match (self.constructor(name), builtin(name)) {
+                    (Some((Test::Word { word, .. }, _)), _) => Atom::Word(word),
+                    (Some((test, _)), _) => self.constructor_closure(name, &test),
                     (None, Some(builtin)) => self.builtin_closure(name, builtin),
                     (None, None) => {
                         return Err(unsupported(
@@ -1002,6 +892,9 @@ impl Lowerer<'_> {
             | ExprKind::GreaterEqual(lhs, rhs)
             | ExprKind::Less(lhs, rhs)
             | ExprKind::LessEqual(lhs, rhs) => {
+                if self.ty(lhs).is_some_and(|ty| ty.is("word")) {
+                    return Err(unsupported("word arithmetic and comparisons", expr));
+                }
                 let real = self.is_real(lhs);
                 let prim = match (&expr.value, real) {
                     (ExprKind::Add(..), false) => Prim::IntAdd,
@@ -1031,9 +924,9 @@ impl Lowerer<'_> {
             ExprKind::Equal(lhs, rhs) | ExprKind::NotEqual(lhs, rhs) => {
                 // Immediates are equal when their words are; anything else
                 // is compared by the runtime.
-                let immediate = self
-                    .ty(lhs)
-                    .is_some_and(|ty| ty.is("int") || ty.is("bool") || ty.is("char"));
+                let immediate = self.ty(lhs).is_some_and(|ty| {
+                    ty.is("int") || ty.is("word") || ty.is("bool") || ty.is("char")
+                });
                 let prim = match (immediate, matches!(expr.value, ExprKind::Equal(..))) {
                     (true, true) => Prim::WordEq,
                     (true, false) => Prim::WordNe,
@@ -1161,6 +1054,12 @@ impl Lowerer<'_> {
         if let ExprKind::Variable(name) = &head.value {
             let binding = self.lookup(name);
             if binding.is_none()
+                && let Some((test, true)) = self.constructor(name)
+            {
+                let argument = self.value(args[0])?;
+                function = Some(self.construct(&test, argument));
+                rest = &args[1..];
+            } else if binding.is_none()
                 && let Some(builtin) = builtin(name)
             {
                 let real = self.is_real(args[0]);
@@ -1239,6 +1138,33 @@ impl Lowerer<'_> {
         }
     }
 
+    /// The value the constructor `test` builds from `argument`.
+    fn construct(&mut self, test: &Test, argument: Atom) -> Atom {
+        match test {
+            // A cons cell is laid out as the pair it is built from.
+            Test::Cons => argument,
+            Test::Ref => self.bind("", Op::Prim(Prim::Ref, vec![argument])),
+            Test::Boxed { tag: None, .. } => self.bind("", Op::Record(vec![argument])),
+            Test::Boxed { tag: Some(tag), .. } => {
+                self.bind("", Op::Record(vec![Atom::Word(*tag), argument]))
+            }
+            Test::Word { word, .. } => Atom::Word(*word),
+            Test::String(_) => unreachable!("strings are not constructors"),
+        }
+    }
+
+    /// A closure for a constructor used as a function, as in `map SOME xs`.
+    fn constructor_closure(&mut self, name: &str, test: &Test) -> Atom {
+        let id = self.session.function_id();
+        self.frames.push(Builder::new(id, name, vec!["env", ""]));
+        let argument = Atom::Var(self.frame().params[1]);
+        let result = self.construct(test, argument);
+        self.terminate(Term::Return(result));
+        let frame = self.frames.pop().expect("the constructor's frame");
+        self.functions.push(frame.finish());
+        self.closure(name, id, Vec::new())
+    }
+
     /// A closure for a built-in function used as a value.
     fn builtin_closure(&mut self, name: &str, builtin: Builtin) -> Atom {
         let id = self.session.function_id();
@@ -1299,16 +1225,6 @@ impl Lowerer<'_> {
         let frame = self.frames.pop().expect("the composition's frame");
         self.functions.push(frame.finish());
         self.closure("", id, vec![f, g])
-    }
-}
-
-/// The word of a built-in nullary constructor.
-fn constant(name: &str) -> Option<i64> {
-    match name {
-        "nil" => Some(value::NIL),
-        "true" => Some(value::TRUE),
-        "false" => Some(value::FALSE),
-        _ => None,
     }
 }
 

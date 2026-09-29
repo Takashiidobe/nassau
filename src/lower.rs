@@ -265,6 +265,8 @@ enum Builtin {
     Ref,
     Deref,
     Ignore,
+    Equal,
+    Unequal,
 }
 
 fn builtin(name: &str) -> Option<Builtin> {
@@ -277,6 +279,8 @@ fn builtin(name: &str) -> Option<Builtin> {
         "ref" => Builtin::Ref,
         "!" => Builtin::Deref,
         "ignore" => Builtin::Ignore,
+        "=" => Builtin::Equal,
+        "<>" => Builtin::Unequal,
         _ => return None,
     })
 }
@@ -388,6 +392,27 @@ impl Lowerer<'_> {
 
     fn ty(&self, expr: &Expr) -> Option<&Ty> {
         self.types.expr(expr)
+    }
+
+    /// Whether `=` on values of type `ty` can compare their words: every
+    /// value is an immediate, or `ty` is a reference, which is equal only to
+    /// itself.
+    fn compared_by_word(&self, ty: &Ty) -> bool {
+        match ty {
+            Ty::Con { name, stamp: 0, .. } => {
+                matches!(
+                    name.as_str(),
+                    "int" | "word" | "char" | "bool" | "unit" | "order" | "ref"
+                )
+            }
+            // An enumeration: every constructor is nullary.
+            Ty::Con { stamp, .. } => self
+                .types
+                .constructors(*stamp)
+                .is_some_and(|constructors| constructors.iter().all(|(_, carries)| !carries)),
+            Ty::Record(fields) => fields.is_empty(),
+            _ => false,
+        }
     }
 
     fn is_real(&self, expr: &Expr) -> bool {
@@ -533,14 +558,15 @@ impl Lowerer<'_> {
                     self.scope.drain(outer..inner);
                 }
             }
-            // Types have no run-time presence; fixity only affects parsing.
-            DeclKind::Type(_) | DeclKind::Fixity { .. } => {}
+            // Types have no run-time presence, and constructors are compiled
+            // where they are used; fixity only affects parsing.
+            DeclKind::Type(_)
+            | DeclKind::Fixity { .. }
+            | DeclKind::Datatype { .. }
+            | DeclKind::DatatypeCopy { .. } => {}
+            DeclKind::Abstype { body, .. } => self.declarations(body, top)?,
             other => {
                 let what = match other {
-                    DeclKind::Datatype { .. } | DeclKind::DatatypeCopy { .. } => {
-                        "datatype declarations"
-                    }
-                    DeclKind::Abstype { .. } => "abstype declarations",
                     DeclKind::Exception(_) => "exception declarations",
                     _ => "module declarations",
                 };
@@ -797,7 +823,7 @@ impl Lowerer<'_> {
             },
             ExprKind::Variable(name) => match self.lookup(name) {
                 Some(binding) => self.load(name, &binding),
-                None => match (self.constructor(name), builtin(name)) {
+                None => match (self.constructor(name, self.ty(expr)), builtin(name)) {
                     (Some((Test::Word { word, .. }, _)), _) => Atom::Word(word),
                     (Some((test, _)), _) => self.constructor_closure(name, &test),
                     (None, Some(builtin)) => self.builtin_closure(name, builtin),
@@ -922,11 +948,10 @@ impl Lowerer<'_> {
                 self.bind("", Op::Prim(prim, args))
             }
             ExprKind::Equal(lhs, rhs) | ExprKind::NotEqual(lhs, rhs) => {
-                // Immediates are equal when their words are; anything else
-                // is compared by the runtime.
-                let immediate = self.ty(lhs).is_some_and(|ty| {
-                    ty.is("int") || ty.is("word") || ty.is("bool") || ty.is("char")
-                });
+                // Values whose type makes them immediates are equal when
+                // their words are, and references when they are the same
+                // cell; anything else is compared by the runtime.
+                let immediate = self.ty(lhs).is_some_and(|ty| self.compared_by_word(ty));
                 let prim = match (immediate, matches!(expr.value, ExprKind::Equal(..))) {
                     (true, true) => Prim::WordEq,
                     (true, false) => Prim::WordNe,
@@ -1054,7 +1079,7 @@ impl Lowerer<'_> {
         if let ExprKind::Variable(name) = &head.value {
             let binding = self.lookup(name);
             if binding.is_none()
-                && let Some((test, true)) = self.constructor(name)
+                && let Some((test, true)) = self.constructor(name, self.ty(head))
             {
                 let argument = self.value(args[0])?;
                 function = Some(self.construct(&test, argument));
@@ -1135,6 +1160,15 @@ impl Lowerer<'_> {
             Builtin::Ref => self.bind("", Op::Prim(Prim::Ref, vec![argument])),
             Builtin::Deref => self.bind("", Op::Select(argument, 0)),
             Builtin::Ignore => Atom::Word(value::tagged(0)),
+            Builtin::Equal | Builtin::Unequal => {
+                let lhs = self.bind("", Op::Select(argument.clone(), 0));
+                let rhs = self.bind("", Op::Select(argument, 1));
+                let prim = match builtin {
+                    Builtin::Equal => Prim::Equal,
+                    _ => Prim::Unequal,
+                };
+                self.bind("", Op::Prim(prim, vec![lhs, rhs]))
+            }
         }
     }
 

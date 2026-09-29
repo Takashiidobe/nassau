@@ -199,6 +199,12 @@ fn show(word: u64, ty: &Ty) -> String {
                     argument(show(field(word, 0) as u64, element), element)
                 )
             }
+            ("ref", [element]) => {
+                format!(
+                    "ref {}",
+                    argument(show(field(word, 0) as u64, element), element)
+                )
+            }
             ("unit", _) => "()".to_string(),
             ("char", _) => {
                 let char = char::from_u32((word >> 1) as u32).unwrap_or('?');
@@ -299,7 +305,8 @@ fn uncaught(exception: i64) -> String {
 /// A constructor's argument as SML/NJ shows it: parenthesised when it is
 /// itself a constructor application.
 fn argument(shown: String, ty: &Ty) -> String {
-    let applied = matches!(ty, Ty::Con { name, .. } if name == "option") && shown != "NONE";
+    let applied =
+        matches!(ty, Ty::Con { name, .. } if name == "option" || name == "ref") && shown != "NONE";
     if applied { format!("({shown})") } else { shown }
 }
 

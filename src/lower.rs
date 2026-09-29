@@ -133,10 +133,14 @@ pub struct Source {
 
 impl Source {
     /// SML/NJ's `line.column` of the byte at `offset`, both counted from 1.
+    /// SML/NJ counts the first line's columns from 2.
     fn position(&self, offset: usize) -> String {
         let before = &self.text[..offset.min(self.text.len())];
         let line = before.matches('\n').count() + 1;
-        let column = before.len() - before.rfind('\n').map_or(0, |newline| newline + 1) + 1;
+        let mut column = before.len() - before.rfind('\n').map_or(0, |newline| newline + 1) + 1;
+        if line == 1 {
+            column += 1;
+        }
         format!("{line}.{column}")
     }
 
@@ -338,13 +342,6 @@ impl Lowerer<'_> {
         self.frame().block(params)
     }
 
-    /// Continues in a new block when `condition` holds, else jumps to `fail`.
-    fn test(&mut self, condition: Atom, fail: BlockId) {
-        let next = self.block(Vec::new());
-        self.terminate(Term::If(condition, next, fail));
-        self.switch(next);
-    }
-
     fn lookup(&self, name: &str) -> Option<Binding> {
         self.scope
             .iter()
@@ -448,21 +445,33 @@ impl Lowerer<'_> {
                 }
                 let mut bound = Vec::new();
                 for ((pattern, expr), value) in bindings.iter().zip(values) {
-                    let fail = self.block(Vec::new());
-                    let mark = self.scope.len();
-                    self.pattern(pattern, value, fail)?;
-                    bound.extend(self.scope.drain(mark..));
-                    let next = self.block(Vec::new());
-                    self.terminate(Term::Jump(next, Vec::new()));
-                    self.switch(fail);
                     let location = format!(
                         "{}:{}-{}",
                         self.source.file,
                         self.source.position(pattern.start.offset),
                         self.source.position(expr.end.offset)
                     );
-                    self.terminate(Term::Fail(crate::core::Failure::Bind, location));
+                    let decided = self.decide(
+                        &[value],
+                        &[vec![pattern]],
+                        crate::core::Failure::Bind,
+                        &location,
+                    )?;
+                    let (Some(next), names) = decided.into_iter().next().expect("one rule") else {
+                        // No value matches: the declaration always raises.
+                        let next = self.block(Vec::new());
+                        self.switch(next);
+                        continue;
+                    };
+                    // The code after the binding continues where the pattern
+                    // matched, with its variables as the block's parameters.
                     self.switch(next);
+                    let params = self.frame().blocks[next].0.clone();
+                    let mark = self.scope.len();
+                    for (name, var) in names.iter().zip(params) {
+                        self.bind_local(name, Atom::Var(var));
+                    }
+                    bound.extend(self.scope.drain(mark..));
                 }
                 self.bind_names(bound, top);
             }
@@ -698,108 +707,6 @@ impl Lowerer<'_> {
             },
         ));
         var
-    }
-
-    /// Tests `value` against `pattern`, jumping to `fail` if it does not
-    /// match, and binds the pattern's variables in the scope.
-    fn pattern(&mut self, pattern: &Pat, value: Atom, fail: BlockId) -> Res<()> {
-        match &pattern.value {
-            PatKind::Wildcard | PatKind::Unit => {}
-            PatKind::Variable(name) => match constant(name) {
-                Some(word) => {
-                    let equal =
-                        self.bind("", Op::Prim(Prim::WordEq, vec![value, Atom::Word(word)]));
-                    self.test(equal, fail);
-                }
-                None => {
-                    self.bind_local(name, value);
-                }
-            },
-            PatKind::Integer(_) | PatKind::Boolean(_) | PatKind::Character(_) => {
-                let word = match &pattern.value {
-                    PatKind::Integer(integer) => value::tagged(*integer),
-                    PatKind::Boolean(boolean) => value::tagged(i64::from(*boolean)),
-                    PatKind::Character(character) => {
-                        value::tagged(i64::from(u32::from(*character)))
-                    }
-                    _ => unreachable!(),
-                };
-                let equal = self.bind("", Op::Prim(Prim::WordEq, vec![value, Atom::Word(word)]));
-                self.test(equal, fail);
-            }
-            PatKind::String(text) => {
-                let equal = self.bind(
-                    "",
-                    Op::Prim(Prim::Equal, vec![value, Atom::String(text.clone())]),
-                );
-                self.test(equal, fail);
-            }
-            PatKind::Tuple(items) => {
-                for (index, item) in items.iter().enumerate() {
-                    let field = self.bind("", Op::Select(value.clone(), index));
-                    self.pattern(item, field, fail)?;
-                }
-            }
-            PatKind::Record(fields, _) => {
-                let Some(Ty::Record(labels)) = self.types.pat(pattern).cloned() else {
-                    return Err(unsupported_pattern("this record pattern", pattern));
-                };
-                for (label, item) in fields {
-                    let index = labels
-                        .iter()
-                        .position(|(known, _)| known == label)
-                        .expect("the record type has the pattern's labels");
-                    let field = self.bind("", Op::Select(value.clone(), index));
-                    self.pattern(item, field, fail)?;
-                }
-            }
-            PatKind::List(items) => {
-                let mut list = value;
-                for item in items {
-                    let boxed = self.bind("", Op::Prim(Prim::IsBoxed, vec![list.clone()]));
-                    self.test(boxed, fail);
-                    let head = self.bind("", Op::Select(list.clone(), 0));
-                    self.pattern(item, head, fail)?;
-                    list = self.bind("", Op::Select(list, 1));
-                }
-                let empty = self.bind(
-                    "",
-                    Op::Prim(Prim::WordEq, vec![list, Atom::Word(value::NIL)]),
-                );
-                self.test(empty, fail);
-            }
-            PatKind::Cons(head, tail) => {
-                let boxed = self.bind("", Op::Prim(Prim::IsBoxed, vec![value.clone()]));
-                self.test(boxed, fail);
-                let first = self.bind("", Op::Select(value.clone(), 0));
-                self.pattern(head, first, fail)?;
-                let rest = self.bind("", Op::Select(value, 1));
-                self.pattern(tail, rest, fail)?;
-            }
-            PatKind::Constructor(name, argument) if name == "::" => {
-                // A cons cell is laid out like the pair `(head, tail)`.
-                let boxed = self.bind("", Op::Prim(Prim::IsBoxed, vec![value.clone()]));
-                self.test(boxed, fail);
-                self.pattern(argument, value, fail)?;
-            }
-            PatKind::Constructor(name, argument) if name == "ref" => {
-                let contents = self.bind("", Op::Select(value, 0));
-                self.pattern(argument, contents, fail)?;
-            }
-            PatKind::Layered(name, _, inner) => {
-                let var = self.bind_local(name, value);
-                self.pattern(inner, Atom::Var(var), fail)?;
-            }
-            PatKind::Typed(inner, _) => self.pattern(inner, value, fail)?,
-            PatKind::Word(_) => return Err(unsupported_pattern("word patterns", pattern)),
-            PatKind::Constructor(..) => {
-                return Err(unsupported_pattern(
-                    "datatype constructor patterns",
-                    pattern,
-                ));
-            }
-        }
-        Ok(())
     }
 
     // --- expressions -----------------------------------------------------
@@ -1318,16 +1225,6 @@ impl Lowerer<'_> {
         let frame = self.frames.pop().expect("the composition's frame");
         self.functions.push(frame.finish());
         self.closure("", id, vec![f, g])
-    }
-}
-
-/// The word of a built-in nullary constructor.
-fn constant(name: &str) -> Option<i64> {
-    match name {
-        "nil" => Some(value::NIL),
-        "true" => Some(value::TRUE),
-        "false" => Some(value::FALSE),
-        _ => None,
     }
 }
 

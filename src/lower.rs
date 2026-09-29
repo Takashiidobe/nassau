@@ -303,6 +303,8 @@ enum Builtin {
     Ignore,
     Equal,
     Unequal,
+    Assign,
+    Before,
 }
 
 fn builtin(name: &str) -> Option<Builtin> {
@@ -317,6 +319,8 @@ fn builtin(name: &str) -> Option<Builtin> {
         "ignore" => Builtin::Ignore,
         "=" => Builtin::Equal,
         "<>" => Builtin::Unequal,
+        ":=" => Builtin::Assign,
+        "before" => Builtin::Before,
         _ => return None,
     })
 }
@@ -1287,6 +1291,12 @@ impl Lowerer<'_> {
                 };
                 self.bind("", Op::Prim(prim, vec![lhs, rhs]))
             }
+            Builtin::Assign => {
+                let cell = self.bind("", Op::Select(argument.clone(), 0));
+                let value = self.bind("", Op::Select(argument, 1));
+                self.bind("", Op::Prim(Prim::Assign, vec![cell, value]))
+            }
+            Builtin::Before => self.bind("", Op::Select(argument, 0)),
         }
     }
 

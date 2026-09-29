@@ -30,6 +30,8 @@ pub const KIND_CLOSURE: i64 = 1;
 pub const KIND_STRING: i64 = 2;
 /// One IEEE double.
 pub const KIND_REAL: i64 = 3;
+/// One mutable field.
+pub const KIND_REF: i64 = 4;
 
 /// A block's header word: its length above the kind byte.
 pub const fn header(length: i64, kind: i64) -> i64 {

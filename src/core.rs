@@ -64,6 +64,10 @@ pub enum Prim {
     Unequal,
     /// Whether a value is a pointer to a heap block rather than an immediate.
     IsBoxed,
+    /// Allocates a reference cell holding its argument.
+    Ref,
+    /// `r := v`: stores into a reference cell.
+    Assign,
     /// Prints a string.
     Print,
     /// `^`.
@@ -102,6 +106,8 @@ impl Prim {
             Prim::Equal => "equal",
             Prim::Unequal => "unequal",
             Prim::IsBoxed => "is_boxed",
+            Prim::Ref => "ref",
+            Prim::Assign => "assign",
             Prim::Print => "print",
             Prim::Concat => "concat",
             Prim::IntToString => "int.to_string",

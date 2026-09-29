@@ -3,7 +3,7 @@ fun double n = n + n
 val four = double 2
 (* CHECK-STDOUT: global g0 double *)
 (* CHECK-STDOUT-NEXT: global g1 four *)
-(* CHECK-STDOUT-NEXT: fn f1 double(v0:env, v1) { *)
+(* CHECK-STDOUT-NEXT: fn f1 double(v0:env, v1:n) { *)
 (* CHECK-STDOUT-NEXT:   b0(): *)
 (* CHECK-STDOUT-NEXT:     v2 = int.add(v1, v1) *)
 (* CHECK-STDOUT-NEXT:     return v2 *)

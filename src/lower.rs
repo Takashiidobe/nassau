@@ -248,6 +248,9 @@ enum Builtin {
     Size,
     Not,
     Negate,
+    Ref,
+    Deref,
+    Ignore,
 }
 
 fn builtin(name: &str) -> Option<Builtin> {
@@ -257,6 +260,9 @@ fn builtin(name: &str) -> Option<Builtin> {
         "size" => Builtin::Size,
         "not" => Builtin::Not,
         "~" => Builtin::Negate,
+        "ref" => Builtin::Ref,
+        "!" => Builtin::Deref,
+        "ignore" => Builtin::Ignore,
         _ => return None,
     })
 }
@@ -633,6 +639,11 @@ impl Lowerer<'_> {
     /// Binds `name` to `value` in the scope.
     fn bind_local(&mut self, name: &str, value: Atom) -> Var {
         let var = self.var_for(name, value);
+        // Name an anonymous variable, such as a parameter, for dumps.
+        let frame = self.frame();
+        if frame.vars[var].is_empty() {
+            frame.vars[var] = name.to_string();
+        }
         let depth = self.depth();
         self.scope.push((
             name.to_string(),
@@ -727,6 +738,10 @@ impl Lowerer<'_> {
                 self.test(boxed, fail);
                 self.pattern(argument, value, fail)?;
             }
+            PatKind::Constructor(name, argument) if name == "ref" => {
+                let contents = self.bind("", Op::Select(value, 0));
+                self.pattern(argument, contents, fail)?;
+            }
             PatKind::Layered(name, _, inner) => {
                 let var = self.bind_local(name, value);
                 self.pattern(inner, Atom::Var(var), fail)?;
@@ -810,9 +825,10 @@ impl Lowerer<'_> {
             ExprKind::Unit => Atom::Word(value::tagged(0)),
             ExprKind::Variable(name) => match self.lookup(name) {
                 Some(binding) => self.load(name, &binding),
-                None => match constant(name) {
-                    Some(word) => Atom::Word(word),
-                    None => {
+                None => match (constant(name), builtin(name)) {
+                    (Some(word), _) => Atom::Word(word),
+                    (None, Some(builtin)) => self.builtin_closure(name, builtin),
+                    (None, None) => {
                         return Err(unsupported(
                             &format!("built-in functions used as values, such as {name},"),
                             expr,
@@ -939,6 +955,28 @@ impl Lowerer<'_> {
                 self.bind("", Op::Prim(prim, vec![lhs, rhs]))
             }
             ExprKind::Infix(name, lhs, rhs) => self.infix(name, lhs, rhs, expr)?,
+            ExprKind::Fn(rules) => {
+                let definition = Definition {
+                    name: "fn",
+                    clauses: rules.iter().map(|(p, body)| (vec![p], body)).collect(),
+                    location: self.source.end(expr),
+                };
+                self.lambda("", &definition)?
+            }
+            ExprKind::While(condition, body) => {
+                let header = self.block(Vec::new());
+                let looped = self.block(Vec::new());
+                let done = self.block(Vec::new());
+                self.terminate(Term::Jump(header, Vec::new()));
+                self.switch(header);
+                let condition = self.value(condition)?;
+                self.terminate(Term::If(condition, looped, done));
+                self.switch(looped);
+                self.value(body)?;
+                self.terminate(Term::Jump(header, Vec::new()));
+                self.switch(done);
+                Atom::Word(value::tagged(0))
+            }
             ExprKind::Apply(..) => self.apply(expr)?,
             ExprKind::PosixExit(word8) => {
                 let ExprKind::Word8FromInt(status) = &word8.value else {
@@ -959,9 +997,35 @@ impl Lowerer<'_> {
             "::" => None,
             "^" => Some(Prim::Concat),
             "mod" => Some(Prim::IntMod),
-            _ => return Err(unsupported(&format!("the infix operator {name}"), expr)),
+            ":=" => Some(Prim::Assign),
+            "o" | "before" => None,
+            _ => {
+                // A function declared infix is called with the pair.
+                let Some(binding) = self.lookup(name) else {
+                    return Err(unsupported(&format!("the infix operator {name}"), expr));
+                };
+                let pair = vec![self.value(lhs)?, self.value(rhs)?];
+                let pair = self.bind("", Op::Record(pair));
+                let known = match &binding {
+                    Binding::Global(_, known) | Binding::Local { known, .. } => *known,
+                };
+                let function = self.load(name, &binding);
+                let callee = match known {
+                    Some(Known { worker, arity: 1 }) => Callee::Known(worker, function),
+                    _ => Callee::Closure(function),
+                };
+                return Ok(self.bind("", Op::Call(callee, vec![pair])));
+            }
         };
         let mut args = vec![self.value(lhs)?, self.value(rhs)?];
+        if name == "o" {
+            let g = args.pop().expect("two operands");
+            let f = args.pop().expect("two operands");
+            return Ok(self.compose(f, g));
+        }
+        if name == "before" {
+            return Ok(args.swap_remove(0));
+        }
         Ok(match prim {
             // A cons cell is a record of the head and the tail.
             None => self.bind("", Op::Record(args)),
@@ -984,34 +1048,62 @@ impl Lowerer<'_> {
         }
         args.reverse();
         let head = strip_typed(head);
+        let mut rest = args.as_slice();
+        let mut function = None;
         if let ExprKind::Variable(name) = &head.value {
             let binding = self.lookup(name);
             if binding.is_none()
                 && let Some(builtin) = builtin(name)
-                && let [argument] = args.as_slice()
             {
-                let argument = self.value(argument)?;
-                return Ok(self.builtin(builtin, argument));
-            }
-            if let Some(binding) = binding {
+                let real = self.is_real(args[0]);
+                let argument = self.value(args[0])?;
+                function = Some(match builtin {
+                    Builtin::Negate if real => {
+                        self.bind("", Op::Prim(Prim::RealNeg, vec![argument]))
+                    }
+                    builtin => self.builtin(builtin, argument),
+                });
+                rest = &args[1..];
+            } else if let Some(binding) = binding {
                 let known = match &binding {
                     Binding::Global(_, known) | Binding::Local { known, .. } => *known,
                 };
                 if let Some(known) = known
-                    && args.len() == known.arity
+                    && args.len() >= known.arity
                 {
                     let closure = self.load(name, &binding);
-                    let values = args
+                    let values = args[..known.arity]
                         .iter()
                         .map(|arg| self.value(arg))
                         .collect::<Res<Vec<_>>>()?;
-                    return Ok(
-                        self.bind("", Op::Call(Callee::Known(known.worker, closure), values))
-                    );
+                    function =
+                        Some(self.bind("", Op::Call(Callee::Known(known.worker, closure), values)));
+                    rest = &args[known.arity..];
                 }
             }
         }
-        Err(unsupported("calls to unknown functions", expr))
+        if let ExprKind::Selector(label) = &head.value {
+            let record = self.value(args[0])?;
+            let Some(Ty::Record(labels)) = self.ty(args[0]).cloned() else {
+                return Err(unsupported("selectors on records of unknown shape", expr));
+            };
+            let index = labels
+                .iter()
+                .position(|(known, _)| known == label)
+                .expect("the record type has the selected label");
+            function = Some(self.bind("", Op::Select(record, index)));
+            rest = &args[1..];
+        }
+        // Anything else is a closure called one argument at a time.
+        let mut function = match function {
+            Some(function) => function,
+            None => self.value(head)?,
+        };
+        for argument in rest {
+            let argument = self.value(argument)?;
+            function = self.bind("", Op::Call(Callee::Closure(function), vec![argument]));
+        }
+        Ok(function)
     }
 
     fn builtin(&mut self, builtin: Builtin, argument: Atom) -> Atom {
@@ -1024,7 +1116,60 @@ impl Lowerer<'_> {
                 Op::Prim(Prim::WordEq, vec![argument, Atom::Word(value::FALSE)]),
             ),
             Builtin::Negate => self.bind("", Op::Prim(Prim::IntNeg, vec![argument])),
+            Builtin::Ref => self.bind("", Op::Prim(Prim::Ref, vec![argument])),
+            Builtin::Deref => self.bind("", Op::Select(argument, 0)),
+            Builtin::Ignore => Atom::Word(value::tagged(0)),
         }
+    }
+
+    /// A closure for a built-in function used as a value.
+    fn builtin_closure(&mut self, name: &str, builtin: Builtin) -> Atom {
+        let id = self.session.function_id();
+        self.frames.push(Builder::new(id, name, vec!["env", ""]));
+        let argument = Atom::Var(self.frame().params[1]);
+        let result = self.builtin(builtin, argument);
+        self.terminate(Term::Return(result));
+        let frame = self.frames.pop().expect("the builtin's frame");
+        self.functions.push(frame.finish());
+        self.closure(name, id, Vec::new())
+    }
+
+    /// Allocates a closure of the function `code`.
+    fn closure(&mut self, name: &str, code: FnId, captured: Vec<Atom>) -> Atom {
+        let var = self.frame().var(name);
+        self.emit(Stmt::Closures(vec![Closure {
+            var,
+            code,
+            captured,
+        }]));
+        Atom::Var(var)
+    }
+
+    /// Compiles an anonymous function and allocates its closure.
+    fn lambda(&mut self, name: &str, definition: &Definition) -> Res<Atom> {
+        let id = self.session.function_id();
+        let captures = self.function(id, definition)?;
+        let captured = captures
+            .into_iter()
+            .map(|(depth, var)| Atom::Var(self.access(depth, var)))
+            .collect();
+        Ok(self.closure(name, id, captured))
+    }
+
+    /// `f o g`: a closure calling `g`, then `f`, both captured.
+    fn compose(&mut self, f: Atom, g: Atom) -> Atom {
+        let id = self.session.function_id();
+        self.frames.push(Builder::new(id, "o", vec!["env", ""]));
+        let env = Atom::Var(self.frame().params[0]);
+        let argument = Atom::Var(self.frame().params[1]);
+        let f_inner = self.bind("f", Op::Select(env.clone(), 1));
+        let g_inner = self.bind("g", Op::Select(env, 2));
+        let inner = self.bind("", Op::Call(Callee::Closure(g_inner), vec![argument]));
+        let result = self.bind("", Op::Call(Callee::Closure(f_inner), vec![inner]));
+        self.terminate(Term::Return(result));
+        let frame = self.frames.pop().expect("the composition's frame");
+        self.functions.push(frame.finish());
+        self.closure("", id, vec![f, g])
     }
 }
 
@@ -1069,10 +1214,8 @@ fn unsupported_pattern(what: &str, pattern: &Pat) -> Failure {
 fn unsupported_name(kind: &ExprKind) -> &'static str {
     match kind {
         ExprKind::Word(_) => "word literals",
-        ExprKind::Selector(_) => "record selectors",
+        ExprKind::Selector(_) => "record selectors used as values",
         ExprKind::Let(..) => "let expressions",
-        ExprKind::Fn(_) => "fn expressions",
-        ExprKind::While(..) => "while loops",
         ExprKind::Raise(_) => "raise",
         ExprKind::Handle(..) => "handle",
         _ => "this expression",

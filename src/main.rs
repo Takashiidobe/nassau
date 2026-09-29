@@ -137,7 +137,11 @@ fn run(cli: &Cli) -> miette::Result<Option<PathBuf>> {
         || input.display().to_string(),
         |name| name.to_string_lossy().into_owned(),
     );
-    let source = lower::Source { file, text: source };
+    let source = lower::Source {
+        file,
+        text: source,
+        first_line: 1,
+    };
     let module = lower::Session::new()
         .lower(&program, &checked.types, &source, "main")
         .map_err(|(error, span)| {

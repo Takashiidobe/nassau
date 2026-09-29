@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 use clap::ValueEnum;
 use cranelift_codegen::ir::{
-    AbiParam, BlockArg, FuncRef, InstBuilder, MemFlagsData, Signature, TrapCode, Value,
+    AbiParam, BlockArg, FuncRef, InstBuilder, MemFlagsData, Signature, Value,
     condcodes::{FloatCC, IntCC},
     types,
 };
@@ -696,8 +696,7 @@ impl<M: Module> Translator<'_, M> {
                     .builder
                     .ins()
                     .icmp_imm_s(IntCC::Equal, args[1], value::tagged(0));
-                let location = self.builder.ins().iadd_imm_s(args[2], 8);
-                self.raise_if(zero, "Div", location)?;
+                self.raise_if(zero, "Div", args[2])?;
                 let lhs = self.untag(args[0]);
                 let rhs = self.untag(args[1]);
                 let quotient = self.builder.ins().sdiv(lhs, rhs);
@@ -842,29 +841,8 @@ impl<M: Module> Translator<'_, M> {
         })
     }
 
-    /// A NUL-terminated C string in static data.
-    fn c_string(&mut self, text: &str) -> Result<Value, CodegenError> {
-        let mut bytes = text.as_bytes().to_vec();
-        bytes.push(0);
-        self.data(bytes)
-    }
-
-    /// Reports the uncaught exception `name`, raised at `location`, and
-    /// exits; the current block ends here.
-    fn raise(&mut self, name: &str, location: &str) -> Result<(), CodegenError> {
-        let name = self.c_string(name)?;
-        let location = self.c_string(location)?;
-        self.call_c(
-            "nassau_raise",
-            &[types::I64, types::I64],
-            None,
-            &[name, location],
-        )?;
-        self.builder.ins().trap(TrapCode::unwrap_user(1));
-        Ok(())
-    }
-
-    /// Raises `name` when `condition` holds; `location` is a C string.
+    /// Raises the built-in exception `name` when `condition` holds;
+    /// `location` is the string naming where.
     fn raise_if(
         &mut self,
         condition: Value,
@@ -876,15 +854,23 @@ impl<M: Module> Translator<'_, M> {
         self.builder.set_cold_block(raise);
         self.builder.ins().brif(condition, raise, &[], next, &[]);
         self.builder.switch_to_block(raise);
-        let name = self.c_string(name)?;
+        self.raise_builtin(name, location)?;
+        self.builder.switch_to_block(next);
+        Ok(())
+    }
+
+    /// Raises the built-in exception `name`, ending the current block.
+    fn raise_builtin(&mut self, name: &str, location: Value) -> Result<(), CodegenError> {
+        let index = value::builtin_exception(name).expect("a built-in exception");
+        let index = self.word(value::tagged(index));
         self.call_c(
-            "nassau_raise",
+            "nassau_raise_builtin",
             &[types::I64, types::I64],
             None,
-            &[name, location],
+            &[index, location],
         )?;
-        self.builder.ins().trap(TrapCode::unwrap_user(1));
-        self.builder.switch_to_block(next);
+        let landing = self.landing();
+        self.builder.ins().jump(landing, &[]);
         Ok(())
     }
 
@@ -895,7 +881,7 @@ impl<M: Module> Translator<'_, M> {
         let wide = self.builder.ins().sextend(types::I64, narrow);
         let outside = self.builder.ins().icmp(IntCC::NotEqual, wide, word);
         // SML/NJ reports Overflow at the file, not a position in it.
-        let location = self.c_string(&format!("<file {}>", self.file))?;
+        let location = self.atom(&Atom::String(format!("<file {}>", self.file)))?;
         self.raise_if(outside, "Overflow", location)?;
         Ok(word)
     }
@@ -1051,12 +1037,13 @@ impl<M: Module> Translator<'_, M> {
                     Failure::Match => "Match",
                     Failure::Bind => "Bind",
                 };
-                self.raise(name, location)?;
+                let location = self.atom(&Atom::String(location.clone()))?;
+                self.raise_builtin(name, location)?;
             }
             Term::Raise(exception, location) => {
                 let exception = self.atom(exception)?;
                 let location = match location {
-                    Some(location) => self.c_string(location)?,
+                    Some(location) => self.atom(&Atom::String(location.clone()))?,
                     // A handler passing an exception on keeps its position.
                     None => self.word(0),
                 };

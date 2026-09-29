@@ -32,7 +32,7 @@ fun fail n = raise Code n
 (* CHECK-STDOUT-NEXT:     jump b1(v1) *)
 (* CHECK-STDOUT-NEXT:   b1(v2:n): *)
 (* CHECK-STDOUT-NEXT:     v3:exn Code = g0 *)
-(* CHECK-STDOUT-NEXT:     v4 = record(v3, v2) *)
+(* CHECK-STDOUT-NEXT:     v4 = record(v3, v2, #0) *)
 (* CHECK-STDOUT-NEXT:     raise v4 at handle.sml:5.20-5.26 *)
 (* CHECK-STDOUT-NEXT:   b2(): *)
 (* CHECK-STDOUT-NEXT:     return #0 *)

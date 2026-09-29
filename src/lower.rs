@@ -84,6 +84,12 @@ impl Session {
             .map(|(_, binding)| binding.clone())
     }
 
+    /// Drops the top-level names bound since `earlier`, keeping the
+    /// functions and globals numbered since, which are already compiled.
+    pub fn forget_bindings(&mut self, earlier: &Session) {
+        self.globals.clone_from(&earlier.globals);
+    }
+
     fn function_id(&mut self) -> FnId {
         self.next_function += 1;
         self.next_function - 1
@@ -131,6 +137,9 @@ pub struct Source {
     /// The file name as SML/NJ shows it: without directories.
     pub file: String,
     pub text: String,
+    /// The line `text` starts on: the REPL numbers lines across its whole
+    /// input.
+    pub first_line: usize,
 }
 
 impl Source {
@@ -138,7 +147,7 @@ impl Source {
     /// SML/NJ counts the first line's columns from 2.
     fn position(&self, offset: usize) -> String {
         let before = &self.text[..offset.min(self.text.len())];
-        let line = before.matches('\n').count() + 1;
+        let line = before.matches('\n').count() + self.first_line;
         let mut column = before.len() - before.rfind('\n').map_or(0, |newline| newline + 1) + 1;
         if line == 1 {
             column += 1;
@@ -146,27 +155,32 @@ impl Source {
         format!("{line}.{column}")
     }
 
+    /// The bytes from `start` to `end` as SML/NJ names them: a single
+    /// character by its own position.
+    fn span(&self, start: usize, end: usize) -> String {
+        if end <= start + 1 {
+            format!("{}:{}", self.file, self.position(start))
+        } else {
+            format!(
+                "{}:{}-{}",
+                self.file,
+                self.position(start),
+                self.position(end)
+            )
+        }
+    }
+
     /// Where SML/NJ reports an exception raised by the infix operator `name`
     /// between `lhs` and `rhs`: the operator's own span.
     fn operator(&self, name: &str, lhs: &Expr, rhs: &Expr) -> String {
         let between = &self.text[lhs.end.offset..rhs.start.offset];
         let start = lhs.end.offset + between.find(name).unwrap_or(0);
-        format!(
-            "{}:{}-{}",
-            self.file,
-            self.position(start),
-            self.position(start + name.len())
-        )
+        self.span(start, start + name.len())
     }
 
     /// Where SML/NJ reports `raise argument`: the argument's span.
     fn raised(&self, argument: &Expr) -> String {
-        format!(
-            "{}:{}-{}",
-            self.file,
-            self.position(argument.start.offset),
-            self.position(argument.end.offset)
-        )
+        self.span(argument.start.offset, argument.end.offset)
     }
 
     /// Where a failed match is reported: the end of `expr`.
@@ -492,12 +506,7 @@ impl Lowerer<'_> {
                 }
                 let mut bound = Vec::new();
                 for ((pattern, expr), value) in bindings.iter().zip(values) {
-                    let location = format!(
-                        "{}:{}-{}",
-                        self.source.file,
-                        self.source.position(pattern.start.offset),
-                        self.source.position(expr.end.offset)
-                    );
+                    let location = self.source.span(pattern.start.offset, expr.end.offset);
                     let decided = self.decide(
                         &[value],
                         &[vec![pattern]],
@@ -1294,7 +1303,9 @@ impl Lowerer<'_> {
             Test::Word { word, .. } => Atom::Word(*word),
             Test::String(_) => unreachable!("strings are not constructors"),
             Test::Exception { identity, .. } => {
-                self.bind("", Op::Record(vec![identity.clone(), argument]))
+                // The last field is where the value is first raised.
+                let unraised = Atom::Word(value::tagged(0));
+                self.bind("", Op::Record(vec![identity.clone(), argument, unraised]))
             }
         }
     }

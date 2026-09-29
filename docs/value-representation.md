@@ -38,7 +38,6 @@ header = (length << 8) | kind
 | string | 2 | bytes | the bytes, NUL-terminated and padded to a word |
 | real | 3 | 1 | one IEEE double, not a value |
 | ref | 4 | 1 | one mutable value |
-| exception packet | 5 | fields | field 0 identifies the exception, field 1 its argument |
 
 Values of the record and ref kinds and closures after field 0 are values the
 collector must trace; string and real blocks hold raw bytes.
@@ -54,8 +53,10 @@ collector must trace; string and real blocks hold raw bytes.
   it has only one, as `option` has `SOME`, the tag is left out and the block
   holds just the argument; a match tells it from the nullary constructors,
   which are immediates, by whether the value is a block.
-- **Exceptions** are record blocks `[identity, argument]`, with `()` as the
-  argument of a constructor that takes none. The identity is a reference
+- **Exceptions** are record blocks `[identity, argument, raised at]`, with
+  `()` as the argument of a constructor that takes none. The last field is
+  `()` until the value is first raised and then the string naming where, as
+  SML/NJ reports it; raising the same value again keeps it. The identity is a reference
   cell holding the exception's name, allocated each time the `exception`
   declaration is evaluated, so declarations inside functions are
   generative; a replication (`exception F = E`) shares its original's

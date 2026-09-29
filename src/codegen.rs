@@ -756,6 +756,15 @@ impl<M: Module> Translator<'_, M> {
                 let length = self.builder.ins().sshr_imm_u(header, 8);
                 self.tag(length)
             }
+            Prim::Ref => {
+                let cell = self.allocate(1, value::KIND_REF)?;
+                self.store(args[0], cell, 8);
+                cell
+            }
+            Prim::Assign => {
+                self.store(args[1], args[0], 8);
+                self.word(value::tagged(0))
+            }
             Prim::Exit => {
                 self.call_c("nassau_exit", &[types::I64], None, args)?;
                 self.word(value::tagged(0))

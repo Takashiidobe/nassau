@@ -52,6 +52,11 @@ fn is_parser_fixture(fixture: &Path) -> bool {
     in_directory(fixture, "parser")
 }
 
+/// Core fixtures are checked through `--dump-core`, not compiled and run.
+fn is_core_fixture(fixture: &Path) -> bool {
+    in_directory(fixture, "core")
+}
+
 /// Type fixtures are checked through `--dump-types`, not compiled and run.
 fn is_types_fixture(fixture: &Path) -> bool {
     in_directory(fixture, "types")
@@ -144,6 +149,9 @@ fn compare_fixture(fixture: &Path, smlnj: &str) {
     if is_parser_fixture(fixture) {
         nassau_command.arg("--dump-ast");
     }
+    if is_core_fixture(fixture) {
+        nassau_command.arg("--dump-core");
+    }
     if is_types_fixture(fixture) {
         // Fixtures under types/nodes list the type of every expression.
         if in_directory(fixture, "nodes") {
@@ -178,6 +186,7 @@ fn compare_fixture(fixture: &Path, smlnj: &str) {
         || is_lists_fixture(fixture)
         || is_lexer_fixture(fixture)
         || is_parser_fixture(fixture)
+        || is_core_fixture(fixture)
         || is_types_fixture(fixture)
     {
         assert_eq!(
@@ -202,7 +211,9 @@ fn compare_fixture(fixture: &Path, smlnj: &str) {
         return;
     }
 
-    if (is_parser_fixture(fixture) || is_types_fixture(fixture)) && valid {
+    if (is_parser_fixture(fixture) || is_core_fixture(fixture) || is_types_fixture(fixture))
+        && valid
+    {
         common::check_stream(fixture, &source, "CHECK-STDOUT", &nassau.stdout, true)
             .unwrap_or_else(|error| panic!("{error}"));
         common::check_stream(fixture, &source, "CHECK-STDERR", &nassau.stderr, true)

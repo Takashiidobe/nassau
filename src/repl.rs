@@ -1,17 +1,21 @@
-use std::collections::HashMap;
 use std::io::{self, BufRead, Write};
 
-use crate::codegen::{Codegen, CodegenOptions, OptLevel};
+use crate::codegen::{Codegen, CodegenOptions, OptLevel, Symbols};
 use crate::error::{CodegenError, SourceError};
-use crate::parser::{NumericValue, Parser, Program};
-use crate::sema::{self, Analyzer, ArithmeticOperator, ComparisonOperator, Type};
+use crate::infer::{self, Ty};
+use crate::lower;
+use crate::parser::{Parser, Program};
+use crate::sema::Analyzer;
+use crate::value;
 
 pub struct Repl {
     codegen: Codegen,
     module: cranelift_jit::JITModule,
+    symbols: Symbols,
     next_chunk: usize,
-    variables: HashMap<String, NumericValue>,
     analyzer: Analyzer,
+    types: infer::Session,
+    lowering: lower::Session,
 }
 
 impl Repl {
@@ -38,9 +42,11 @@ impl Repl {
         Ok(Self {
             codegen,
             module,
+            symbols: Symbols::default(),
             next_chunk: 0,
-            variables: HashMap::new(),
             analyzer: Analyzer::new(),
+            types: infer::Session::new(),
+            lowering: lower::Session::new(),
         })
     }
 
@@ -60,38 +66,44 @@ impl Repl {
 
     fn execute(&mut self, source: &str) -> miette::Result<()> {
         let chunk = self.next_chunk;
+        self.next_chunk += 1;
         let program = self.parse(source, chunk)?;
-        let mut analyzer = self.analyzer.clone();
         let named_source = miette::NamedSource::new(format!("<repl:{chunk}>"), source.to_owned());
+        // Each stage works on a copy of its environment, kept only once the
+        // whole chunk has compiled.
+        let mut types = self.types.clone();
+        let checked = types
+            .check(&program)
+            .map_err(|(error, span)| report(error, span, &named_source))?;
+        let mut analyzer = self.analyzer.clone();
         analyzer
             .analyze_program(&program)
-            .map_err(|(error, span)| {
-                miette::Report::new(SourceError::new(error, span)).with_source_code(named_source)
-            })?;
-        let name = format!("nassau_repl_{chunk}");
-        let function = self
+            .map_err(|(error, span)| report(error, span, &named_source))?;
+        let mut lowering = self.lowering.clone();
+        let module = lowering
+            .lower(&program, &checked.types, &format!("nassau_repl_{chunk}"))
+            .map_err(|(error, span)| report(error, span, &named_source))?;
+        let entry = self
             .codegen
-            .compile_jit_chunk(&mut self.module, &program, &name, &self.variables)
+            .compile_jit_chunk(&mut self.module, &mut self.symbols, &module)
             .map_err(miette::Report::msg)?;
-        let function: extern "C" fn() -> i32 = unsafe { std::mem::transmute(function) };
-        let result = function();
-        for statement in &program.statements {
-            if let crate::parser::StmtKind::Val(name, expr) = &statement.value {
-                let value = evaluate_integer_expr(expr, &self.variables);
-                self.variables.insert(name.clone(), value);
-                match value {
-                    NumericValue::Integer(value) => println!("val {name} = {value} : int"),
-                    NumericValue::Real(value) => println!("val {name} = {value:?} : real"),
-                    NumericValue::Boolean(value) => println!("val {name} = {value} : bool"),
-                    NumericValue::List(_) => println!("val {name} = [] : _ list"),
-                }
-            }
-        }
+        self.types = types;
         self.analyzer = analyzer;
-        if program.statements.is_empty() {
-            println!("val it = {result} : int");
+        self.lowering = lowering;
+        let status = entry();
+        for binding in &checked.bindings {
+            let word = self
+                .lowering
+                .global(&binding.name)
+                .and_then(|global| Codegen::global_address(&self.module, &self.symbols, global))
+                // SAFETY: a global's cell holds one word, written by the chunk.
+                .map(|address| unsafe { address.read() });
+            let shown = word.map_or_else(|| "-".to_string(), |word| show(word, &binding.resolved));
+            println!("val {} = {shown} : {}", binding.name, binding.ty);
         }
-        self.next_chunk += 1;
+        if program.statements.is_empty() {
+            println!("val it = {status} : int");
+        }
         Ok(())
     }
 
@@ -99,218 +111,88 @@ impl Repl {
         let stdin = io::stdin();
         let mut input = stdin.lock();
         let mut line = String::new();
+        let mut chunk = String::new();
         loop {
-            print!("nassau> ");
-            io::stdout()
-                .flush()
-                .map_err(|error| miette::miette!("{error}"))?;
+            if chunk.is_empty() {
+                print!("nassau> ");
+                io::stdout()
+                    .flush()
+                    .map_err(|error| miette::miette!("{error}"))?;
+            }
             line.clear();
             let bytes = input
                 .read_line(&mut line)
                 .map_err(|error| miette::miette!("{error}"))?;
-            if bytes == 0 {
-                break;
-            }
-            if line.trim().is_empty() {
+            chunk.push_str(&line);
+            // Like SML/NJ, a chunk runs at a semicolon ending a line, or at
+            // the end of the input.
+            let complete = bytes == 0 || chunk.trim_end().ends_with(';');
+            if !complete {
                 continue;
             }
-            if let Err(error) = self.execute(&line) {
+            if !chunk.trim().is_empty()
+                && let Err(error) = self.execute(&chunk)
+            {
                 eprintln!("{error:?}");
+            }
+            chunk.clear();
+            if bytes == 0 {
+                break;
             }
         }
         Ok(())
     }
 }
 
-fn evaluate_integer_expr(
-    expr: &crate::parser::Expr,
-    variables: &HashMap<String, NumericValue>,
-) -> NumericValue {
-    match &expr.value {
-        crate::parser::ExprKind::Integer(value) => NumericValue::Integer(*value as i32),
-        crate::parser::ExprKind::Real(value) => NumericValue::Real(*value),
-        crate::parser::ExprKind::Boolean(value) => NumericValue::Boolean(*value),
-        crate::parser::ExprKind::List(elements) => {
-            let mut slots = Vec::with_capacity(elements.len() + 1);
-            slots.push(elements.len() as u64);
-            for element in elements {
-                slots.push(match evaluate_integer_expr(element, variables) {
-                    NumericValue::Integer(value) => value as i64 as u64,
-                    NumericValue::Real(value) => value.to_bits(),
-                    NumericValue::Boolean(value) => u64::from(value),
-                    NumericValue::List(value) => value as usize as u64,
-                });
+fn report<E: std::error::Error + Send + Sync + 'static>(
+    error: E,
+    span: miette::SourceSpan,
+    source: &miette::NamedSource<String>,
+) -> miette::Report {
+    miette::Report::new(SourceError::new(error, span)).with_source_code(source.clone())
+}
+
+/// A value as SML/NJ's top level prints it.
+fn show(word: u64, ty: &Ty) -> String {
+    let word = word as i64;
+    // SAFETY (for every read below): the type says the word points to a heap
+    // block of the matching shape.
+    let field = |block: i64, index: usize| unsafe { *((block as *const i64).add(index + 1)) };
+    match ty {
+        Ty::Con {
+            name,
+            stamp: 0,
+            args,
+        } => match (name.as_str(), args.as_slice()) {
+            ("int", _) => {
+                let value = word >> 1;
+                if value < 0 {
+                    format!("~{}", -value)
+                } else {
+                    value.to_string()
+                }
             }
-            NumericValue::List(Box::into_raw(slots.into_boxed_slice()) as *mut u64)
-        }
-        crate::parser::ExprKind::Variable(name) => variables[name],
-        crate::parser::ExprKind::If(condition, consequent, alternative) => {
-            let NumericValue::Boolean(condition) = evaluate_integer_expr(condition, variables)
-            else {
-                unreachable!()
-            };
-            if condition {
-                evaluate_integer_expr(consequent, variables)
-            } else {
-                evaluate_integer_expr(alternative, variables)
+            ("bool", _) => (word == value::TRUE).to_string(),
+            ("unit", _) => "()".to_string(),
+            ("real", _) => {
+                let real = f64::from_bits(field(word, 0) as u64);
+                let text = format!("{real:?}");
+                text.replace('-', "~")
             }
-        }
-        crate::parser::ExprKind::Add(lhs, rhs) => {
-            apply_numeric_op(ArithmeticOperator::Add, lhs, rhs, variables)
-        }
-        crate::parser::ExprKind::Subtract(lhs, rhs) => {
-            apply_numeric_op(ArithmeticOperator::Subtract, lhs, rhs, variables)
-        }
-        crate::parser::ExprKind::Multiply(lhs, rhs) => {
-            apply_numeric_op(ArithmeticOperator::Multiply, lhs, rhs, variables)
-        }
-        crate::parser::ExprKind::Divide(lhs, rhs) => {
-            apply_numeric_op(ArithmeticOperator::Divide, lhs, rhs, variables)
-        }
-        crate::parser::ExprKind::IntDivide(lhs, rhs) => {
-            apply_numeric_op(ArithmeticOperator::IntDivide, lhs, rhs, variables)
-        }
-        crate::parser::ExprKind::Greater(lhs, rhs) => {
-            apply_comparison(ComparisonOperator::Greater, lhs, rhs, variables)
-        }
-        crate::parser::ExprKind::GreaterEqual(lhs, rhs) => {
-            apply_comparison(ComparisonOperator::GreaterEqual, lhs, rhs, variables)
-        }
-        crate::parser::ExprKind::Less(lhs, rhs) => {
-            apply_comparison(ComparisonOperator::Less, lhs, rhs, variables)
-        }
-        crate::parser::ExprKind::LessEqual(lhs, rhs) => {
-            apply_comparison(ComparisonOperator::LessEqual, lhs, rhs, variables)
-        }
-        crate::parser::ExprKind::Equal(lhs, rhs) => {
-            apply_comparison(ComparisonOperator::Equal, lhs, rhs, variables)
-        }
-        crate::parser::ExprKind::NotEqual(lhs, rhs) => {
-            apply_comparison(ComparisonOperator::NotEqual, lhs, rhs, variables)
-        }
-        _ => unreachable!(),
+            ("list", [element]) => {
+                let mut items = Vec::new();
+                let mut cell = word;
+                while cell != value::NIL {
+                    items.push(show(field(cell, 0) as u64, element));
+                    cell = field(cell, 1);
+                }
+                format!("[{}]", items.join(","))
+            }
+            _ => "-".to_string(),
+        },
+        Ty::Arrow(..) => "fn".to_string(),
+        _ => "-".to_string(),
     }
-}
-
-fn apply_numeric_op(
-    operator: ArithmeticOperator,
-    lhs: &crate::parser::Expr,
-    rhs: &crate::parser::Expr,
-    variables: &HashMap<String, NumericValue>,
-) -> NumericValue {
-    let lhs = evaluate_integer_expr(lhs, variables);
-    let rhs = evaluate_integer_expr(rhs, variables);
-    let result_type = sema::arithmetic_result(operator, numeric_type(lhs), numeric_type(rhs))
-        .expect("semantic analysis has already validated arithmetic");
-    match (operator, result_type, lhs, rhs) {
-        (
-            ArithmeticOperator::Add,
-            Type::Integer,
-            NumericValue::Integer(lhs),
-            NumericValue::Integer(rhs),
-        ) => NumericValue::Integer(lhs.wrapping_add(rhs)),
-        (
-            ArithmeticOperator::Subtract,
-            Type::Integer,
-            NumericValue::Integer(lhs),
-            NumericValue::Integer(rhs),
-        ) => NumericValue::Integer(lhs.wrapping_sub(rhs)),
-        (
-            ArithmeticOperator::Multiply,
-            Type::Integer,
-            NumericValue::Integer(lhs),
-            NumericValue::Integer(rhs),
-        ) => NumericValue::Integer(lhs.wrapping_mul(rhs)),
-        (
-            ArithmeticOperator::IntDivide,
-            Type::Integer,
-            NumericValue::Integer(lhs),
-            NumericValue::Integer(rhs),
-        ) => NumericValue::Integer(lhs / rhs),
-        (ArithmeticOperator::Add, Type::Real, NumericValue::Real(lhs), NumericValue::Real(rhs)) => {
-            NumericValue::Real(lhs + rhs)
-        }
-        (
-            ArithmeticOperator::Subtract,
-            Type::Real,
-            NumericValue::Real(lhs),
-            NumericValue::Real(rhs),
-        ) => NumericValue::Real(lhs - rhs),
-        (
-            ArithmeticOperator::Multiply,
-            Type::Real,
-            NumericValue::Real(lhs),
-            NumericValue::Real(rhs),
-        ) => NumericValue::Real(lhs * rhs),
-        (
-            ArithmeticOperator::Divide,
-            Type::Real,
-            NumericValue::Real(lhs),
-            NumericValue::Real(rhs),
-        ) => NumericValue::Real(lhs / rhs),
-        _ => unreachable!(),
-    }
-}
-
-fn numeric_type(value: NumericValue) -> Type {
-    match value {
-        NumericValue::Integer(_) => Type::Integer,
-        NumericValue::Real(_) => Type::Real,
-        NumericValue::Boolean(_) => Type::Boolean,
-        NumericValue::List(_) => Type::List(Box::new(Type::Variable(0))),
-    }
-}
-
-fn apply_comparison(
-    operator: ComparisonOperator,
-    lhs: &crate::parser::Expr,
-    rhs: &crate::parser::Expr,
-    variables: &HashMap<String, NumericValue>,
-) -> NumericValue {
-    let lhs = evaluate_integer_expr(lhs, variables);
-    let rhs = evaluate_integer_expr(rhs, variables);
-    sema::comparison_result(operator, numeric_type(lhs), numeric_type(rhs))
-        .expect("semantic analysis has already validated comparisons");
-    let result = match (operator, lhs, rhs) {
-        (ComparisonOperator::Greater, NumericValue::Integer(lhs), NumericValue::Integer(rhs)) => {
-            lhs > rhs
-        }
-        (
-            ComparisonOperator::GreaterEqual,
-            NumericValue::Integer(lhs),
-            NumericValue::Integer(rhs),
-        ) => lhs >= rhs,
-        (ComparisonOperator::Less, NumericValue::Integer(lhs), NumericValue::Integer(rhs)) => {
-            lhs < rhs
-        }
-        (ComparisonOperator::LessEqual, NumericValue::Integer(lhs), NumericValue::Integer(rhs)) => {
-            lhs <= rhs
-        }
-        (ComparisonOperator::Equal, NumericValue::Integer(lhs), NumericValue::Integer(rhs)) => {
-            lhs == rhs
-        }
-        (ComparisonOperator::NotEqual, NumericValue::Integer(lhs), NumericValue::Integer(rhs)) => {
-            lhs != rhs
-        }
-        (ComparisonOperator::Greater, NumericValue::Real(lhs), NumericValue::Real(rhs)) => {
-            lhs > rhs
-        }
-        (ComparisonOperator::GreaterEqual, NumericValue::Real(lhs), NumericValue::Real(rhs)) => {
-            lhs >= rhs
-        }
-        (ComparisonOperator::Less, NumericValue::Real(lhs), NumericValue::Real(rhs)) => lhs < rhs,
-        (ComparisonOperator::LessEqual, NumericValue::Real(lhs), NumericValue::Real(rhs)) => {
-            lhs <= rhs
-        }
-        (ComparisonOperator::Equal, NumericValue::Boolean(lhs), NumericValue::Boolean(rhs)) => {
-            lhs == rhs
-        }
-        (ComparisonOperator::NotEqual, NumericValue::Boolean(lhs), NumericValue::Boolean(rhs)) => {
-            lhs != rhs
-        }
-        _ => unreachable!(),
-    };
-    NumericValue::Boolean(result)
 }
 
 pub fn run(

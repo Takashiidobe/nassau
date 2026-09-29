@@ -17,10 +17,17 @@ pub const fn tagged(value: i64) -> i64 {
 
 /// `nil`, `false`, `unit` and `0` share this word.
 pub const NIL: i64 = tagged(0);
+pub const FALSE: i64 = tagged(0);
+pub const TRUE: i64 = tagged(1);
 
-/// Heap block kinds, in the low byte of a block's header word (the rest are
-/// listed in the design note). Fields are values: tuples, records, cons cells and constructor payloads.
+/// Heap block kinds, in the low byte of a block's header word; the design
+/// note lists the rest. Fields are values: tuples, records, cons cells and
+/// constructor payloads.
 pub const KIND_RECORD: i64 = 0;
+/// Field 0 is a code address; the rest are the free variables' values.
+pub const KIND_CLOSURE: i64 = 1;
+/// Bytes, NUL-terminated; the header's length counts bytes, not words.
+pub const KIND_STRING: i64 = 2;
 /// One IEEE double.
 pub const KIND_REAL: i64 = 3;
 

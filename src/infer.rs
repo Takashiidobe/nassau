@@ -81,6 +81,8 @@ type Res<T> = Result<T, Failure>;
 pub struct Binding {
     pub name: String,
     pub ty: String,
+    /// The same type, for code that needs its structure.
+    pub resolved: Ty,
 }
 
 /// A resolved type, as the backend sees it: overloads are defaulted and weak
@@ -101,6 +103,13 @@ pub enum Ty {
     Arrow(Box<Ty>, Box<Ty>),
     /// Labels are sorted as SML sorts them; tuples use `1`, `2`, ...
     Record(Vec<(String, Ty)>),
+}
+
+impl Ty {
+    /// Whether this is the built-in type constructor `name`.
+    pub fn is(&self, name: &str) -> bool {
+        matches!(self, Ty::Con { name: found, stamp: 0, .. } if found == name)
+    }
 }
 
 impl fmt::Display for Ty {
@@ -2207,6 +2216,7 @@ impl Infer {
             for (name, scheme) in bound {
                 bindings.push(Binding {
                     ty: self.show_scheme(&scheme),
+                    resolved: self.resolve(&scheme.ty),
                     name,
                 });
             }

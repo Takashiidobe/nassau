@@ -1,9 +1,11 @@
 mod ast_dump;
 mod codegen;
 mod constructors;
+mod core;
 mod error;
 mod infer;
 mod lexer;
+mod lower;
 mod matching;
 mod parser;
 mod repl;
@@ -37,6 +39,8 @@ struct Cli {
     debug_passes: bool,
     #[arg(long, help = "Write Cranelift's target instruction listing to FILE.S")]
     asm: bool,
+    #[arg(long, help = "Print the core IR the program lowers to")]
+    dump_core: bool,
     #[arg(long, help = "Print Cranelift IR before optimization")]
     dump_ir: bool,
     #[arg(long, help = "Print the lexical tokens for a source file")]
@@ -107,7 +111,8 @@ fn output_path(input: &Path) -> Result<PathBuf, String> {
     Ok(input.with_file_name(stem))
 }
 
-fn run(cli: &Cli) -> miette::Result<PathBuf> {
+/// Compiles the input file; with `--dump-core`, prints its IR instead.
+fn run(cli: &Cli) -> miette::Result<Option<PathBuf>> {
     let input = cli
         .input
         .as_ref()
@@ -125,14 +130,24 @@ fn run(cli: &Cli) -> miette::Result<PathBuf> {
                 .with_source_code(named_source.clone())
         })?;
     check_matches(&program, &named_source)?;
-    infer::check_program(&program).map_err(|(error, span)| {
+    let checked = infer::check_program(&program).map_err(|(error, span)| {
         miette::Report::new(SourceError::new(error, span)).with_source_code(named_source.clone())
     })?;
     sema::Analyzer::new()
         .analyze_program(&program)
         .map_err(|(error, span)| {
+            miette::Report::new(SourceError::new(error, span))
+                .with_source_code(named_source.clone())
+        })?;
+    let module = lower::Session::new()
+        .lower(&program, &checked.types, "main")
+        .map_err(|(error, span)| {
             miette::Report::new(SourceError::new(error, span)).with_source_code(named_source)
         })?;
+    if cli.dump_core {
+        print!("{module}");
+        return Ok(None);
+    }
     let output = if cli.asm {
         input.with_extension("S")
     } else {
@@ -149,9 +164,9 @@ fn run(cli: &Cli) -> miette::Result<PathBuf> {
         stats: cli.stats,
         objdump: cli.objdump,
     })
-    .compile(&program, &output)
+    .compile(&module, &output)
     .map_err(miette::Report::msg)?;
-    Ok(output)
+    Ok(Some(output))
 }
 
 fn parse_file(input: &Path) -> miette::Result<crate::parser::Program> {
@@ -268,7 +283,8 @@ fn main() {
         return;
     }
     match run(&cli) {
-        Ok(output) => println!("wrote {}", output.display()),
+        Ok(Some(output)) => println!("wrote {}", output.display()),
+        Ok(None) => {}
         Err(error) => {
             eprintln!("{error:?}");
             std::process::exit(1);

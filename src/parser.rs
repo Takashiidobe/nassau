@@ -307,14 +307,6 @@ pub struct Program {
     pub result: i32,
 }
 
-#[derive(Clone, Copy, Debug)]
-pub enum NumericValue {
-    Integer(i32),
-    Real(f64),
-    Boolean(bool),
-    List(*mut u64),
-}
-
 pub struct Parser {
     tokens: Vec<Token>,
     index: usize,

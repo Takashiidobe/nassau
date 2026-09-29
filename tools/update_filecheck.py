@@ -10,6 +10,7 @@ as SML comment lines at the end of the file:
     (* CHECK-ERR: × expected int, ... *)    compiler diagnostic for fixtures under an error/ directory
     (* CHECK-STDOUT: (val x (+ 1 2)) *)    syntax tree (--dump-ast) for tests/fixtures/parser,
                                            with CHECK-STDERR for its match warnings
+    (* CHECK-STDOUT: fn f0 main() { *)      core IR (--dump-core) for tests/fixtures/core
     (* CHECK-STDOUT: val f : 'a -> 'a *)    inferred types (--dump-types) for tests/fixtures/types
     (* CHECK-STDOUT: 1:9-1:10 exp x : int *) every node's type (--dump-expr-types) for
                                            tests/fixtures/types/nodes
@@ -202,6 +203,8 @@ def classify(path):
         return "skip"
     if "parser" in parts[:-1]:
         return "parse"
+    if "core" in parts[:-1]:
+        return "core"
     if "types" in parts[:-1]:
         return "nodes" if "nodes" in parts[:-1] else "types"
     return "run"
@@ -245,9 +248,14 @@ def generate_error(oracle, fixture, warnings):
     ]
 
 
-def generate_parse(oracle, fixture, warnings):
+def generate_core(oracle, fixture, warnings):
+    """Core IR dump from Nassau; SML/NJ only vouches that the file is valid SML."""
+    return generate_parse(oracle, fixture, warnings, "--dump-core")
+
+
+def generate_parse(oracle, fixture, warnings, flag="--dump-ast"):
     """Syntax-tree dump from Nassau; SML/NJ only vouches that the file is valid SML."""
-    result = oracle.nassau_compile(fixture, ["--dump-ast"])
+    result = oracle.nassau_compile(fixture, [flag])
     if result.returncode != 0:
         raise ToolError("Nassau rejected a valid fixture:\n" + decode(result.stderr))
     reference = run([oracle.smlnj, str(fixture)], stdin=b"", cwd=fixture.parent)
@@ -367,6 +375,7 @@ def main():
         "run": generate_run,
         "error": generate_error,
         "parse": generate_parse,
+        "core": generate_core,
         "types": generate_types,
         "nodes": generate_nodes,
         "repl": generate_repl,

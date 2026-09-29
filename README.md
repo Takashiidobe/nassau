@@ -27,6 +27,8 @@ cargo run -- --opt-level speed-and-size --stats --timings input.ml
 cargo run -- --objdump input.ml
 ```
 
+Earlier stages have their own dumps: `--dump-expr-types` prints the inferred type of every expression and pattern, and `--dump-core` prints the core IR a program lowers to before Cranelift (`src/core.rs`).
+
 `--objdump` disassembles the actual Cranelift object bytes and requires `objdump` to be installed. `--debug-passes` remains as a shortcut for the main IR and instruction dumps.
 
 The REPL integration test compares Nassau sessions with SML/NJ. Run it with:
@@ -41,7 +43,7 @@ The test uses `smlnj` from `PATH` and skips if `smlnj` is not installed.
 
 Fixtures carry their expected output as FileCheck comments at the end of the
 file (`CHECK-EXIT`, `CHECK-STDOUT`, `CHECK-STDERR` for compiled programs,
-`CHECK-ERR` for fixtures under an `error/` directory, and `CHECK-STDOUT` for the inferred types of `tests/fixtures/types`, `CHECK-REPL` for `tests/repl`). LLVM's
+`CHECK-ERR` for fixtures under an `error/` directory, `CHECK-STDOUT` for the inferred types of `tests/fixtures/types` (every node's under `types/nodes`) and the core IR of `tests/fixtures/core`, and `CHECK-REPL` for `tests/repl`). LLVM's
 `FileCheck` must be on `PATH` (or set `FILECHECK`). Regenerate them from
 SML/NJ with:
 
@@ -56,7 +58,9 @@ differ from SML/NJ; it fails the suite once it starts passing.
 
 ## Features
 
-- Integer arithmetic supports `+`, `-`, `*`, and `div`.
+- Values share one word-sized representation (`docs/value-representation.md`): `int` is 31 bits wide as in SML/NJ, and lists are cons cells.
+- Code generation lowers the type-checked program to a core IR in A-normal form with explicit blocks, then translates that to Cranelift. The REPL compiles each chunk the same way and prints bindings from their compiled values.
+- Integer arithmetic supports `+`, `-`, `*`, and `div` (rounding toward negative infinity).
 - Real arithmetic supports `+`, `-`, `*`, and `/`.
 - Conditionals like `If then else`
 - Relops, CmpOps like `<=, >=, <, >, =, <>`

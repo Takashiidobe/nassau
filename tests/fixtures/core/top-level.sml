@@ -1,0 +1,33 @@
+(* Top-level bindings live in globals; a conditional joins in a block. *)
+val _ = print "start\n"
+val quotient = 7 div ~2
+val sign = if quotient < 0 then ~1 else 1
+val scaled = 1.5 * 2.0
+val nested = [[1, 2], []]
+(* CHECK-STDOUT: global g0 quotient *)
+(* CHECK-STDOUT-NEXT: global g1 sign *)
+(* CHECK-STDOUT-NEXT: global g2 scaled *)
+(* CHECK-STDOUT-NEXT: global g3 nested *)
+(* CHECK-STDOUT-NEXT: fn f0 main() { *)
+(* CHECK-STDOUT-NEXT:   b0(): *)
+(* CHECK-STDOUT-NEXT:     v0 = print("start\n") *)
+(* CHECK-STDOUT-NEXT:     v1 = int.div(#7, #~2) *)
+(* CHECK-STDOUT-NEXT:     g0 := v1 *)
+(* CHECK-STDOUT-NEXT:     v2:quotient = g0 *)
+(* CHECK-STDOUT-NEXT:     v3 = int.lt(v2, #0) *)
+(* CHECK-STDOUT-NEXT:     if v3 then b1 else b2 *)
+(* CHECK-STDOUT-NEXT:   b1(): *)
+(* CHECK-STDOUT-NEXT:     jump b3(#~1) *)
+(* CHECK-STDOUT-NEXT:   b2(): *)
+(* CHECK-STDOUT-NEXT:     jump b3(#1) *)
+(* CHECK-STDOUT-NEXT:   b3(v4): *)
+(* CHECK-STDOUT-NEXT:     g1 := v4 *)
+(* CHECK-STDOUT-NEXT:     v5 = real.mul(1.5, 2.0) *)
+(* CHECK-STDOUT-NEXT:     g2 := v5 *)
+(* CHECK-STDOUT-NEXT:     v6 = record(#2, #0) *)
+(* CHECK-STDOUT-NEXT:     v7 = record(#1, v6) *)
+(* CHECK-STDOUT-NEXT:     v8 = record(#0, #0) *)
+(* CHECK-STDOUT-NEXT:     v9 = record(v7, v8) *)
+(* CHECK-STDOUT-NEXT:     g3 := v9 *)
+(* CHECK-STDOUT-NEXT:     return #0 *)
+(* CHECK-STDOUT-NEXT: } *)

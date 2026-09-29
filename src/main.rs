@@ -11,7 +11,6 @@ mod parser;
 mod repl;
 mod runtime;
 mod scope;
-mod sema;
 mod span;
 mod value;
 mod walk;
@@ -134,12 +133,6 @@ fn run(cli: &Cli) -> miette::Result<Option<PathBuf>> {
     let checked = infer::check_program(&program).map_err(|(error, span)| {
         miette::Report::new(SourceError::new(error, span)).with_source_code(named_source.clone())
     })?;
-    sema::Analyzer::new()
-        .analyze_program(&program)
-        .map_err(|(error, span)| {
-            miette::Report::new(SourceError::new(error, span))
-                .with_source_code(named_source.clone())
-        })?;
     let file = input.file_name().map_or_else(
         || input.display().to_string(),
         |name| name.to_string_lossy().into_owned(),

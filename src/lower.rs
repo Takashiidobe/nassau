@@ -7,7 +7,7 @@ use crate::core::{
 };
 use crate::error::ThisError;
 use crate::infer::{Ty, TypeTable};
-use crate::parser::{Expr, ExprKind, Program, StmtKind};
+use crate::parser::{DeclKind, Expr, ExprKind, Program, StmtKind};
 use crate::value;
 
 #[derive(Debug, ThisError)]
@@ -211,8 +211,27 @@ impl Lowerer<'_> {
                 self.function.bind("", Op::Prim(Prim::Exit, vec![status]));
             }
             StmtKind::Declaration(declaration) => {
+                let what = match &declaration.value {
+                    DeclKind::Val {
+                        recursive: true, ..
+                    } => "val rec declarations",
+                    DeclKind::Val { .. } => "val declarations with patterns",
+                    DeclKind::Fun(_) => "fun declarations",
+                    DeclKind::Type(_) => "type declarations",
+                    DeclKind::Datatype { .. } | DeclKind::DatatypeCopy { .. } => {
+                        "datatype declarations"
+                    }
+                    DeclKind::Abstype { .. } => "abstype declarations",
+                    DeclKind::Exception(_) => "exception declarations",
+                    DeclKind::Structure(_)
+                    | DeclKind::Signature(_)
+                    | DeclKind::Functor(_)
+                    | DeclKind::Open(_) => "module declarations",
+                    DeclKind::Local(..) => "local declarations",
+                    DeclKind::Fixity { .. } => "fixity declarations",
+                };
                 return Err((
-                    LowerError::Unsupported("declarations".into()),
+                    LowerError::Unsupported(what.into()),
                     declaration.source_span(),
                 ));
             }
@@ -237,7 +256,12 @@ impl Lowerer<'_> {
             ExprKind::String(value) => Atom::String(value.clone()),
             ExprKind::Variable(name) => match self.session.global(name) {
                 Some(global) => self.function.bind(name, Op::Global(global)),
-                None => return Err(unsupported(&format!("the name {name}"), expr)),
+                None => {
+                    return Err(unsupported(
+                        &format!("built-in values such as {name}"),
+                        expr,
+                    ));
+                }
             },
             ExprKind::List(items) => {
                 let items = items
@@ -317,7 +341,7 @@ impl Lowerer<'_> {
                 let rhs = self.value(rhs)?;
                 self.function.bind("", Op::Prim(prim, vec![lhs, rhs]))
             }
-            _ => return Err(unsupported("these expressions", expr)),
+            other => return Err(unsupported(unsupported_name(other), expr)),
         })
     }
 }
@@ -327,4 +351,28 @@ fn unsupported(what: &str, expr: &Expr) -> Failure {
         LowerError::Unsupported(what.to_string()),
         expr.source_span(),
     )
+}
+
+fn unsupported_name(kind: &ExprKind) -> &'static str {
+    match kind {
+        ExprKind::Character(_) => "character literals",
+        ExprKind::Word(_) => "word literals",
+        ExprKind::Unit => "the unit value",
+        ExprKind::Tuple(_) => "tuples",
+        ExprKind::Record(_) => "records",
+        ExprKind::Selector(_) => "record selectors",
+        ExprKind::Apply(..) => "function application",
+        ExprKind::Infix(..) => "this infix operator",
+        ExprKind::AndAlso(..) => "andalso",
+        ExprKind::OrElse(..) => "orelse",
+        ExprKind::Sequence(_) => "expression sequences",
+        ExprKind::Let(..) => "let expressions",
+        ExprKind::Case(..) => "case expressions",
+        ExprKind::Fn(_) => "fn expressions",
+        ExprKind::While(..) => "while loops",
+        ExprKind::Raise(_) => "raise",
+        ExprKind::Handle(..) => "handle",
+        ExprKind::Typed(..) => "type annotations",
+        _ => "this expression",
+    }
 }

@@ -5,7 +5,6 @@ use crate::error::{CodegenError, SourceError};
 use crate::infer::{self, Ty};
 use crate::lower;
 use crate::parser::{Parser, Program};
-use crate::sema::Analyzer;
 use crate::value;
 
 pub struct Repl {
@@ -13,7 +12,6 @@ pub struct Repl {
     module: cranelift_jit::JITModule,
     symbols: Symbols,
     next_chunk: usize,
-    analyzer: Analyzer,
     types: infer::Session,
     lowering: lower::Session,
 }
@@ -44,7 +42,6 @@ impl Repl {
             module,
             symbols: Symbols::default(),
             next_chunk: 0,
-            analyzer: Analyzer::new(),
             types: infer::Session::new(),
             lowering: lower::Session::new(),
         })
@@ -75,10 +72,6 @@ impl Repl {
         let checked = types
             .check(&program)
             .map_err(|(error, span)| report(error, span, &named_source))?;
-        let mut analyzer = self.analyzer.clone();
-        analyzer
-            .analyze_program(&program)
-            .map_err(|(error, span)| report(error, span, &named_source))?;
         let mut lowering = self.lowering.clone();
         let module = lowering
             .lower(
@@ -96,7 +89,6 @@ impl Repl {
             .compile_jit_chunk(&mut self.module, &mut self.symbols, &module)
             .map_err(miette::Report::msg)?;
         self.types = types;
-        self.analyzer = analyzer;
         self.lowering = lowering;
         let status = entry();
         for binding in &checked.bindings {

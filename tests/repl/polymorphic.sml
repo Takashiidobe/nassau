@@ -1,0 +1,12 @@
+fun id x = x;
+val a = id 3;
+val b = id "three";
+val c = id (1.5, [#"x"]);
+fun pair x = (x, x);
+val d = pair [true];
+(* CHECK-REPL: val id = fn : 'a -> 'a *)
+(* CHECK-REPL-NEXT: val a = 3 : int *)
+(* CHECK-REPL-NEXT: val b = "three" : string *)
+(* CHECK-REPL-NEXT: val c = (1.5,[#"x"]) : real * char list *)
+(* CHECK-REPL-NEXT: val pair = fn : 'a -> 'a * 'a *)
+(* CHECK-REPL-NEXT: val d = ([true],[true]) : bool list * bool list *)

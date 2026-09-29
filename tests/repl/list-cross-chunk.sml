@@ -1,4 +1,3 @@
-(* XFAIL: the REPL prints list values as [] and cannot chunk declarations without semicolons *)
 val xs = [1, 2]
 val nested = [xs]
 val empty = []

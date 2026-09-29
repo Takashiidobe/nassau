@@ -1,15 +1,18 @@
 mod ast_dump;
 mod codegen;
 mod constructors;
+mod core;
 mod error;
 mod infer;
 mod lexer;
+mod lower;
 mod matching;
 mod parser;
 mod repl;
+mod runtime;
 mod scope;
-mod sema;
 mod span;
+mod value;
 mod walk;
 
 use std::fs;
@@ -36,6 +39,8 @@ struct Cli {
     debug_passes: bool,
     #[arg(long, help = "Write Cranelift's target instruction listing to FILE.S")]
     asm: bool,
+    #[arg(long, help = "Print the core IR the program lowers to")]
+    dump_core: bool,
     #[arg(long, help = "Print Cranelift IR before optimization")]
     dump_ir: bool,
     #[arg(long, help = "Print the lexical tokens for a source file")]
@@ -44,6 +49,8 @@ struct Cli {
     dump_ast: bool,
     #[arg(long, help = "Print the inferred type of every top-level binding")]
     dump_types: bool,
+    #[arg(long, help = "Print the inferred type of every expression and pattern")]
+    dump_expr_types: bool,
     #[arg(long, help = "Print Cranelift IR after optimization")]
     dump_optimized_ir: bool,
     #[arg(long, help = "Verify IR before and after optimization")]
@@ -104,7 +111,8 @@ fn output_path(input: &Path) -> Result<PathBuf, String> {
     Ok(input.with_file_name(stem))
 }
 
-fn run(cli: &Cli) -> miette::Result<PathBuf> {
+/// Compiles the input file; with `--dump-core`, prints its IR instead.
+fn run(cli: &Cli) -> miette::Result<Option<PathBuf>> {
     let input = cli
         .input
         .as_ref()
@@ -122,14 +130,23 @@ fn run(cli: &Cli) -> miette::Result<PathBuf> {
                 .with_source_code(named_source.clone())
         })?;
     check_matches(&program, &named_source)?;
-    infer::check_program(&program).map_err(|(error, span)| {
+    let checked = infer::check_program(&program).map_err(|(error, span)| {
         miette::Report::new(SourceError::new(error, span)).with_source_code(named_source.clone())
     })?;
-    sema::Analyzer::new()
-        .analyze_program(&program)
+    let file = input.file_name().map_or_else(
+        || input.display().to_string(),
+        |name| name.to_string_lossy().into_owned(),
+    );
+    let source = lower::Source { file, text: source };
+    let module = lower::Session::new()
+        .lower(&program, &checked.types, &source, "main")
         .map_err(|(error, span)| {
             miette::Report::new(SourceError::new(error, span)).with_source_code(named_source)
         })?;
+    if cli.dump_core {
+        print!("{module}");
+        return Ok(None);
+    }
     let output = if cli.asm {
         input.with_extension("S")
     } else {
@@ -146,9 +163,9 @@ fn run(cli: &Cli) -> miette::Result<PathBuf> {
         stats: cli.stats,
         objdump: cli.objdump,
     })
-    .compile(&program, &output)
+    .compile(&module, &output)
     .map_err(miette::Report::msg)?;
-    Ok(output)
+    Ok(Some(output))
 }
 
 fn parse_file(input: &Path) -> miette::Result<crate::parser::Program> {
@@ -168,15 +185,34 @@ fn parse_file(input: &Path) -> miette::Result<crate::parser::Program> {
     Ok(program)
 }
 
-fn dump_types(input: &Path) -> miette::Result<()> {
+fn dump_types(input: &Path, every_node: bool) -> miette::Result<()> {
     let program = parse_file(input)?;
     let source = fs::read_to_string(input).map_err(|error| miette::miette!("{error}"))?;
-    let named_source = miette::NamedSource::new(input.display().to_string(), source);
-    let bindings = infer::check_program(&program).map_err(|(error, span)| {
+    let named_source = miette::NamedSource::new(input.display().to_string(), source.clone());
+    let checked = infer::check_program(&program).map_err(|(error, span)| {
         miette::Report::new(SourceError::new(error, span)).with_source_code(named_source)
     })?;
-    for binding in bindings {
-        println!("val {} : {}", binding.name, binding.ty);
+    if !every_node {
+        for binding in checked.bindings {
+            println!("val {} : {}", binding.name, binding.ty);
+        }
+        return Ok(());
+    }
+    // Variables are named across the whole listing, so a variable shared by
+    // two nodes has one name.
+    let mut names = Vec::new();
+    for node in checked.types.nodes() {
+        let text = source[node.start.offset..node.end.offset].split_whitespace();
+        println!(
+            "{}:{}-{}:{} {} {} : {}",
+            node.start.line,
+            node.start.column,
+            node.end.line,
+            node.end.column,
+            if node.pattern { "pat" } else { "exp" },
+            text.collect::<Vec<_>>().join(" "),
+            node.ty.show_named(&mut names)
+        );
     }
     Ok(())
 }
@@ -220,12 +256,12 @@ fn main() {
         }
         return;
     }
-    if cli.dump_types {
+    if cli.dump_types || cli.dump_expr_types {
         let Some(input) = cli.input.as_ref() else {
             eprintln!("--dump-types requires a source file");
             std::process::exit(2);
         };
-        if let Err(error) = dump_types(input) {
+        if let Err(error) = dump_types(input, cli.dump_expr_types) {
             eprintln!("{error:?}");
             std::process::exit(1);
         }
@@ -246,7 +282,8 @@ fn main() {
         return;
     }
     match run(&cli) {
-        Ok(output) => println!("wrote {}", output.display()),
+        Ok(Some(output)) => println!("wrote {}", output.display()),
+        Ok(None) => {}
         Err(error) => {
             eprintln!("{error:?}");
             std::process::exit(1);

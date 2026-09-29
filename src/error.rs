@@ -51,7 +51,7 @@ pub type LexerError = Span<LexerErrorKind>;
 pub enum ParseErrorKind {
     #[error("expected {0}")]
     Expect(String),
-    #[error("integer literal does not fit in i32")]
+    #[error("int constant too large")]
     IntegerOutOfRange,
     #[error("invalid real literal")]
     InvalidRealLiteral,

@@ -130,6 +130,26 @@ static int equal(word lhs, word rhs) {
 /* Polymorphic structural equality, `=` on any equality type. */
 word nassau_equal(word lhs, word rhs) { return TAG(equal(lhs, rhs)); }
 
+/* The basis's exceptions, in the order of value::BUILTIN_EXCEPTIONS. An
+ * exception's identity is a reference cell holding its name: each
+ * evaluation of an `exception` declaration allocates a new one, and these
+ * are allocated once, on first use. */
+static const char *const builtin_names[] = {"Div",  "Overflow",  "Match", "Bind",
+                                            "Fail", "Subscript", "Empty"};
+static word builtin_identities[sizeof builtin_names / sizeof builtin_names[0]];
+
+word nassau_exception(word index) {
+    word slot = UNTAG(index);
+    if (builtin_identities[slot] == 0) {
+        const char *name = builtin_names[slot];
+        word *identity = nassau_alloc(1);
+        identity[0] = HEADER(1, KIND_REF);
+        identity[1] = string_block(name, strlen(name));
+        builtin_identities[slot] = (word)identity;
+    }
+    return builtin_identities[slot];
+}
+
 /* Reports an uncaught exception as SML/NJ does and exits. `where` is the
  * position SML/NJ names as the raise point. */
 void nassau_raise(const char *name, const char *where) {

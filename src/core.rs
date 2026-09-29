@@ -72,6 +72,9 @@ pub enum Prim {
     Size,
     /// `Posix.Process.exit (Word8.fromInt n)`.
     Exit,
+    /// The identity of a built-in exception, by its index in
+    /// `value::BUILTIN_EXCEPTIONS`.
+    BuiltinException,
 }
 
 impl Prim {
@@ -108,6 +111,7 @@ impl Prim {
             Prim::IntToString => "int.to_string",
             Prim::Size => "size",
             Prim::Exit => "exit",
+            Prim::BuiltinException => "exception.builtin",
         }
     }
 }

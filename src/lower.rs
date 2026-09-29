@@ -14,7 +14,9 @@ use crate::core::{
 };
 use crate::error::ThisError;
 use crate::infer::{Ty, TypeTable};
-use crate::parser::{Decl, DeclKind, Expr, ExprKind, Pat, PatKind, Program, StmtKind};
+use crate::parser::{
+    Decl, DeclKind, ExceptionKind, Expr, ExprKind, Pat, PatKind, Program, StmtKind,
+};
 use crate::value;
 
 mod decision;
@@ -565,13 +567,46 @@ impl Lowerer<'_> {
             | DeclKind::Datatype { .. }
             | DeclKind::DatatypeCopy { .. } => {}
             DeclKind::Abstype { body, .. } => self.declarations(body, top)?,
-            other => {
-                let what = match other {
-                    DeclKind::Exception(_) => "exception declarations",
-                    _ => "module declarations",
-                };
+            DeclKind::Exception(bindings) => {
+                // Each evaluation of the declaration makes new exceptions:
+                // an exception's identity is a fresh cell holding its name.
+                // A replication shares the identity it names.
+                for binding in bindings {
+                    let identity = match &binding.kind {
+                        ExceptionKind::Fresh(_) => self.bind(
+                            &binding.name,
+                            Op::Prim(Prim::Ref, vec![Atom::String(binding.name.clone())]),
+                        ),
+                        ExceptionKind::Copy(original) => {
+                            let exn = Ty::Con {
+                                name: "exn".to_string(),
+                                stamp: 0,
+                                args: Vec::new(),
+                            };
+                            match self.exception(original, Some(&exn)) {
+                                Some((identity, _)) => identity,
+                                None => {
+                                    return Err((
+                                        LowerError::Unsupported(
+                                            "this exception replication".into(),
+                                        ),
+                                        declaration.source_span(),
+                                    ));
+                                }
+                            }
+                        }
+                    };
+                    let key = format!("exn {}", binding.name);
+                    if top {
+                        self.bind_top(&key, identity, None);
+                    } else {
+                        self.bind_local(&key, identity);
+                    }
+                }
+            }
+            _ => {
                 return Err((
-                    LowerError::Unsupported(what.into()),
+                    LowerError::Unsupported("module declarations".into()),
                     declaration.source_span(),
                 ));
             }
@@ -821,6 +856,17 @@ impl Lowerer<'_> {
                 Some(word) => Atom::Word(value::tagged(word)),
                 None => return Err(unsupported("this word constant", expr)),
             },
+            ExprKind::Variable(name)
+                if let Some((identity, carries)) =
+                    self.exception(name, self.ty(expr).cloned().as_ref()) =>
+            {
+                let test = Test::Exception { identity, carries };
+                if carries {
+                    self.constructor_closure(name, &test)
+                } else {
+                    self.construct(&test, Atom::Word(value::tagged(0)))
+                }
+            }
             ExprKind::Variable(name) => match self.lookup(name) {
                 Some(binding) => self.load(name, &binding),
                 None => match (self.constructor(name, self.ty(expr)), builtin(name)) {
@@ -1078,7 +1124,16 @@ impl Lowerer<'_> {
         let mut function = None;
         if let ExprKind::Variable(name) = &head.value {
             let binding = self.lookup(name);
-            if binding.is_none()
+            let exception = self.exception(name, self.ty(head).cloned().as_ref());
+            if let Some((identity, true)) = exception {
+                let argument = self.value(args[0])?;
+                let test = Test::Exception {
+                    identity,
+                    carries: true,
+                };
+                function = Some(self.construct(&test, argument));
+                rest = &args[1..];
+            } else if binding.is_none()
                 && let Some((test, true)) = self.constructor(name, self.ty(head))
             {
                 let argument = self.value(args[0])?;
@@ -1184,6 +1239,9 @@ impl Lowerer<'_> {
             }
             Test::Word { word, .. } => Atom::Word(*word),
             Test::String(_) => unreachable!("strings are not constructors"),
+            Test::Exception { identity, .. } => {
+                self.bind("", Op::Record(vec![identity.clone(), argument]))
+            }
         }
     }
 
@@ -1192,11 +1250,25 @@ impl Lowerer<'_> {
         let id = self.session.function_id();
         self.frames.push(Builder::new(id, name, vec!["env", ""]));
         let argument = Atom::Var(self.frame().params[1]);
-        let result = self.construct(test, argument);
+        // An exception's identity is only known at run time, so the closure
+        // holds it.
+        let (test, captured) = match test {
+            Test::Exception { identity, carries } => {
+                let env = Atom::Var(self.frame().params[0]);
+                let inner = self.bind("", Op::Select(env, 1));
+                let test = Test::Exception {
+                    identity: inner,
+                    carries: *carries,
+                };
+                (test, vec![identity.clone()])
+            }
+            test => (test.clone(), Vec::new()),
+        };
+        let result = self.construct(&test, argument);
         self.terminate(Term::Return(result));
         let frame = self.frames.pop().expect("the constructor's frame");
         self.functions.push(frame.finish());
-        self.closure(name, id, Vec::new())
+        self.closure(name, id, captured)
     }
 
     /// A closure for a built-in function used as a value.

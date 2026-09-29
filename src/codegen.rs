@@ -773,6 +773,9 @@ impl<M: Module> Translator<'_, M> {
                 self.call_c("nassau_exit", &[types::I64], None, args)?;
                 self.word(value::tagged(0))
             }
+            Prim::BuiltinException => self
+                .call_c("nassau_exception", &[types::I64], Some(types::I64), args)?
+                .expect("nassau_exception returns an identity"),
             Prim::Equal | Prim::Unequal => {
                 let equal = self
                     .call_c(

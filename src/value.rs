@@ -37,3 +37,21 @@ pub const KIND_REF: i64 = 4;
 pub const fn header(length: i64, kind: i64) -> i64 {
     (length << 8) | kind
 }
+
+/// The basis's exceptions, in the order the runtime numbers them
+/// (`nassau_exception`).
+pub const BUILTIN_EXCEPTIONS: &[&str] = &[
+    "Div",
+    "Overflow",
+    "Match",
+    "Bind",
+    "Fail",
+    "Subscript",
+    "Empty",
+];
+
+/// The index of the built-in exception `name`.
+pub fn builtin_exception(name: &str) -> Option<i64> {
+    let index = BUILTIN_EXCEPTIONS.iter().position(|known| *known == name)?;
+    i64::try_from(index).ok()
+}

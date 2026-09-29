@@ -54,6 +54,12 @@ collector must trace; string and real blocks hold raw bytes.
   it has only one, as `option` has `SOME`, the tag is left out and the block
   holds just the argument; a match tells it from the nullary constructors,
   which are immediates, by whether the value is a block.
+- **Exceptions** are record blocks `[identity, argument]`, with `()` as the
+  argument of a constructor that takes none. The identity is a reference
+  cell holding the exception's name, allocated each time the `exception`
+  declaration is evaluated, so declarations inside functions are
+  generative; a replication (`exception F = E`) shares its original's
+  identity. A match compares identities by address.
 - **Reals** are boxed, so a `real` is a pointer to a real block; code
   generation keeps them unboxed in registers inside a function.
 - **Strings** are string blocks. The NUL terminator lets the runtime pass them

@@ -240,6 +240,12 @@ struct Definition<'a> {
     location: String,
 }
 
+/// An application lowered up to its last call.
+enum Applied {
+    Value(Atom),
+    Call(Callee, Vec<Atom>),
+}
+
 /// Built-in functions that are compiled inline when applied.
 #[derive(Clone, Copy)]
 enum Builtin {
@@ -604,13 +610,13 @@ impl Lowerer<'_> {
                     .collect()
             };
             held.push(argument);
-            let result = if index + 1 == known.arity {
+            if index + 1 == known.arity {
                 let env = held.remove(0);
-                self.bind("", Op::Call(Callee::Known(known.worker, env), held))
+                self.terminate(Term::TailCall(Callee::Known(known.worker, env), held));
             } else {
-                self.closure("", stages[index + 1], held)
-            };
-            self.terminate(Term::Return(result));
+                let result = self.closure("", stages[index + 1], held);
+                self.terminate(Term::Return(result));
+            }
             let frame = self.frames.pop().expect("the stage's frame");
             self.functions.push(frame.finish());
         }
@@ -818,6 +824,16 @@ impl Lowerer<'_> {
                 self.rules(&[scrutinee], &rules, dest, &location)
             }
             ExprKind::Typed(inner, _) => self.into(inner, dest),
+            // A call whose value is returned is a tail call: it reuses the
+            // caller's frame, so loops written as recursion run in constant
+            // stack.
+            ExprKind::Apply(..) if matches!(dest, Dest::Return) => {
+                match self.application(expr)? {
+                    Applied::Value(value) => self.send(value, dest),
+                    Applied::Call(callee, args) => self.terminate(Term::TailCall(callee, args)),
+                }
+                Ok(())
+            }
             ExprKind::Sequence(items) => {
                 let (last, rest) = items.split_last().expect("a sequence has an expression");
                 for item in rest {
@@ -1075,6 +1091,15 @@ impl Lowerer<'_> {
 
     /// Lowers an application.
     fn apply(&mut self, expr: &Expr) -> Res<Atom> {
+        Ok(match self.application(expr)? {
+            Applied::Value(value) => value,
+            Applied::Call(callee, args) => self.bind("", Op::Call(callee, args)),
+        })
+    }
+
+    /// Lowers an application up to its last call, which is left to the
+    /// caller so that a call in tail position can become a tail call.
+    fn application(&mut self, expr: &Expr) -> Res<Applied> {
         let mut args = Vec::new();
         let mut head = expr;
         while let ExprKind::Apply(function, argument) = &head.value {
@@ -1111,9 +1136,13 @@ impl Lowerer<'_> {
                         .iter()
                         .map(|arg| self.value(arg))
                         .collect::<Res<Vec<_>>>()?;
-                    function =
-                        Some(self.bind("", Op::Call(Callee::Known(known.worker, closure), values)));
-                    rest = &args[known.arity..];
+                    let mut call = Applied::Call(Callee::Known(known.worker, closure), values);
+                    for argument in &args[known.arity..] {
+                        let function = self.finish_call(call);
+                        let argument = self.value(argument)?;
+                        call = Applied::Call(Callee::Closure(function), vec![argument]);
+                    }
+                    return Ok(call);
                 }
             }
         }
@@ -1130,15 +1159,24 @@ impl Lowerer<'_> {
             rest = &args[1..];
         }
         // Anything else is a closure called one argument at a time.
-        let mut function = match function {
+        let mut call = Applied::Value(match function {
             Some(function) => function,
             None => self.value(head)?,
-        };
+        });
         for argument in rest {
+            let function = self.finish_call(call);
             let argument = self.value(argument)?;
-            function = self.bind("", Op::Call(Callee::Closure(function), vec![argument]));
+            call = Applied::Call(Callee::Closure(function), vec![argument]);
         }
-        Ok(function)
+        Ok(call)
+    }
+
+    /// The value of an application, making its pending call.
+    fn finish_call(&mut self, applied: Applied) -> Atom {
+        match applied {
+            Applied::Value(value) => value,
+            Applied::Call(callee, args) => self.bind("", Op::Call(callee, args)),
+        }
     }
 
     fn builtin(&mut self, builtin: Builtin, argument: Atom) -> Atom {
@@ -1200,8 +1238,7 @@ impl Lowerer<'_> {
         let f_inner = self.bind("f", Op::Select(env.clone(), 1));
         let g_inner = self.bind("g", Op::Select(env, 2));
         let inner = self.bind("", Op::Call(Callee::Closure(g_inner), vec![argument]));
-        let result = self.bind("", Op::Call(Callee::Closure(f_inner), vec![inner]));
-        self.terminate(Term::Return(result));
+        self.terminate(Term::TailCall(Callee::Closure(f_inner), vec![inner]));
         let frame = self.frames.pop().expect("the composition's frame");
         self.functions.push(frame.finish());
         self.closure("", id, vec![f, g])

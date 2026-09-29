@@ -160,7 +160,8 @@ class Oracle:
             wrapper = Path(directory) / "wrapper.sml"
             wrapper.write_text(
                 "val _ = Control.Print.out := {say = fn _ => (), flush = fn () => ()};\n"
-                f'use "{fixture}";\n'
+                # By base name, so SML/NJ reports positions as `file.sml:1.2`.
+                f'use "{fixture.name}";\n'
             )
             result = run([self.smlnj, str(wrapper)], stdin=b"", cwd=fixture.parent)
         return (

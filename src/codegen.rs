@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 use clap::ValueEnum;
 use cranelift_codegen::ir::{
-    AbiParam, BlockArg, FuncRef, InstBuilder, MemFlagsData, Signature, Value,
+    AbiParam, BlockArg, FuncRef, InstBuilder, MemFlagsData, Signature, TrapCode, Value,
     condcodes::{FloatCC, IntCC},
     types,
 };
@@ -22,8 +22,9 @@ use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{DataDescription, DataId, FuncId, Linkage, Module, default_libcall_names};
 use cranelift_object::{ObjectBuilder, ObjectModule};
 
-use crate::core::{self, Atom, Callee, FnId, GlobalId, Op, Prim, Stmt, Term};
+use crate::core::{self, Atom, Callee, Failure, FnId, GlobalId, Op, Prim, Stmt, Term};
 use crate::error::CodegenError;
+use crate::runtime;
 use crate::value;
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
@@ -76,8 +77,6 @@ pub struct Symbols {
     globals: HashMap<GlobalId, DataId>,
     /// How many anonymous data objects (literals) exist.
     data: usize,
-    /// `"%s"`, for printing with printf.
-    format: Option<DataId>,
 }
 
 struct FunctionBuild {
@@ -137,7 +136,10 @@ impl Codegen {
     }
 
     pub fn new_jit_module(&self) -> Result<JITModule, CodegenError> {
-        let builder = JITBuilder::with_isa(self.isa(true)?, default_libcall_names());
+        let mut builder = JITBuilder::with_isa(self.isa(true)?, default_libcall_names());
+        for (name, address) in runtime::symbols() {
+            builder.symbol(name, address);
+        }
         Ok(JITModule::new(builder))
     }
 
@@ -222,15 +224,21 @@ impl Codegen {
                 String::from_utf8_lossy(&objdump.stdout)
             );
         }
+        let runtime_path = env::temp_dir().join(format!("nassau-runtime-{}.a", std::process::id()));
+        fs::write(&runtime_path, runtime::ARCHIVE)
+            .map_err(|error| CodegenError::Io(error.to_string()))?;
         let linker = env::var("NASSAU_CC").unwrap_or_else(|_| "cc".to_string());
         let link_start = Instant::now();
         let link_result = Command::new(&linker)
             .args(["-o"])
             .arg(output)
             .arg(&object_path)
+            .arg(&runtime_path)
             .output()
-            .map_err(|error| CodegenError::Tool(format!("failed to invoke {linker}: {error}")))?;
+            .map_err(|error| CodegenError::Tool(format!("failed to invoke {linker}: {error}")));
         let _ = fs::remove_file(&object_path);
+        let _ = fs::remove_file(&runtime_path);
+        let link_result = link_result?;
         if !link_result.status.success() {
             return Err(CodegenError::Linker(
                 String::from_utf8_lossy(&link_result.stderr)
@@ -283,9 +291,23 @@ impl Codegen {
         let mut builds = Vec::new();
         for function in &module.functions {
             let id = symbols.functions[&function.id];
-            builds.push(self.define_function(target, symbols, function, id, false)?);
+            builds.push(self.define_function(
+                target,
+                symbols,
+                function,
+                id,
+                false,
+                &module.file,
+            )?);
         }
-        builds.push(self.define_function(target, symbols, &module.entry, entry, true)?);
+        builds.push(self.define_function(
+            target,
+            symbols,
+            &module.entry,
+            entry,
+            true,
+            &module.file,
+        )?);
         Ok((entry, builds))
     }
 
@@ -296,6 +318,7 @@ impl Codegen {
         function: &core::Function,
         id: FuncId,
         entry: bool,
+        file: &str,
     ) -> Result<FunctionBuild, CodegenError> {
         let total_start = Instant::now();
         let frontend_config = target.isa().frontend_config();
@@ -317,6 +340,7 @@ impl Codegen {
             blocks: Vec::new(),
             imports: HashMap::new(),
             entry,
+            file,
         };
         translator.function(function)?;
         translator.builder.seal_all_blocks();
@@ -416,6 +440,8 @@ struct Translator<'a, M: Module> {
     imports: HashMap<&'static str, FuncRef>,
     /// Whether this is a chunk's entry, which returns an exit status.
     entry: bool,
+    /// The source file's name, for reporting exceptions.
+    file: &'a str,
 }
 
 impl<M: Module> Translator<'_, M> {
@@ -538,10 +564,10 @@ impl<M: Module> Translator<'_, M> {
 
     /// A heap block with room for `fields` words after its header.
     fn allocate(&mut self, fields: usize, kind: i64) -> Result<Value, CodegenError> {
-        let size = self.word((fields as i64 + 1) * 8);
+        let size = self.word(fields as i64);
         let block = self
-            .call_c("malloc", &[types::I64], Some(types::I64), &[size])?
-            .expect("malloc returns a pointer");
+            .call_c("nassau_alloc", &[types::I64], Some(types::I64), &[size])?
+            .expect("nassau_alloc returns a pointer");
         let header = self.word(value::header(fields as i64, kind));
         self.store(header, block, 0);
         Ok(block)
@@ -597,20 +623,30 @@ impl<M: Module> Translator<'_, M> {
             // On tagged words 2a+1 and 2b+1: (2a+1) + (2b+1) - 1 = 2(a+b)+1.
             Prim::IntAdd => {
                 let sum = self.builder.ins().iadd(args[0], args[1]);
-                self.builder.ins().iadd_imm_s(sum, -1)
+                let sum = self.builder.ins().iadd_imm_s(sum, -1);
+                self.check_overflow(sum)?
             }
             Prim::IntSub => {
                 let difference = self.builder.ins().isub(args[0], args[1]);
-                self.builder.ins().iadd_imm_s(difference, 1)
+                let difference = self.builder.ins().iadd_imm_s(difference, 1);
+                self.check_overflow(difference)?
             }
-            // a * (2b) + 1.
+            // a * (2b) + 1; the product of two 31-bit ints fits in 64 bits.
             Prim::IntMul => {
                 let lhs = self.untag(args[0]);
                 let rhs = self.builder.ins().iadd_imm_s(args[1], -1);
                 let product = self.builder.ins().imul(lhs, rhs);
-                self.builder.ins().iadd_imm_s(product, 1)
+                let product = self.builder.ins().iadd_imm_s(product, 1);
+                self.check_overflow(product)?
             }
             Prim::IntDiv | Prim::IntMod => {
+                // The third argument is where SML/NJ reports `Div`.
+                let zero = self
+                    .builder
+                    .ins()
+                    .icmp_imm_s(IntCC::Equal, args[1], value::tagged(0));
+                let location = self.builder.ins().iadd_imm_s(args[2], 8);
+                self.raise_if(zero, "Div", location)?;
                 let lhs = self.untag(args[0]);
                 let rhs = self.untag(args[1]);
                 let quotient = self.builder.ins().sdiv(lhs, rhs);
@@ -631,11 +667,14 @@ impl<M: Module> Translator<'_, M> {
                     let correction = self.builder.ins().imul(adjust, rhs);
                     self.builder.ins().iadd(remainder, correction)
                 };
-                self.tag(result)
+                // minInt div ~1 overflows.
+                let result = self.tag(result);
+                self.check_overflow(result)?
             }
             Prim::IntNeg => {
                 let two = self.word(2);
-                self.builder.ins().isub(two, args[0])
+                let negated = self.builder.ins().isub(two, args[0]);
+                self.check_overflow(negated)?
             }
             Prim::IntLt | Prim::IntLe | Prim::IntGt | Prim::IntGe => {
                 let condition = match prim {
@@ -690,40 +729,88 @@ impl<M: Module> Translator<'_, M> {
                 self.boolean(boxed)
             }
             Prim::Print => {
-                let format = match self.symbols.format {
-                    Some(format) => format,
-                    None => {
-                        let id = self
-                            .target
-                            .declare_data("nassau_format", Linkage::Local, false, false)
-                            .map_err(backend)?;
-                        let mut data = DataDescription::new();
-                        data.define(b"%s\0".to_vec().into_boxed_slice());
-                        self.target.define_data(id, &data).map_err(backend)?;
-                        self.symbols.format = Some(id);
-                        id
-                    }
-                };
-                let format = self.data_address(format);
-                let bytes = self.builder.ins().iadd_imm_s(args[0], 8);
-                self.call_c(
-                    "printf",
-                    &[types::I64, types::I64],
-                    Some(types::I32),
-                    &[format, bytes],
-                )?;
-                let stdout = self.word(0);
-                self.call_c("fflush", &[types::I64], Some(types::I32), &[stdout])?;
+                self.call_c("nassau_print", &[types::I64], Some(types::I64), args)?;
                 self.word(value::tagged(0))
             }
             Prim::Exit => {
-                let status = self.untag(args[0]);
-                let status = self.builder.ins().band_imm_u(status, 255);
-                let status = self.builder.ins().ireduce(types::I32, status);
-                self.call_c("exit", &[types::I32], None, &[status])?;
+                self.call_c("nassau_exit", &[types::I64], None, args)?;
                 self.word(value::tagged(0))
             }
+            Prim::Equal | Prim::Unequal => {
+                let equal = self
+                    .call_c(
+                        "nassau_equal",
+                        &[types::I64, types::I64],
+                        Some(types::I64),
+                        args,
+                    )?
+                    .expect("nassau_equal returns a bool");
+                if prim == Prim::Equal {
+                    equal
+                } else {
+                    // Flip the bool's payload bit: 1 <-> 3.
+                    self.builder.ins().bxor_imm_u(equal, 2)
+                }
+            }
         })
+    }
+
+    /// A NUL-terminated C string in static data.
+    fn c_string(&mut self, text: &str) -> Result<Value, CodegenError> {
+        let mut bytes = text.as_bytes().to_vec();
+        bytes.push(0);
+        self.data(bytes)
+    }
+
+    /// Reports the uncaught exception `name`, raised at `location`, and
+    /// exits; the current block ends here.
+    fn raise(&mut self, name: &str, location: &str) -> Result<(), CodegenError> {
+        let name = self.c_string(name)?;
+        let location = self.c_string(location)?;
+        self.call_c(
+            "nassau_raise",
+            &[types::I64, types::I64],
+            None,
+            &[name, location],
+        )?;
+        self.builder.ins().trap(TrapCode::unwrap_user(1));
+        Ok(())
+    }
+
+    /// Raises `name` when `condition` holds; `location` is a C string.
+    fn raise_if(
+        &mut self,
+        condition: Value,
+        name: &str,
+        location: Value,
+    ) -> Result<(), CodegenError> {
+        let raise = self.builder.create_block();
+        let next = self.builder.create_block();
+        self.builder.set_cold_block(raise);
+        self.builder.ins().brif(condition, raise, &[], next, &[]);
+        self.builder.switch_to_block(raise);
+        let name = self.c_string(name)?;
+        self.call_c(
+            "nassau_raise",
+            &[types::I64, types::I64],
+            None,
+            &[name, location],
+        )?;
+        self.builder.ins().trap(TrapCode::unwrap_user(1));
+        self.builder.switch_to_block(next);
+        Ok(())
+    }
+
+    /// Raises `Overflow` unless the tagged int `word` is in range: a 31-bit
+    /// int tags to a 32-bit word.
+    fn check_overflow(&mut self, word: Value) -> Result<Value, CodegenError> {
+        let narrow = self.builder.ins().ireduce(types::I32, word);
+        let wide = self.builder.ins().sextend(types::I64, narrow);
+        let outside = self.builder.ins().icmp(IntCC::NotEqual, wide, word);
+        // SML/NJ reports Overflow at the file, not a position in it.
+        let location = self.c_string(&format!("<file {}>", self.file))?;
+        self.raise_if(outside, "Overflow", location)?;
+        Ok(word)
     }
 
     fn callee(&mut self, callee: &Callee, args: &[Atom]) -> Result<Call, CodegenError> {
@@ -857,11 +944,12 @@ impl<M: Module> Translator<'_, M> {
                     }
                 }
             }
-            Term::Fail(_) => {
-                let status = self.builder.ins().iconst(types::I32, 1);
-                self.call_c("exit", &[types::I32], None, &[status])?;
-                let unit = self.word(value::tagged(0));
-                self.ret(unit);
+            Term::Fail(failure, location) => {
+                let name = match failure {
+                    Failure::Match => "Match",
+                    Failure::Bind => "Bind",
+                };
+                self.raise(name, location)?;
             }
         }
         Ok(())

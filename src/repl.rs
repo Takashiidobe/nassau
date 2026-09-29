@@ -81,7 +81,15 @@ impl Repl {
             .map_err(|(error, span)| report(error, span, &named_source))?;
         let mut lowering = self.lowering.clone();
         let module = lowering
-            .lower(&program, &checked.types, &format!("nassau_repl_{chunk}"))
+            .lower(
+                &program,
+                &checked.types,
+                &lower::Source {
+                    file: format!("<repl:{chunk}>"),
+                    text: source.to_owned(),
+                },
+                &format!("nassau_repl_{chunk}"),
+            )
             .map_err(|(error, span)| report(error, span, &named_source))?;
         let entry = self
             .codegen

@@ -43,14 +43,22 @@ impl Session {
             .map(|(_, global)| *global)
     }
 
-    /// Lowers `program`, whose top-level code becomes the function `entry`.
-    pub fn lower(&mut self, program: &Program, types: &TypeTable, entry: &str) -> Res<Module> {
+    /// Lowers `program`, read from `file` with text `source`; its top-level
+    /// code becomes the function `entry`.
+    pub fn lower(
+        &mut self,
+        program: &Program,
+        types: &TypeTable,
+        source: &Source,
+        entry: &str,
+    ) -> Res<Module> {
         let mut session = self.clone();
         let id = session.next_function;
         session.next_function += 1;
         let mut lowerer = Lowerer {
             session: &mut session,
             types,
+            source,
             new_globals: Vec::new(),
             function: Builder::new(id, entry),
         };
@@ -63,6 +71,7 @@ impl Session {
             functions: Vec::new(),
             globals: lowerer.new_globals,
             entry: lowerer.function.finish(),
+            file: source.file.clone(),
         };
         *self = session;
         Ok(module)
@@ -137,9 +146,40 @@ impl Builder {
     }
 }
 
+/// The program's source, for the positions SML/NJ reports exceptions at.
+pub struct Source {
+    /// The file name as SML/NJ shows it: without directories.
+    pub file: String,
+    pub text: String,
+}
+
+impl Source {
+    /// SML/NJ's `line.column` of the byte at `offset`, both counted from 1.
+    fn position(&self, offset: usize) -> String {
+        let before = &self.text[..offset.min(self.text.len())];
+        let line = before.matches('\n').count() + 1;
+        let column = before.len() - before.rfind('\n').map_or(0, |newline| newline + 1) + 1;
+        format!("{line}.{column}")
+    }
+
+    /// Where SML/NJ reports an exception raised by the infix operator `name`
+    /// between `lhs` and `rhs`: the operator's own span.
+    fn operator(&self, name: &str, lhs: &Expr, rhs: &Expr) -> String {
+        let between = &self.text[lhs.end.offset..rhs.start.offset];
+        let start = lhs.end.offset + between.find(name).unwrap_or(0);
+        format!(
+            "{}:{}-{}",
+            self.file,
+            self.position(start),
+            self.position(start + name.len())
+        )
+    }
+}
+
 struct Lowerer<'a> {
     session: &'a mut Session,
     types: &'a TypeTable,
+    source: &'a Source,
     new_globals: Vec<(GlobalId, String)>,
     function: Builder,
 }
@@ -255,21 +295,23 @@ impl Lowerer<'_> {
                     (ExprKind::LessEqual(..), true) => Prim::RealLe,
                     _ => unreachable!(),
                 };
-                let lhs = self.value(lhs)?;
-                let rhs = self.value(rhs)?;
-                self.function.bind("", Op::Prim(prim, vec![lhs, rhs]))
+                let mut args = vec![self.value(lhs)?, self.value(rhs)?];
+                if prim == Prim::IntDiv {
+                    args.push(Atom::String(self.source.operator("div", lhs, rhs)));
+                }
+                self.function.bind("", Op::Prim(prim, args))
             }
             ExprKind::Equal(lhs, rhs) | ExprKind::NotEqual(lhs, rhs) => {
+                // Immediates are equal when their words are; anything else
+                // is compared by the runtime.
                 let immediate = self
                     .ty(lhs)
                     .is_some_and(|ty| ty.is("int") || ty.is("bool") || ty.is("char"));
-                if !immediate {
-                    return Err(unsupported("equality on this type", expr));
-                }
-                let prim = if matches!(expr.value, ExprKind::Equal(..)) {
-                    Prim::WordEq
-                } else {
-                    Prim::WordNe
+                let prim = match (immediate, matches!(expr.value, ExprKind::Equal(..))) {
+                    (true, true) => Prim::WordEq,
+                    (true, false) => Prim::WordNe,
+                    (false, true) => Prim::Equal,
+                    (false, false) => Prim::Unequal,
                 };
                 let lhs = self.value(lhs)?;
                 let rhs = self.value(rhs)?;

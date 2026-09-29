@@ -11,7 +11,7 @@ val nested = [[1, 2], []]
 (* CHECK-STDOUT-NEXT: fn f0 main() { *)
 (* CHECK-STDOUT-NEXT:   b0(): *)
 (* CHECK-STDOUT-NEXT:     v0 = print("start\n") *)
-(* CHECK-STDOUT-NEXT:     v1 = int.div(#7, #~2) *)
+(* CHECK-STDOUT-NEXT:     v1 = int.div(#7, #~2, "top-level.sml:3.18-3.21") *)
 (* CHECK-STDOUT-NEXT:     g0 := v1 *)
 (* CHECK-STDOUT-NEXT:     v2:quotient = g0 *)
 (* CHECK-STDOUT-NEXT:     v3 = int.lt(v2, #0) *)

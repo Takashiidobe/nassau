@@ -104,13 +104,19 @@ fn smlnj_program_output(output: &[u8], fixture: &Path) -> Vec<u8> {
             .to_vec();
     }
     let opening = format!("[opening {}]\n", fixture.display());
-    let start = output.find(&opening).unwrap_or_else(|| {
-        panic!(
-            "SML/NJ output did not contain {opening:?} for {}",
-            fixture.display()
-        )
-    });
-    output[start + opening.len()..].as_bytes().to_vec()
+    match output.find(&opening) {
+        Some(start) => output[start + opening.len()..].as_bytes().to_vec(),
+        // SML/NJ can fail while compiling, before it announces the file; it
+        // then prints nothing but its banner.
+        None => {
+            assert!(
+                output.lines().count() <= 1,
+                "SML/NJ output did not contain {opening:?} for {}",
+                fixture.display()
+            );
+            Vec::new()
+        }
+    }
 }
 
 fn check_program(fixture: &Path, source: &str, output: &Output) {

@@ -38,6 +38,8 @@ pub enum Prim {
     IntAdd,
     IntSub,
     IntMul,
+    /// `div` and `mod` take a third argument: the position to report `Div`
+    /// at, as a string.
     IntDiv,
     IntMod,
     IntNeg,
@@ -57,6 +59,9 @@ pub enum Prim {
     /// Whether two words are identical: equality on immediates.
     WordEq,
     WordNe,
+    /// Structural equality on any equality type.
+    Equal,
+    Unequal,
     /// Whether a value is a pointer to a heap block rather than an immediate.
     IsBoxed,
     /// Prints a string.
@@ -89,6 +94,8 @@ impl Prim {
             Prim::RealGe => "real.ge",
             Prim::WordEq => "word.eq",
             Prim::WordNe => "word.ne",
+            Prim::Equal => "equal",
+            Prim::Unequal => "unequal",
             Prim::IsBoxed => "is_boxed",
             Prim::Print => "print",
             Prim::Exit => "exit",
@@ -145,7 +152,8 @@ pub enum Term {
     /// Branches on a `bool`.
     If(Atom, BlockId, BlockId),
     TailCall(Callee, Vec<Atom>),
-    Fail(Failure),
+    /// Raises `Match` or `Bind`, reported at the given position.
+    Fail(Failure, String),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -175,6 +183,8 @@ pub struct Module {
     pub globals: Vec<(GlobalId, String)>,
     /// The top-level code, run once; it returns the exit status.
     pub entry: Function,
+    /// The source file's name, for reporting uncaught exceptions.
+    pub file: String,
 }
 
 impl fmt::Display for Atom {
@@ -265,8 +275,8 @@ impl fmt::Display for Function {
                     format!("if {condition} then b{then} else b{otherwise}")
                 }
                 Term::TailCall(callee, args) => format!("tailcall {callee}({})", atoms(args)),
-                Term::Fail(Failure::Match) => "fail Match".to_string(),
-                Term::Fail(Failure::Bind) => "fail Bind".to_string(),
+                Term::Fail(Failure::Match, location) => format!("fail Match at {location}"),
+                Term::Fail(Failure::Bind, location) => format!("fail Bind at {location}"),
             };
             writeln!(f, "    {term}")?;
         }

@@ -9,6 +9,7 @@ mod lower;
 mod matching;
 mod parser;
 mod repl;
+mod runtime;
 mod scope;
 mod sema;
 mod span;
@@ -139,8 +140,13 @@ fn run(cli: &Cli) -> miette::Result<Option<PathBuf>> {
             miette::Report::new(SourceError::new(error, span))
                 .with_source_code(named_source.clone())
         })?;
+    let file = input.file_name().map_or_else(
+        || input.display().to_string(),
+        |name| name.to_string_lossy().into_owned(),
+    );
+    let source = lower::Source { file, text: source };
     let module = lower::Session::new()
-        .lower(&program, &checked.types, "main")
+        .lower(&program, &checked.types, &source, "main")
         .map_err(|(error, span)| {
             miette::Report::new(SourceError::new(error, span)).with_source_code(named_source)
         })?;

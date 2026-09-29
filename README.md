@@ -65,6 +65,7 @@ differ from SML/NJ; it fails the suite once it starts passing.
 - `fn` expressions and functions returned from functions are closures: closure conversion gives each one a code pointer and the variables it captures, and calls to unknown functions go through the closure, so functions can be passed, returned and stored in data. `o`, references (`ref`, `!`, `:=` and `ref` patterns), `while`, `before`, `ignore`, `#label` selectors and functions declared infix are compiled too.
 - Curried functions (`fun f x y = ...`) compile to a worker taking every argument plus one small function per stage, so a partial application allocates a closure holding the arguments so far, while a saturated call such as `f 1 2` goes straight to the worker without allocating.
 - Calls in tail position are proper tail calls (Cranelift's tail calling convention and `return_call`), including mutual recursion and calls through closures, so loops written as recursion run in constant stack in compiled programs and the REPL.
+- Polymorphic functions are compiled once and used at every type through the uniform representation (reals, strings, tuples and lists are passed as pointers); `=` on an equality type variable (`''a`), strings, lists and tuples uses the runtime's structural equality.
 - Integer arithmetic supports `+`, `-`, `*`, and `div` (rounding toward negative infinity), raising `Overflow` outside the 31-bit range and `Div` on division by zero.
 - Real arithmetic supports `+`, `-`, `*`, and `/`.
 - Conditionals like `If then else`

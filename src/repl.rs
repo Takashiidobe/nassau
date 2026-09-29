@@ -173,6 +173,15 @@ fn show(word: u64, ty: &Ty) -> String {
                 }
             }
             ("bool", _) => (word == value::TRUE).to_string(),
+            ("word", _) => format!("0wx{:X}", word >> 1),
+            ("order", _) => ["LESS", "EQUAL", "GREATER"][(word >> 1) as usize].to_string(),
+            ("option", [element]) if word == value::tagged(0) => "NONE".to_string(),
+            ("option", [element]) => {
+                format!(
+                    "SOME {}",
+                    argument(show(field(word, 0) as u64, element), element)
+                )
+            }
             ("unit", _) => "()".to_string(),
             ("char", _) => {
                 let char = char::from_u32((word >> 1) as u32).unwrap_or('?');
@@ -227,6 +236,13 @@ fn show(word: u64, ty: &Ty) -> String {
         }
         _ => "-".to_string(),
     }
+}
+
+/// A constructor's argument as SML/NJ shows it: parenthesised when it is
+/// itself a constructor application.
+fn argument(shown: String, ty: &Ty) -> String {
+    let applied = matches!(ty, Ty::Con { name, .. } if name == "option") && shown != "NONE";
+    if applied { format!("({shown})") } else { shown }
 }
 
 pub fn run(

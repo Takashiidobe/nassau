@@ -17,6 +17,10 @@ use crate::infer::{Ty, TypeTable};
 use crate::parser::{Decl, DeclKind, Expr, ExprKind, Pat, PatKind, Program, StmtKind};
 use crate::value;
 
+mod decision;
+
+use decision::Test;
+
 #[derive(Debug, ThisError)]
 pub enum LowerError {
     #[error("{0} are not supported by code generation yet")]
@@ -676,32 +680,6 @@ impl Lowerer<'_> {
 
     // --- matching --------------------------------------------------------
 
-    /// Matches `scrutinees` against each rule's patterns in turn and sends
-    /// the first matching rule's body to `dest`; no match raises `Match`.
-    fn rules(
-        &mut self,
-        scrutinees: &[Atom],
-        rules: &[(Vec<&Pat>, &Expr)],
-        dest: Dest,
-        location: &str,
-    ) -> Res<()> {
-        for (patterns, body) in rules {
-            let fail = self.block(Vec::new());
-            let mark = self.scope.len();
-            for (pattern, scrutinee) in patterns.iter().zip(scrutinees) {
-                self.pattern(pattern, scrutinee.clone(), fail)?;
-            }
-            self.into(body, dest)?;
-            self.scope.truncate(mark);
-            self.switch(fail);
-        }
-        self.terminate(Term::Fail(
-            crate::core::Failure::Match,
-            location.to_string(),
-        ));
-        Ok(())
-    }
-
     /// Binds `name` to `value` in the scope.
     fn bind_local(&mut self, name: &str, value: Atom) -> Var {
         let var = self.var_for(name, value);
@@ -906,10 +884,15 @@ impl Lowerer<'_> {
             ExprKind::Character(value) => Atom::Word(value::tagged(i64::from(u32::from(*value)))),
             ExprKind::String(value) => Atom::String(value.clone()),
             ExprKind::Unit => Atom::Word(value::tagged(0)),
+            ExprKind::Word(text) => match decision::parse_word(text) {
+                Some(word) => Atom::Word(value::tagged(word)),
+                None => return Err(unsupported("this word constant", expr)),
+            },
             ExprKind::Variable(name) => match self.lookup(name) {
                 Some(binding) => self.load(name, &binding),
-                None => match (constant(name), builtin(name)) {
-                    (Some(word), _) => Atom::Word(word),
+                None => match (self.constructor(name), builtin(name)) {
+                    (Some((Test::Word { word, .. }, _)), _) => Atom::Word(word),
+                    (Some((test, _)), _) => self.constructor_closure(name, &test),
                     (None, Some(builtin)) => self.builtin_closure(name, builtin),
                     (None, None) => {
                         return Err(unsupported(
@@ -1002,6 +985,9 @@ impl Lowerer<'_> {
             | ExprKind::GreaterEqual(lhs, rhs)
             | ExprKind::Less(lhs, rhs)
             | ExprKind::LessEqual(lhs, rhs) => {
+                if self.ty(lhs).is_some_and(|ty| ty.is("word")) {
+                    return Err(unsupported("word arithmetic and comparisons", expr));
+                }
                 let real = self.is_real(lhs);
                 let prim = match (&expr.value, real) {
                     (ExprKind::Add(..), false) => Prim::IntAdd,
@@ -1031,9 +1017,9 @@ impl Lowerer<'_> {
             ExprKind::Equal(lhs, rhs) | ExprKind::NotEqual(lhs, rhs) => {
                 // Immediates are equal when their words are; anything else
                 // is compared by the runtime.
-                let immediate = self
-                    .ty(lhs)
-                    .is_some_and(|ty| ty.is("int") || ty.is("bool") || ty.is("char"));
+                let immediate = self.ty(lhs).is_some_and(|ty| {
+                    ty.is("int") || ty.is("word") || ty.is("bool") || ty.is("char")
+                });
                 let prim = match (immediate, matches!(expr.value, ExprKind::Equal(..))) {
                     (true, true) => Prim::WordEq,
                     (true, false) => Prim::WordNe,
@@ -1161,6 +1147,12 @@ impl Lowerer<'_> {
         if let ExprKind::Variable(name) = &head.value {
             let binding = self.lookup(name);
             if binding.is_none()
+                && let Some((test, true)) = self.constructor(name)
+            {
+                let argument = self.value(args[0])?;
+                function = Some(self.construct(&test, argument));
+                rest = &args[1..];
+            } else if binding.is_none()
                 && let Some(builtin) = builtin(name)
             {
                 let real = self.is_real(args[0]);
@@ -1237,6 +1229,33 @@ impl Lowerer<'_> {
             Builtin::Deref => self.bind("", Op::Select(argument, 0)),
             Builtin::Ignore => Atom::Word(value::tagged(0)),
         }
+    }
+
+    /// The value the constructor `test` builds from `argument`.
+    fn construct(&mut self, test: &Test, argument: Atom) -> Atom {
+        match test {
+            // A cons cell is laid out as the pair it is built from.
+            Test::Cons => argument,
+            Test::Ref => self.bind("", Op::Prim(Prim::Ref, vec![argument])),
+            Test::Boxed { tag: None, .. } => self.bind("", Op::Record(vec![argument])),
+            Test::Boxed { tag: Some(tag), .. } => {
+                self.bind("", Op::Record(vec![Atom::Word(*tag), argument]))
+            }
+            Test::Word { word, .. } => Atom::Word(*word),
+            Test::String(_) => unreachable!("strings are not constructors"),
+        }
+    }
+
+    /// A closure for a constructor used as a function, as in `map SOME xs`.
+    fn constructor_closure(&mut self, name: &str, test: &Test) -> Atom {
+        let id = self.session.function_id();
+        self.frames.push(Builder::new(id, name, vec!["env", ""]));
+        let argument = Atom::Var(self.frame().params[1]);
+        let result = self.construct(test, argument);
+        self.terminate(Term::Return(result));
+        let frame = self.frames.pop().expect("the constructor's frame");
+        self.functions.push(frame.finish());
+        self.closure(name, id, Vec::new())
     }
 
     /// A closure for a built-in function used as a value.

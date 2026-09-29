@@ -61,6 +61,7 @@ differ from SML/NJ; it fails the suite once it starts passing.
 - Values share one word-sized representation (`docs/value-representation.md`): `int` is 31 bits wide as in SML/NJ, and lists are cons cells.
 - Code generation lowers the type-checked program to a core IR in A-normal form with explicit blocks, then translates that to Cranelift. The REPL compiles each chunk the same way and prints bindings from their compiled values.
 - A C runtime library (`runtime/nassau_runtime.c`, built by `build.rs`) is linked into compiled programs and into the compiler for the REPL's JIT: allocation, printing, string concatenation, structural equality and uncaught exceptions, which it reports with SML/NJ's message and exit status.
+- Top-level `fun` and `val rec` compile to native functions, including mutual recursion with `and` and clauses over constants, tuples, records, lists and `::`; calls to a known function go straight to its code. `val` bindings take any of those patterns, raising `Bind` when they fail, and a match with no applicable rule raises `Match`. `print`, `Int.toString`, `^`, `size`, `not` and `~` are compiled inline.
 - Integer arithmetic supports `+`, `-`, `*`, and `div` (rounding toward negative infinity), raising `Overflow` outside the 31-bit range and `Div` on division by zero.
 - Real arithmetic supports `+`, `-`, `*`, and `/`.
 - Conditionals like `If then else`

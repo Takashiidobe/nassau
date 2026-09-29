@@ -48,8 +48,12 @@ collector must trace; string and real blocks hold raw bytes.
   block.
 - **Lists** are chains of cons cells ending in `nil`: a cons cell is a record
   block with two fields, the head and the tail.
-- **Constructors with an argument** are record blocks whose field 0 is the
-  constructor's tag (an immediate) and field 1 its argument.
+- **Constructors with an argument** are record blocks. When the datatype has
+  several such constructors, field 0 is the constructor's tag (an immediate:
+  its index among them, in declaration order) and field 1 its argument. When
+  it has only one, as `option` has `SOME`, the tag is left out and the block
+  holds just the argument; a match tells it from the nullary constructors,
+  which are immediates, by whether the value is a block.
 - **Reals** are boxed, so a `real` is a pointer to a real block; code
   generation keeps them unboxed in registers inside a function.
 - **Strings** are string blocks. The NUL terminator lets the runtime pass them

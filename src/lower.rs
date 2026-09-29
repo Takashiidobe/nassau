@@ -533,14 +533,15 @@ impl Lowerer<'_> {
                     self.scope.drain(outer..inner);
                 }
             }
-            // Types have no run-time presence; fixity only affects parsing.
-            DeclKind::Type(_) | DeclKind::Fixity { .. } => {}
+            // Types have no run-time presence, and constructors are compiled
+            // where they are used; fixity only affects parsing.
+            DeclKind::Type(_)
+            | DeclKind::Fixity { .. }
+            | DeclKind::Datatype { .. }
+            | DeclKind::DatatypeCopy { .. } => {}
+            DeclKind::Abstype { body, .. } => self.declarations(body, top)?,
             other => {
                 let what = match other {
-                    DeclKind::Datatype { .. } | DeclKind::DatatypeCopy { .. } => {
-                        "datatype declarations"
-                    }
-                    DeclKind::Abstype { .. } => "abstype declarations",
                     DeclKind::Exception(_) => "exception declarations",
                     _ => "module declarations",
                 };
@@ -797,7 +798,7 @@ impl Lowerer<'_> {
             },
             ExprKind::Variable(name) => match self.lookup(name) {
                 Some(binding) => self.load(name, &binding),
-                None => match (self.constructor(name), builtin(name)) {
+                None => match (self.constructor(name, self.ty(expr)), builtin(name)) {
                     (Some((Test::Word { word, .. }, _)), _) => Atom::Word(word),
                     (Some((test, _)), _) => self.constructor_closure(name, &test),
                     (None, Some(builtin)) => self.builtin_closure(name, builtin),
@@ -1054,7 +1055,7 @@ impl Lowerer<'_> {
         if let ExprKind::Variable(name) = &head.value {
             let binding = self.lookup(name);
             if binding.is_none()
-                && let Some((test, true)) = self.constructor(name)
+                && let Some((test, true)) = self.constructor(name, self.ty(head))
             {
                 let argument = self.value(args[0])?;
                 function = Some(self.construct(&test, argument));

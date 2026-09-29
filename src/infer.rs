@@ -213,9 +213,17 @@ pub struct Node<T> {
 pub struct TypeTable {
     nodes: Vec<Node<Ty>>,
     index: HashMap<(usize, bool), usize>,
+    /// Each datatype's constructors in declaration order, by stamp, with
+    /// whether each takes an argument.
+    datatypes: HashMap<usize, Vec<(String, bool)>>,
 }
 
 impl TypeTable {
+    /// The constructors of the datatype with `stamp`.
+    pub fn constructors(&self, stamp: usize) -> Option<&[(String, bool)]> {
+        self.datatypes.get(&stamp).map(Vec::as_slice)
+    }
+
     pub fn expr(&self, expr: &Expr) -> Option<&Ty> {
         self.get(expr as *const Expr as usize, false)
     }
@@ -2284,7 +2292,26 @@ impl Session {
             .enumerate()
             .map(|(index, node)| ((node.address, node.pattern), index))
             .collect();
-        let types = TypeTable { nodes, index };
+        let datatypes = infer
+            .datatypes
+            .iter()
+            .map(|(stamp, info)| {
+                let constructors = info
+                    .constructors
+                    .iter()
+                    .map(|(name, scheme)| {
+                        let carries = matches!(infer.prune(&scheme.ty), Type::Arrow(..));
+                        (name.clone(), carries)
+                    })
+                    .collect();
+                (*stamp, constructors)
+            })
+            .collect();
+        let types = TypeTable {
+            nodes,
+            index,
+            datatypes,
+        };
         self.infer = infer;
         Ok(Checked { bindings, types })
     }

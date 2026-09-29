@@ -121,6 +121,10 @@ impl Codegen {
         flag_builder
             .set("opt_level", self.opt_level.as_cranelift())
             .map_err(backend)?;
+        // Cranelift's tail calls rely on frame pointers.
+        flag_builder
+            .set("preserve_frame_pointers", "true")
+            .map_err(backend)?;
         if jit {
             flag_builder
                 .set("use_colocated_libcalls", "false")
@@ -730,6 +734,39 @@ impl<M: Module> Translator<'_, M> {
             }
             Prim::Print => {
                 self.call_c("nassau_print", &[types::I64], Some(types::I64), args)?;
+                self.word(value::tagged(0))
+            }
+            Prim::Concat => self
+                .call_c(
+                    "nassau_concat",
+                    &[types::I64, types::I64],
+                    Some(types::I64),
+                    args,
+                )?
+                .expect("nassau_concat returns a string"),
+            Prim::IntToString => self
+                .call_c(
+                    "nassau_int_to_string",
+                    &[types::I64],
+                    Some(types::I64),
+                    args,
+                )?
+                .expect("nassau_int_to_string returns a string"),
+            Prim::Size => {
+                let header =
+                    self.builder
+                        .ins()
+                        .load(types::I64, MemFlagsData::trusted(), args[0], 0);
+                let length = self.builder.ins().sshr_imm_u(header, 8);
+                self.tag(length)
+            }
+            Prim::Ref => {
+                let cell = self.allocate(1, value::KIND_REF)?;
+                self.store(args[0], cell, 8);
+                cell
+            }
+            Prim::Assign => {
+                self.store(args[1], args[0], 8);
                 self.word(value::tagged(0))
             }
             Prim::Exit => {

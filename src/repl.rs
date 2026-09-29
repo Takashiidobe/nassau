@@ -5,6 +5,7 @@ use crate::error::{CodegenError, SourceError};
 use crate::infer::{self, Ty};
 use crate::lower;
 use crate::parser::{Parser, Program};
+use crate::runtime;
 use crate::value;
 
 pub struct Repl {
@@ -37,6 +38,7 @@ impl Repl {
             objdump: false,
         });
         let module = codegen.new_jit_module()?;
+        runtime::enter_repl();
         Ok(Self {
             codegen,
             module,
@@ -61,7 +63,9 @@ impl Repl {
             })
     }
 
-    fn execute(&mut self, source: &str) -> miette::Result<()> {
+    /// Runs the chunk `source`, which starts on line `first_line` of the
+    /// input.
+    fn execute(&mut self, source: &str, first_line: usize) -> miette::Result<()> {
         let chunk = self.next_chunk;
         self.next_chunk += 1;
         let program = self.parse(source, chunk)?;
@@ -78,8 +82,9 @@ impl Repl {
                 &program,
                 &checked.types,
                 &lower::Source {
-                    file: format!("<repl:{chunk}>"),
+                    file: "stdIn".to_string(),
                     text: source.to_owned(),
+                    first_line,
                 },
                 &format!("nassau_repl_{chunk}"),
             )
@@ -88,9 +93,16 @@ impl Repl {
             .codegen
             .compile_jit_chunk(&mut self.module, &mut self.symbols, &module)
             .map_err(miette::Report::msg)?;
-        self.types = types;
-        self.lowering = lowering;
+        let earlier_types = std::mem::replace(&mut self.types, types);
+        let earlier_lowering = std::mem::replace(&mut self.lowering, lowering);
         let status = entry();
+        if let Some(exception) = runtime::take_uncaught() {
+            // A chunk that raises binds nothing.
+            self.types = earlier_types;
+            self.lowering.forget_bindings(&earlier_lowering);
+            println!("\n{}", uncaught(exception));
+            return Ok(());
+        }
         for binding in &checked.bindings {
             let word = self
                 .lowering
@@ -112,8 +124,12 @@ impl Repl {
         let mut input = stdin.lock();
         let mut line = String::new();
         let mut chunk = String::new();
+        // Lines are numbered across the whole input, as SML/NJ's `stdIn`.
+        let mut lines = 0;
+        let mut first_line = 1;
         loop {
             if chunk.is_empty() {
+                first_line = lines + 1;
                 print!("nassau> ");
                 io::stdout()
                     .flush()
@@ -124,6 +140,7 @@ impl Repl {
                 .read_line(&mut line)
                 .map_err(|error| miette::miette!("{error}"))?;
             chunk.push_str(&line);
+            lines += 1;
             // Like SML/NJ, a chunk runs at a semicolon ending a line, or at
             // the end of the input.
             let complete = bytes == 0 || chunk.trim_end().ends_with(';');
@@ -131,7 +148,7 @@ impl Repl {
                 continue;
             }
             if !chunk.trim().is_empty()
-                && let Err(error) = self.execute(&chunk)
+                && let Err(error) = self.execute(&chunk, first_line)
             {
                 eprintln!("{error:?}");
             }
@@ -179,6 +196,12 @@ fn show(word: u64, ty: &Ty) -> String {
             ("option", [element]) => {
                 format!(
                     "SOME {}",
+                    argument(show(field(word, 0) as u64, element), element)
+                )
+            }
+            ("ref", [element]) => {
+                format!(
+                    "ref {}",
                     argument(show(field(word, 0) as u64, element), element)
                 )
             }
@@ -238,10 +261,52 @@ fn show(word: u64, ty: &Ty) -> String {
     }
 }
 
+/// SML/NJ's report of an exception that escapes a top-level declaration.
+fn uncaught(exception: i64) -> String {
+    // SAFETY: an exception value is a record of its identity, its argument
+    // and the string naming where it was raised; the identity is a
+    // reference cell holding the exception's name.
+    let field = |block: i64, index: usize| unsafe { *((block as *const i64).add(index + 1)) };
+    let text = |string: i64| unsafe {
+        let length = (*(string as *const i64) >> 8) as usize;
+        String::from_utf8_lossy(std::slice::from_raw_parts(
+            (string as *const u8).add(8),
+            length,
+        ))
+        .into_owned()
+    };
+    let identity = field(exception, 0);
+    let name = text(field(identity, 0));
+    let builtin = |known: &str| {
+        value::builtin_exception(known)
+            .is_some_and(|index| runtime::builtin_exception(index) == identity)
+    };
+    // The basis's exceptions describe themselves.
+    let detail = if builtin("Fail") {
+        format!(" [Fail: {}]", text(field(exception, 1)))
+    } else {
+        [
+            ("Div", "divide by zero"),
+            ("Overflow", "overflow"),
+            ("Match", "nonexhaustive match failure"),
+            ("Bind", "nonexhaustive binding failure"),
+            ("Subscript", "subscript out of bounds"),
+        ]
+        .iter()
+        .find(|(known, _)| builtin(known))
+        .map_or_else(String::new, |(_, message)| format!(" [{message}]"))
+    };
+    format!(
+        "uncaught exception {name}{detail}\n  raised at: {}",
+        text(field(exception, 2))
+    )
+}
+
 /// A constructor's argument as SML/NJ shows it: parenthesised when it is
 /// itself a constructor application.
 fn argument(shown: String, ty: &Ty) -> String {
-    let applied = matches!(ty, Ty::Con { name, .. } if name == "option") && shown != "NONE";
+    let applied =
+        matches!(ty, Ty::Con { name, .. } if name == "option" || name == "ref") && shown != "NONE";
     if applied { format!("({shown})") } else { shown }
 }
 

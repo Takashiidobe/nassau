@@ -38,7 +38,6 @@ header = (length << 8) | kind
 | string | 2 | bytes | the bytes, NUL-terminated and padded to a word |
 | real | 3 | 1 | one IEEE double, not a value |
 | ref | 4 | 1 | one mutable value |
-| exception packet | 5 | fields | field 0 identifies the exception, field 1 its argument |
 
 Values of the record and ref kinds and closures after field 0 are values the
 collector must trace; string and real blocks hold raw bytes.
@@ -54,6 +53,21 @@ collector must trace; string and real blocks hold raw bytes.
   it has only one, as `option` has `SOME`, the tag is left out and the block
   holds just the argument; a match tells it from the nullary constructors,
   which are immediates, by whether the value is a block.
+- **Exceptions** are record blocks `[identity, argument, raised at]`, with
+  `()` as the argument of a constructor that takes none. The last field is
+  `()` until the value is first raised and then the string naming where, as
+  SML/NJ reports it; raising the same value again keeps it. The identity is a reference
+  cell holding the exception's name, allocated each time the `exception`
+  declaration is evaluated, so declarations inside functions are
+  generative; a replication (`exception F = E`) shares its original's
+  identity. A match compares identities by address.
+- **Raising** does not unwind the stack by jumping. A function that raises
+  records the exception with the runtime and returns the word `0`, which is
+  no value: immediates are odd and blocks are non-null. Every call checks
+  its result for `0` and either enters the handler of the `handle`
+  expression around it, which takes the exception from the runtime, or
+  returns `0` itself. Calls under a handler are not tail calls, since the
+  handler must outlive them; any other call in tail position still is.
 - **Reals** are boxed, so a `real` is a pointer to a real block; code
   generation keeps them unboxed in registers inside a function.
 - **Strings** are string blocks. The NUL terminator lets the runtime pass them

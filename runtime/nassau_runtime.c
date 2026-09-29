@@ -130,15 +130,101 @@ static int equal(word lhs, word rhs) {
 /* Polymorphic structural equality, `=` on any equality type. */
 word nassau_equal(word lhs, word rhs) { return TAG(equal(lhs, rhs)); }
 
-/* Reports an uncaught exception as SML/NJ does and exits. `where` is the
- * position SML/NJ names as the raise point. */
-void nassau_raise(const char *name, const char *where) {
+/* The basis's exceptions, in the order of value::BUILTIN_EXCEPTIONS. An
+ * exception's identity is a reference cell holding its name: each
+ * evaluation of an `exception` declaration allocates a new one, and these
+ * are allocated once, on first use. */
+static const char *const builtin_names[] = {"Div",  "Overflow",  "Match", "Bind",
+                                            "Fail", "Subscript", "Empty"};
+static word builtin_identities[sizeof builtin_names / sizeof builtin_names[0]];
+
+word nassau_exception(word index) {
+    word slot = UNTAG(index);
+    if (builtin_identities[slot] == 0) {
+        const char *name = builtin_names[slot];
+        word *identity = nassau_alloc(1);
+        identity[0] = HEADER(1, KIND_REF);
+        identity[1] = string_block(name, strlen(name));
+        builtin_identities[slot] = (word)identity;
+    }
+    return builtin_identities[slot];
+}
+
+/* An exception value is a record [identity, argument, position]: the
+ * position is () until the value is first raised, and then the string
+ * naming where, which a raise of the same value again keeps.
+ *
+ * A function that raises records its exception here and returns 0, which is
+ * no value; each caller then goes to its handler or returns 0 in turn. */
+static word raised;
+
+/* `where` is a string, or 0 when a handler passes an exception on. */
+void nassau_raise_exception(word exception, word where) {
+    if (where != 0 && !IS_BOXED(FIELD(exception, 2))) {
+        FIELD(exception, 2) = where;
+    }
+    raised = exception;
+}
+
+/* Raises the built-in exception with index `index` (Div, Overflow, Match or
+ * Bind), whose argument is (). */
+void nassau_raise_builtin(word index, word where) {
+    word *exception = nassau_alloc(3);
+    exception[0] = HEADER(3, KIND_RECORD);
+    exception[1] = nassau_exception(index);
+    exception[2] = TAG(0);
+    exception[3] = TAG(0);
+    nassau_raise_exception((word)exception, where);
+}
+
+/* The exception a handler catches. */
+word nassau_caught(void) {
+    word exception = raised;
+    raised = 0;
+    return exception;
+}
+
+/* In the REPL, the exception a chunk leaves uncaught waits here for the REPL
+ * to report; a compiled program reports it itself. */
+static int repl;
+static word uncaught;
+
+void nassau_repl(void) { repl = 1; }
+
+word nassau_take_uncaught(void) {
+    word exception = uncaught;
+    uncaught = 0;
+    return exception;
+}
+
+/* An exception no handler caught: reported as SML/NJ reports one that
+ * escapes a program, with its exit status. */
+int nassau_uncaught(void) {
+    word exception = nassau_caught();
+    if (repl) {
+        uncaught = exception;
+        return 0;
+    }
+    word identity = FIELD(exception, 0);
+    word name = FIELD(identity, 0);
+    word argument = FIELD(exception, 1);
+    word where = FIELD(exception, 2);
     fflush(stdout);
-    fprintf(stderr,
-            "/usr/lib/smlnj/bin/sml: Fatal error -- Uncaught exception %s with 0\n"
-            " raised at %s\n\n",
-            name, where);
-    exit(1);
+    fprintf(stderr, "/usr/lib/smlnj/bin/sml: Fatal error -- Uncaught exception %.*s with ",
+            (int)string_length(name), string_bytes(name));
+    /* SML/NJ shows an immediate argument as its untagged word and a string
+     * on the same line as the position; anything else is <unknown>. */
+    if (!IS_BOXED(argument)) {
+        fprintf(stderr, "%lld\n raised at %.*s\n\n", (long long)UNTAG(argument),
+                (int)string_length(where), string_bytes(where));
+    } else if (KIND(((word *)argument)[0]) == KIND_STRING) {
+        fprintf(stderr, "\"%.*s\" raised at %.*s\n\n", (int)string_length(argument),
+                string_bytes(argument), (int)string_length(where), string_bytes(where));
+    } else {
+        fprintf(stderr, "<unknown> raised at %.*s\n\n", (int)string_length(where),
+                string_bytes(where));
+    }
+    return 1;
 }
 
 /* Posix.Process.exit (Word8.fromInt status). */

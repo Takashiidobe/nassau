@@ -10,7 +10,7 @@
 //! jumps there.
 
 use super::{Dest, Lowerer, Res, unsupported_pattern};
-use crate::core::{self, Atom, BlockId, Op, Prim, Term};
+use crate::core::{Atom, BlockId, Op, Prim, Term};
 use crate::infer::Ty;
 use crate::parser::{Expr, Pat, PatKind};
 use crate::value;
@@ -49,6 +49,9 @@ pub enum Test {
     Cons,
     /// `ref`, which always matches.
     Ref,
+    /// An exception constructor, whose identity is only known at run time:
+    /// an exception value is the block `[identity, argument]`.
+    Exception { identity: Atom, carries: bool },
 }
 
 impl Test {
@@ -56,7 +59,7 @@ impl Test {
     fn span(&self) -> Option<usize> {
         match self {
             Test::Word { span, .. } => *span,
-            Test::String(_) => None,
+            Test::String(_) | Test::Exception { .. } => None,
             Test::Boxed { span, .. } => Some(*span),
             Test::Cons => Some(2),
             Test::Ref => Some(1),
@@ -79,22 +82,23 @@ struct Targets {
     rules: Vec<(BlockId, Vec<String>)>,
     /// Whether each rule is selected by some leaf.
     reached: Vec<bool>,
-    failure: core::Failure,
-    location: String,
+    /// What runs when no rule matches.
+    miss: Term,
 }
 
 impl Lowerer<'_> {
     /// Matches `scrutinees` against each rule's patterns in turn and sends
-    /// the first matching rule's body to `dest`; no match raises `Match`.
+    /// the first matching rule's body to `dest`; when none matches, `miss`
+    /// runs.
     pub(super) fn rules(
         &mut self,
         scrutinees: &[Atom],
         rules: &[(Vec<&Pat>, &Expr)],
         dest: Dest,
-        location: &str,
+        miss: Term,
     ) -> Res<()> {
         let patterns: Vec<Vec<&Pat>> = rules.iter().map(|(patterns, _)| patterns.clone()).collect();
-        let blocks = self.decide(scrutinees, &patterns, core::Failure::Match, location)?;
+        let blocks = self.decide(scrutinees, &patterns, miss)?;
         for ((block, names), (_, body)) in blocks.into_iter().zip(rules) {
             let Some(block) = block else { continue };
             self.switch(block);
@@ -112,20 +116,18 @@ impl Lowerer<'_> {
     /// Compiles the match of `scrutinees` against the rows `patterns`,
     /// ending the current block. Returns, for each rule some value can
     /// select, the block entered when it does and the names its parameters
-    /// bind; when no rule matches, `failure` is raised at `location`.
+    /// bind; when no rule matches, `miss` runs.
     pub(super) fn decide(
         &mut self,
         scrutinees: &[Atom],
         patterns: &[Vec<&Pat>],
-        failure: core::Failure,
-        location: &str,
+        miss: Term,
     ) -> Res<Vec<(Option<BlockId>, Vec<String>)>> {
         let mut rows = Vec::new();
         let mut targets = Targets {
             rules: Vec::new(),
             reached: vec![false; patterns.len()],
-            failure,
-            location: location.to_string(),
+            miss,
         };
         for (rule, row) in patterns.iter().enumerate() {
             let mut names = Vec::new();
@@ -156,7 +158,7 @@ impl Lowerer<'_> {
     /// Emits the decision tree for `rows` over the values `occurrences`.
     fn tree(&mut self, occurrences: Vec<Atom>, mut rows: Vec<Row>, targets: &mut Targets) {
         if rows.is_empty() {
-            self.terminate(Term::Fail(targets.failure, targets.location.clone()));
+            self.terminate(targets.miss.clone());
             return;
         }
         // Bindings name the value in their column, whatever else it matches.
@@ -251,24 +253,39 @@ impl Lowerer<'_> {
             };
             // The rows that can still match once the test passed.
             let argument = self.argument(test, value.clone());
+            // Two exception constructors can share an identity (`exception F
+            // = E`), so a row naming another one tests the value again.
+            let retest = matches!(test, Test::Exception { .. });
             let specialised = rows
                 .iter()
                 .filter_map(|row| {
-                    let inner = match &row.patterns[column] {
-                        Pattern::Test(found, inner) if found == test => inner.as_deref().cloned(),
+                    let (inner, again) = match &row.patterns[column] {
+                        Pattern::Test(found, inner) if found == test => {
+                            (inner.as_deref().cloned(), Pattern::Any)
+                        }
+                        Pattern::Test(found, _) if retest && !tests[..index].contains(found) => {
+                            (None, row.patterns[column].clone())
+                        }
                         Pattern::Test(..) => return None,
-                        _ => None,
+                        _ => (None, Pattern::Any),
                     };
                     let mut row = row.clone();
-                    let replacement = match (&argument, inner) {
+                    let mut replacement = match (&argument, inner) {
                         (Some(_), inner) => vec![inner.unwrap_or(Pattern::Any)],
                         (None, _) => Vec::new(),
                     };
+                    if retest {
+                        replacement.push(again);
+                    }
                     row.patterns = splice(&row.patterns, column, replacement);
                     Some(row)
                 })
                 .collect();
-            let occurrences = splice(&occurrences, column, argument.into_iter().collect());
+            let mut replaced: Vec<Atom> = argument.into_iter().collect();
+            if retest {
+                replaced.push(value.clone());
+            }
+            let occurrences = splice(&occurrences, column, replaced);
             self.tree(occurrences, specialised, targets);
             match otherwise {
                 Some(otherwise) => self.switch(otherwise),
@@ -332,6 +349,10 @@ impl Lowerer<'_> {
                 }
             }
             Test::Ref => Atom::Word(value::TRUE),
+            Test::Exception { identity, .. } => {
+                let found = self.bind("", Op::Select(value, 0));
+                self.bind("", Op::Prim(Prim::WordEq, vec![found, identity.clone()]))
+            }
         }
     }
 
@@ -344,19 +365,23 @@ impl Lowerer<'_> {
             Test::Cons => Some(value),
             Test::Ref | Test::Boxed { tag: None, .. } => Some(self.bind("", Op::Select(value, 0))),
             Test::Boxed { tag: Some(_), .. } => Some(self.bind("", Op::Select(value, 1))),
+            Test::Exception { carries: false, .. } => None,
+            Test::Exception { carries: true, .. } => Some(self.bind("", Op::Select(value, 1))),
         }
     }
 
     /// Resolves the syntax of `pattern`.
-    fn resolve_pattern(&self, pattern: &Pat) -> Res<Pattern> {
+    fn resolve_pattern(&mut self, pattern: &Pat) -> Res<Pattern> {
         Ok(match &pattern.value {
             PatKind::Wildcard | PatKind::Unit => Pattern::Any,
             PatKind::Variable(name)
-                if self.lookup(name).is_none()
-                    && self.types.pat(pattern).is_some_and(|ty| ty.is("exn"))
-                    && BUILTIN_EXCEPTIONS.contains(&name.as_str()) =>
+                if let Some((identity, carries)) =
+                    self.exception(name, self.types.pat(pattern).cloned().as_ref()) =>
             {
-                return Err(unsupported_pattern("exception patterns", pattern));
+                if carries {
+                    return Err(unsupported_pattern("this constructor", pattern));
+                }
+                Pattern::Test(Test::Exception { identity, carries }, None)
             }
             PatKind::Variable(name) => match self.constructor(name, self.types.pat(pattern)) {
                 Some((test, false)) => Pattern::Test(test, None),
@@ -422,6 +447,18 @@ impl Lowerer<'_> {
                     self.resolve_pattern(tail)?,
                 ]))),
             ),
+            PatKind::Constructor(name, argument)
+                if let Some((identity, _)) =
+                    self.exception(name, self.types.pat(pattern).cloned().as_ref()) =>
+            {
+                Pattern::Test(
+                    Test::Exception {
+                        identity,
+                        carries: true,
+                    },
+                    Some(Box::new(self.resolve_pattern(argument)?)),
+                )
+            }
             PatKind::Constructor(name, argument) => {
                 match self.constructor(name, self.types.pat(pattern)) {
                     Some((test, true)) => {
@@ -435,6 +472,36 @@ impl Lowerer<'_> {
             }
             PatKind::Typed(inner, _) => self.resolve_pattern(inner)?,
         })
+    }
+
+    /// The identity of the exception constructor `name`, and whether it
+    /// takes an argument, when `ty` (the type of the node naming it) says it
+    /// is one. A user exception's identity lives in the variable bound as
+    /// `exn name` when its declaration was evaluated.
+    pub(super) fn exception(&mut self, name: &str, ty: Option<&Ty>) -> Option<(Atom, bool)> {
+        let (result, carries) = match ty? {
+            Ty::Arrow(_, result) => (result.as_ref(), true),
+            ty => (ty, false),
+        };
+        if !result.is("exn") || self.lookup(name).is_some() {
+            return None;
+        }
+        let base = name.rsplit('.').next().unwrap_or(name);
+        let key = format!("exn {base}");
+        let identity = match self.lookup(&key) {
+            Some(binding) => self.load(&key, &binding),
+            None => {
+                let index = value::builtin_exception(base)?;
+                self.bind(
+                    "",
+                    Op::Prim(
+                        Prim::BuiltinException,
+                        vec![Atom::Word(value::tagged(index))],
+                    ),
+                )
+            }
+        };
+        Some((identity, carries))
     }
 
     /// The test for the constructor `name` and whether it takes an argument,
@@ -512,9 +579,6 @@ impl Lowerer<'_> {
         }
     }
 }
-
-/// The basis's exceptions, which a pattern names as constructors.
-const BUILTIN_EXCEPTIONS: &[&str] = &["Div", "Overflow", "Match", "Bind", "Empty", "Subscript"];
 
 fn word(word: i64) -> Pattern {
     Pattern::Test(Test::Word { word, span: None }, None)

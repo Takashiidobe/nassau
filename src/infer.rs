@@ -532,6 +532,17 @@ impl Infer {
         self.builtin(":=", false, 1, |v| {
             arrow(tuple(vec![reference(v[0].clone()), v[0].clone()]), unit())
         });
+        // `op =` and `op <>` as values; applied infix, they are operators.
+        for name in ["=", "<>"] {
+            self.builtin(name, false, 1, |v| {
+                arrow(tuple(vec![v[0].clone(), v[0].clone()]), boolean())
+            });
+            if let Some(Entry { scheme, .. }) = self.values.last()
+                && let [var] = scheme.vars[..]
+            {
+                self.vars[var].equality = true;
+            }
+        }
         self.builtin("real", false, 0, |_| arrow(int(), real()));
         self.builtin("floor", false, 0, |_| arrow(real(), int()));
         self.builtin("ord", false, 0, |_| arrow(con("char"), int()));

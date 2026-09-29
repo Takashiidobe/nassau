@@ -11,6 +11,8 @@ as SML comment lines at the end of the file:
     (* CHECK-STDOUT: (val x (+ 1 2)) *)    syntax tree (--dump-ast) for tests/fixtures/parser,
                                            with CHECK-STDERR for its match warnings
     (* CHECK-STDOUT: val f : 'a -> 'a *)    inferred types (--dump-types) for tests/fixtures/types
+    (* CHECK-STDOUT: 1:9-1:10 exp x : int *) every node's type (--dump-expr-types) for
+                                           tests/fixtures/types/nodes
     (* CHECK-REPL: val x = 1 : int *)       REPL transcript for tests/repl fixtures
 
 Later lines of the same stream use the -NEXT suffix (and -EMPTY for blank
@@ -201,7 +203,7 @@ def classify(path):
     if "parser" in parts[:-1]:
         return "parse"
     if "types" in parts[:-1]:
-        return "types"
+        return "nodes" if "nodes" in parts[:-1] else "types"
     return "run"
 
 
@@ -292,6 +294,16 @@ def generate_types(oracle, fixture, warnings):
     return lines
 
 
+def generate_nodes(oracle, fixture, warnings):
+    """The type of every expression and pattern; SML/NJ only vouches that the file is valid."""
+    result = oracle.nassau_compile(fixture, ["--dump-expr-types"])
+    if result.returncode != 0:
+        raise ToolError("Nassau rejected a valid fixture:\n" + decode(result.stderr))
+    if not smlnj_bindings(oracle, fixture):
+        warnings.append(f"{rel(fixture)}: SML/NJ bound nothing in this fixture")
+    return stream_lines("CHECK-STDOUT", decode(result.stdout))
+
+
 def generate_repl(oracle, fixture, warnings):
     source = fixture.read_text()
     stdin = repl_source(source).encode()
@@ -356,6 +368,7 @@ def main():
         "error": generate_error,
         "parse": generate_parse,
         "types": generate_types,
+        "nodes": generate_nodes,
         "repl": generate_repl,
     }
     warnings, stale, failed = [], [], []

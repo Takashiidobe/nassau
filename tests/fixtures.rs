@@ -145,7 +145,12 @@ fn compare_fixture(fixture: &Path, smlnj: &str) {
         nassau_command.arg("--dump-ast");
     }
     if is_types_fixture(fixture) {
-        nassau_command.arg("--dump-types");
+        // Fixtures under types/nodes list the type of every expression.
+        if in_directory(fixture, "nodes") {
+            nassau_command.arg("--dump-expr-types");
+        } else {
+            nassau_command.arg("--dump-types");
+        }
     }
     let nassau = nassau_command
         .arg(fixture)

@@ -44,6 +44,8 @@ struct Cli {
     dump_ast: bool,
     #[arg(long, help = "Print the inferred type of every top-level binding")]
     dump_types: bool,
+    #[arg(long, help = "Print the inferred type of every expression and pattern")]
+    dump_expr_types: bool,
     #[arg(long, help = "Print Cranelift IR after optimization")]
     dump_optimized_ir: bool,
     #[arg(long, help = "Verify IR before and after optimization")]
@@ -168,15 +170,34 @@ fn parse_file(input: &Path) -> miette::Result<crate::parser::Program> {
     Ok(program)
 }
 
-fn dump_types(input: &Path) -> miette::Result<()> {
+fn dump_types(input: &Path, every_node: bool) -> miette::Result<()> {
     let program = parse_file(input)?;
     let source = fs::read_to_string(input).map_err(|error| miette::miette!("{error}"))?;
-    let named_source = miette::NamedSource::new(input.display().to_string(), source);
-    let bindings = infer::check_program(&program).map_err(|(error, span)| {
+    let named_source = miette::NamedSource::new(input.display().to_string(), source.clone());
+    let checked = infer::check_program(&program).map_err(|(error, span)| {
         miette::Report::new(SourceError::new(error, span)).with_source_code(named_source)
     })?;
-    for binding in bindings {
-        println!("val {} : {}", binding.name, binding.ty);
+    if !every_node {
+        for binding in checked.bindings {
+            println!("val {} : {}", binding.name, binding.ty);
+        }
+        return Ok(());
+    }
+    // Variables are named across the whole listing, so a variable shared by
+    // two nodes has one name.
+    let mut names = Vec::new();
+    for node in checked.types.nodes() {
+        let text = source[node.start.offset..node.end.offset].split_whitespace();
+        println!(
+            "{}:{}-{}:{} {} {} : {}",
+            node.start.line,
+            node.start.column,
+            node.end.line,
+            node.end.column,
+            if node.pattern { "pat" } else { "exp" },
+            text.collect::<Vec<_>>().join(" "),
+            node.ty.show_named(&mut names)
+        );
     }
     Ok(())
 }
@@ -220,12 +241,12 @@ fn main() {
         }
         return;
     }
-    if cli.dump_types {
+    if cli.dump_types || cli.dump_expr_types {
         let Some(input) = cli.input.as_ref() else {
             eprintln!("--dump-types requires a source file");
             std::process::exit(2);
         };
-        if let Err(error) = dump_types(input) {
+        if let Err(error) = dump_types(input, cli.dump_expr_types) {
             eprintln!("{error:?}");
             std::process::exit(1);
         }

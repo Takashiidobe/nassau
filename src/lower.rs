@@ -501,6 +501,25 @@ impl Lowerer<'_> {
                     .collect();
                 self.functions_group(definitions, top)?;
             }
+            DeclKind::Local(private, public) => {
+                // The private declarations' names are dropped once the
+                // public ones are lowered; their values live on.
+                let (outer, inner) = if top {
+                    let outer = self.session.globals.len();
+                    self.declarations(private, top)?;
+                    (outer, self.session.globals.len())
+                } else {
+                    let outer = self.scope.len();
+                    self.declarations(private, top)?;
+                    (outer, self.scope.len())
+                };
+                self.declarations(public, top)?;
+                if top {
+                    self.session.globals.drain(outer..inner);
+                } else {
+                    self.scope.drain(outer..inner);
+                }
+            }
             // Types have no run-time presence; fixity only affects parsing.
             DeclKind::Type(_) | DeclKind::Fixity { .. } => {}
             other => {
@@ -510,7 +529,6 @@ impl Lowerer<'_> {
                     }
                     DeclKind::Abstype { .. } => "abstype declarations",
                     DeclKind::Exception(_) => "exception declarations",
-                    DeclKind::Local(..) => "local declarations",
                     _ => "module declarations",
                 };
                 return Err((
@@ -518,6 +536,13 @@ impl Lowerer<'_> {
                     declaration.source_span(),
                 ));
             }
+        }
+        Ok(())
+    }
+
+    fn declarations(&mut self, declarations: &[Decl], top: bool) -> Res<()> {
+        for declaration in declarations {
+            self.declaration(declaration, top)?;
         }
         Ok(())
     }
@@ -824,6 +849,13 @@ impl Lowerer<'_> {
                 self.rules(&[scrutinee], &rules, dest, &location)
             }
             ExprKind::Typed(inner, _) => self.into(inner, dest),
+            ExprKind::Let(declarations, body) => {
+                let mark = self.scope.len();
+                self.declarations(declarations, false)?;
+                self.into(body, dest)?;
+                self.scope.truncate(mark);
+                Ok(())
+            }
             // A call whose value is returned is a tail call: it reuses the
             // caller's frame, so loops written as recursion run in constant
             // stack.
@@ -954,6 +986,13 @@ impl Lowerer<'_> {
                 last
             }
             ExprKind::Typed(inner, _) => self.value(inner)?,
+            ExprKind::Let(declarations, body) => {
+                let mark = self.scope.len();
+                self.declarations(declarations, false)?;
+                let value = self.value(body)?;
+                self.scope.truncate(mark);
+                value
+            }
             ExprKind::Add(lhs, rhs)
             | ExprKind::Subtract(lhs, rhs)
             | ExprKind::Multiply(lhs, rhs)
@@ -1287,7 +1326,6 @@ fn unsupported_name(kind: &ExprKind) -> &'static str {
     match kind {
         ExprKind::Word(_) => "word literals",
         ExprKind::Selector(_) => "record selectors used as values",
-        ExprKind::Let(..) => "let expressions",
         ExprKind::Raise(_) => "raise",
         ExprKind::Handle(..) => "handle",
         _ => "this expression",

@@ -14,10 +14,13 @@ unsafe extern "C" {
     fn nassau_raise(name: *const u8, location: *const u8);
     fn nassau_exit(status: i64);
     fn nassau_exception(index: i64) -> i64;
+    fn nassau_raise_exception(exception: i64, location: *const u8);
+    fn nassau_caught() -> i64;
+    fn nassau_uncaught() -> i32;
 }
 
 /// Every runtime entry point, for the JIT's symbol table.
-pub fn symbols() -> [(&'static str, *const u8); 8] {
+pub fn symbols() -> [(&'static str, *const u8); 11] {
     [
         ("nassau_alloc", nassau_alloc as *const u8),
         ("nassau_print", nassau_print as *const u8),
@@ -27,5 +30,11 @@ pub fn symbols() -> [(&'static str, *const u8); 8] {
         ("nassau_raise", nassau_raise as *const u8),
         ("nassau_exit", nassau_exit as *const u8),
         ("nassau_exception", nassau_exception as *const u8),
+        (
+            "nassau_raise_exception",
+            nassau_raise_exception as *const u8,
+        ),
+        ("nassau_caught", nassau_caught as *const u8),
+        ("nassau_uncaught", nassau_uncaught as *const u8),
     ]
 }

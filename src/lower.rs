@@ -159,11 +159,25 @@ impl Source {
         )
     }
 
+    /// Where SML/NJ reports `raise argument`: the argument's span.
+    fn raised(&self, argument: &Expr) -> String {
+        format!(
+            "{}:{}-{}",
+            self.file,
+            self.position(argument.start.offset),
+            self.position(argument.end.offset)
+        )
+    }
+
     /// Where a failed match is reported: the end of `expr`.
     fn end(&self, expr: &Expr) -> String {
         format!("{}:{}", self.file, self.position(expr.end.offset))
     }
 }
+
+/// A block's parameters, statements, terminator once it has one, and
+/// handler.
+type PartialBlock = (Vec<Var>, Vec<Stmt>, Option<Term>, Option<BlockId>);
 
 /// A function whose blocks are being built.
 struct Builder {
@@ -171,8 +185,11 @@ struct Builder {
     name: String,
     params: Vec<Var>,
     vars: Vec<String>,
-    blocks: Vec<(Vec<Var>, Vec<Stmt>, Option<Term>)>,
+    blocks: Vec<PartialBlock>,
     current: BlockId,
+    /// The handlers of the `handle` expressions being lowered, innermost
+    /// last; new blocks raise to the innermost.
+    handlers: Vec<BlockId>,
     /// Loads of captured variables from the environment, run on entry.
     prologue: Vec<Stmt>,
     /// The enclosing functions' variables this one uses, by where they are
@@ -189,8 +206,9 @@ impl Builder {
             name: name.to_string(),
             params: Vec::new(),
             vars: Vec::new(),
-            blocks: vec![(Vec::new(), Vec::new(), None)],
+            blocks: vec![(Vec::new(), Vec::new(), None, None)],
             current: 0,
+            handlers: Vec::new(),
             prologue: Vec::new(),
             captures: Vec::new(),
         };
@@ -207,7 +225,8 @@ impl Builder {
     }
 
     fn block(&mut self, params: Vec<Var>) -> BlockId {
-        self.blocks.push((params, Vec::new(), None));
+        let handler = self.handlers.last().copied();
+        self.blocks.push((params, Vec::new(), None, handler));
         self.blocks.len() - 1
     }
 
@@ -222,10 +241,11 @@ impl Builder {
             blocks: self
                 .blocks
                 .into_iter()
-                .map(|(params, stmts, term)| Block {
+                .map(|(params, stmts, term, handler)| Block {
                     params,
                     stmts,
                     term: term.expect("every block is terminated"),
+                    handler,
                 })
                 .collect(),
         }
@@ -481,8 +501,7 @@ impl Lowerer<'_> {
                     let decided = self.decide(
                         &[value],
                         &[vec![pattern]],
-                        crate::core::Failure::Bind,
-                        &location,
+                        Term::Fail(crate::core::Failure::Bind, location),
                     )?;
                     let (Some(next), names) = decided.into_iter().next().expect("one rule") else {
                         // No value matches: the declaration always raises.
@@ -738,7 +757,7 @@ impl Lowerer<'_> {
             &args,
             &definition.clauses,
             Dest::Return,
-            &definition.location,
+            Term::Fail(crate::core::Failure::Match, definition.location.clone()),
         );
         self.scope.truncate(mark);
         let frame = self.frames.pop().expect("the function's frame");
@@ -791,10 +810,36 @@ impl Lowerer<'_> {
                     .iter()
                     .map(|(pattern, body)| (vec![pattern], body))
                     .collect();
-                let location = self.source.end(expr);
-                self.rules(&[scrutinee], &rules, dest, &location)
+                let miss = Term::Fail(crate::core::Failure::Match, self.source.end(expr));
+                self.rules(&[scrutinee], &rules, dest, miss)
             }
             ExprKind::Typed(inner, _) => self.into(inner, dest),
+            ExprKind::Handle(body, rules) => {
+                // The handler starts with the exception as its parameter. The
+                // body runs in blocks that raise to it, so none of its calls
+                // is a tail call: the handler must outlive them.
+                let exception = self.frame().var("");
+                let handler = self.block(vec![exception]);
+                self.frame().handlers.push(handler);
+                let start = self.block(Vec::new());
+                self.terminate(Term::Jump(start, Vec::new()));
+                self.switch(start);
+                let lowered = match dest {
+                    Dest::Jump(_) => self.into(body, dest),
+                    Dest::Return => self.value(body).map(|value| self.send(value, dest)),
+                };
+                self.frame().handlers.pop();
+                lowered?;
+                self.switch(handler);
+                let rules: Vec<(Vec<&Pat>, &Expr)> = rules
+                    .iter()
+                    .map(|(pattern, body)| (vec![pattern], body))
+                    .collect();
+                // An exception no rule matches goes on to the enclosing
+                // handler.
+                let miss = Term::Raise(Atom::Var(exception), None);
+                self.rules(&[Atom::Var(exception)], &rules, dest, miss)
+            }
             ExprKind::Let(declarations, body) => {
                 let mark = self.scope.len();
                 self.declarations(declarations, false)?;
@@ -921,7 +966,16 @@ impl Lowerer<'_> {
                 }
                 list
             }
-            ExprKind::If(..) | ExprKind::Case(..) => self.joined(expr)?,
+            ExprKind::If(..) | ExprKind::Case(..) | ExprKind::Handle(..) => self.joined(expr)?,
+            ExprKind::Raise(argument) => {
+                let exception = self.value(argument)?;
+                let location = self.source.raised(argument);
+                self.terminate(Term::Raise(exception, Some(location)));
+                // Code after the raise is unreachable, but still lowered.
+                let next = self.block(Vec::new());
+                self.switch(next);
+                Atom::Word(value::tagged(0))
+            }
             ExprKind::AndAlso(lhs, rhs) | ExprKind::OrElse(lhs, rhs) => {
                 let result = self.frame().var("");
                 let join = self.block(vec![result]);
@@ -1374,8 +1428,6 @@ fn unsupported_pattern(what: &str, pattern: &Pat) -> Failure {
 fn unsupported_name(kind: &ExprKind) -> &'static str {
     match kind {
         ExprKind::Word(_) => "word literals",
-        ExprKind::Raise(_) => "raise",
-        ExprKind::Handle(..) => "handle",
         _ => "this expression",
     }
 }

@@ -60,6 +60,13 @@ collector must trace; string and real blocks hold raw bytes.
   declaration is evaluated, so declarations inside functions are
   generative; a replication (`exception F = E`) shares its original's
   identity. A match compares identities by address.
+- **Raising** does not unwind the stack by jumping. A function that raises
+  records the exception with the runtime and returns the word `0`, which is
+  no value: immediates are odd and blocks are non-null. Every call checks
+  its result for `0` and either enters the handler of the `handle`
+  expression around it, which takes the exception from the runtime, or
+  returns `0` itself. Calls under a handler are not tail calls, since the
+  handler must outlive them; any other call in tail position still is.
 - **Reals** are boxed, so a `real` is a pointer to a real block; code
   generation keeps them unboxed in registers inside a function.
 - **Strings** are string blocks. The NUL terminator lets the runtime pass them

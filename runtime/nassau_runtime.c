@@ -150,6 +150,49 @@ word nassau_exception(word index) {
     return builtin_identities[slot];
 }
 
+/* The exception being raised, and the position SML/NJ reports it at. A
+ * function that raises records its exception here and returns 0, which is
+ * no value; each caller then goes to its handler or returns 0 in turn. */
+static word raised;
+static const char *raised_at;
+
+/* `where` is null when a handler passes an exception on: it keeps the
+ * position it was first raised at. */
+void nassau_raise_exception(word exception, const char *where) {
+    raised = exception;
+    if (where != NULL) {
+        raised_at = where;
+    }
+}
+
+/* The exception a handler catches. */
+word nassau_caught(void) {
+    word exception = raised;
+    raised = 0;
+    return exception;
+}
+
+/* Reports the exception no handler caught as SML/NJ does; returns the exit
+ * status. */
+int nassau_uncaught(void) {
+    word exception = nassau_caught();
+    word identity = FIELD(exception, 0);
+    word name = FIELD(identity, 0);
+    word argument = FIELD(exception, 1);
+    fflush(stdout);
+    fprintf(stderr, "/usr/lib/smlnj/bin/sml: Fatal error -- Uncaught exception %.*s with ",
+            (int)string_length(name), string_bytes(name));
+    if (!IS_BOXED(argument)) {
+        fprintf(stderr, "%lld", (long long)UNTAG(argument));
+    } else if (KIND(((word *)argument)[0]) == KIND_STRING) {
+        fprintf(stderr, "\"%.*s\"", (int)string_length(argument), string_bytes(argument));
+    } else {
+        fputs("<unknown>", stderr);
+    }
+    fprintf(stderr, "\n raised at %s\n\n", raised_at);
+    return 1;
+}
+
 /* Reports an uncaught exception as SML/NJ does and exits. `where` is the
  * position SML/NJ names as the raise point. */
 void nassau_raise(const char *name, const char *where) {

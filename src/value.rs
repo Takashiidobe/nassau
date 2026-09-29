@@ -16,6 +16,10 @@ pub const fn tagged(value: i64) -> i64 {
 }
 
 /// `nil`, `false`, `unit` and `0` share this word.
+/// What a function returns when it raises an exception instead: neither an
+/// immediate nor a pointer to a block.
+pub const RAISED: i64 = 0;
+
 pub const NIL: i64 = tagged(0);
 pub const FALSE: i64 = tagged(0);
 pub const TRUE: i64 = tagged(1);

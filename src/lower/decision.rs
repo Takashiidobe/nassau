@@ -10,7 +10,7 @@
 //! jumps there.
 
 use super::{Dest, Lowerer, Res, unsupported_pattern};
-use crate::core::{self, Atom, BlockId, Op, Prim, Term};
+use crate::core::{Atom, BlockId, Op, Prim, Term};
 use crate::infer::Ty;
 use crate::parser::{Expr, Pat, PatKind};
 use crate::value;
@@ -82,22 +82,23 @@ struct Targets {
     rules: Vec<(BlockId, Vec<String>)>,
     /// Whether each rule is selected by some leaf.
     reached: Vec<bool>,
-    failure: core::Failure,
-    location: String,
+    /// What runs when no rule matches.
+    miss: Term,
 }
 
 impl Lowerer<'_> {
     /// Matches `scrutinees` against each rule's patterns in turn and sends
-    /// the first matching rule's body to `dest`; no match raises `Match`.
+    /// the first matching rule's body to `dest`; when none matches, `miss`
+    /// runs.
     pub(super) fn rules(
         &mut self,
         scrutinees: &[Atom],
         rules: &[(Vec<&Pat>, &Expr)],
         dest: Dest,
-        location: &str,
+        miss: Term,
     ) -> Res<()> {
         let patterns: Vec<Vec<&Pat>> = rules.iter().map(|(patterns, _)| patterns.clone()).collect();
-        let blocks = self.decide(scrutinees, &patterns, core::Failure::Match, location)?;
+        let blocks = self.decide(scrutinees, &patterns, miss)?;
         for ((block, names), (_, body)) in blocks.into_iter().zip(rules) {
             let Some(block) = block else { continue };
             self.switch(block);
@@ -115,20 +116,18 @@ impl Lowerer<'_> {
     /// Compiles the match of `scrutinees` against the rows `patterns`,
     /// ending the current block. Returns, for each rule some value can
     /// select, the block entered when it does and the names its parameters
-    /// bind; when no rule matches, `failure` is raised at `location`.
+    /// bind; when no rule matches, `miss` runs.
     pub(super) fn decide(
         &mut self,
         scrutinees: &[Atom],
         patterns: &[Vec<&Pat>],
-        failure: core::Failure,
-        location: &str,
+        miss: Term,
     ) -> Res<Vec<(Option<BlockId>, Vec<String>)>> {
         let mut rows = Vec::new();
         let mut targets = Targets {
             rules: Vec::new(),
             reached: vec![false; patterns.len()],
-            failure,
-            location: location.to_string(),
+            miss,
         };
         for (rule, row) in patterns.iter().enumerate() {
             let mut names = Vec::new();
@@ -159,7 +158,7 @@ impl Lowerer<'_> {
     /// Emits the decision tree for `rows` over the values `occurrences`.
     fn tree(&mut self, occurrences: Vec<Atom>, mut rows: Vec<Row>, targets: &mut Targets) {
         if rows.is_empty() {
-            self.terminate(Term::Fail(targets.failure, targets.location.clone()));
+            self.terminate(targets.miss.clone());
             return;
         }
         // Bindings name the value in their column, whatever else it matches.

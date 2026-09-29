@@ -345,6 +345,8 @@ impl Codegen {
             imports: HashMap::new(),
             entry,
             file,
+            handler: None,
+            landings: Vec::new(),
         };
         translator.function(function)?;
         translator.builder.seal_all_blocks();
@@ -446,6 +448,11 @@ struct Translator<'a, M: Module> {
     entry: bool,
     /// The source file's name, for reporting exceptions.
     file: &'a str,
+    /// The handler of the block being translated.
+    handler: Option<core::BlockId>,
+    /// The block a raised exception leaves through, for each handler (or
+    /// none) that has one.
+    landings: Vec<(Option<core::BlockId>, cranelift_codegen::ir::Block)>,
 }
 
 impl<M: Module> Translator<'_, M> {
@@ -466,12 +473,52 @@ impl<M: Module> Translator<'_, M> {
         }
         for (block, created) in function.blocks.iter().zip(self.blocks.clone()) {
             self.builder.switch_to_block(created);
+            self.handler = block.handler;
             for stmt in &block.stmts {
                 self.stmt(stmt)?;
             }
             self.term(&block.term)?;
         }
+        for (handler, landing) in self.landings.clone() {
+            self.builder.switch_to_block(landing);
+            match handler {
+                Some(handler) => {
+                    let exception = self
+                        .call_c("nassau_caught", &[], Some(types::I64), &[])?
+                        .expect("nassau_caught returns the exception");
+                    self.builder
+                        .ins()
+                        .jump(self.blocks[handler], &[exception.into()]);
+                }
+                None if self.entry => {
+                    let status = self
+                        .call_c("nassau_uncaught", &[], Some(types::I32), &[])?
+                        .expect("nassau_uncaught returns an exit status");
+                    self.builder.ins().return_(&[status]);
+                }
+                None => {
+                    let raised = self.word(value::RAISED);
+                    self.builder.ins().return_(&[raised]);
+                }
+            }
+        }
         Ok(())
+    }
+
+    /// Where an exception raised in the current block goes: into its
+    /// handler, or out of the function.
+    fn landing(&mut self) -> cranelift_codegen::ir::Block {
+        if let Some((_, landing)) = self
+            .landings
+            .iter()
+            .find(|(handler, _)| *handler == self.handler)
+        {
+            return *landing;
+        }
+        let landing = self.builder.create_block();
+        self.builder.set_cold_block(landing);
+        self.landings.push((self.handler, landing));
+        landing
     }
 
     fn word(&mut self, word: i64) -> Value {
@@ -908,7 +955,18 @@ impl<M: Module> Translator<'_, M> {
                             .call_indirect(signature, code, &call.values)
                     }
                 };
-                self.builder.inst_results(inst)[0]
+                // A function that raises returns `RAISED`, having recorded
+                // the exception with the runtime.
+                let result = self.builder.inst_results(inst)[0];
+                let raised = self
+                    .builder
+                    .ins()
+                    .icmp_imm_s(IntCC::Equal, result, value::RAISED);
+                let landing = self.landing();
+                let next = self.builder.create_block();
+                self.builder.ins().brif(raised, landing, &[], next, &[]);
+                self.builder.switch_to_block(next);
+                result
             }
         })
     }
@@ -972,6 +1030,10 @@ impl<M: Module> Translator<'_, M> {
             }
             Term::TailCall(callee, args) => {
                 debug_assert!(!self.entry, "a chunk's entry makes no tail calls");
+                debug_assert!(
+                    self.handler.is_none(),
+                    "a call under a handler is not a tail call"
+                );
                 let call = self.callee(callee, args)?;
                 match call.target {
                     CallTarget::Direct(func) => {
@@ -990,6 +1052,22 @@ impl<M: Module> Translator<'_, M> {
                     Failure::Bind => "Bind",
                 };
                 self.raise(name, location)?;
+            }
+            Term::Raise(exception, location) => {
+                let exception = self.atom(exception)?;
+                let location = match location {
+                    Some(location) => self.c_string(location)?,
+                    // A handler passing an exception on keeps its position.
+                    None => self.word(0),
+                };
+                self.call_c(
+                    "nassau_raise_exception",
+                    &[types::I64, types::I64],
+                    None,
+                    &[exception, location],
+                )?;
+                let landing = self.landing();
+                self.builder.ins().jump(landing, &[]);
             }
         }
         Ok(())

@@ -9,11 +9,6 @@
 //! parameters, so a join point after a conditional is a block whose parameter
 //! is the conditional's value.
 
-#![expect(
-    dead_code,
-    reason = "calls, closures and pattern matching are lowered by later changes"
-)]
-
 use std::fmt::{self, Write};
 
 pub type Var = usize;

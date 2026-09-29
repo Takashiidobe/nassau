@@ -121,6 +121,10 @@ impl Codegen {
         flag_builder
             .set("opt_level", self.opt_level.as_cranelift())
             .map_err(backend)?;
+        // Cranelift's tail calls rely on frame pointers.
+        flag_builder
+            .set("preserve_frame_pointers", "true")
+            .map_err(backend)?;
         if jit {
             flag_builder
                 .set("use_colocated_libcalls", "false")

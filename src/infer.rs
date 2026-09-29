@@ -213,10 +213,6 @@ pub struct TypeTable {
     index: HashMap<(usize, bool), usize>,
 }
 
-#[expect(
-    dead_code,
-    reason = "code generation reads types from here in a later change"
-)]
 impl TypeTable {
     pub fn expr(&self, expr: &Expr) -> Option<&Ty> {
         self.get(expr as *const Expr as usize, false)
@@ -903,14 +899,18 @@ impl Infer {
     fn lookup(&self, name: &str) -> Option<Entry> {
         match name.rsplit_once('.') {
             None => self.values.iter().rev().find(|entry| entry.name == name),
-            Some((path, base)) => {
-                let found = self.lookup_struct(path)?;
-                return found
-                    .values
-                    .iter()
-                    .find(|entry| entry.name == base)
-                    .cloned();
-            }
+            Some((path, base)) => match self.lookup_struct(path) {
+                Some(found) => {
+                    return found
+                        .values
+                        .iter()
+                        .find(|entry| entry.name == base)
+                        .cloned();
+                }
+                // Basis functions such as `Int.toString` are built in under
+                // their qualified names, until the basis has structures.
+                None => self.values.iter().rev().find(|entry| entry.name == name),
+            },
         }
         .cloned()
     }

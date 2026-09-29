@@ -66,6 +66,11 @@ pub enum Prim {
     IsBoxed,
     /// Prints a string.
     Print,
+    /// `^`.
+    Concat,
+    IntToString,
+    /// A string's length.
+    Size,
     /// `Posix.Process.exit (Word8.fromInt n)`.
     Exit,
 }
@@ -98,6 +103,9 @@ impl Prim {
             Prim::Unequal => "unequal",
             Prim::IsBoxed => "is_boxed",
             Prim::Print => "print",
+            Prim::Concat => "concat",
+            Prim::IntToString => "int.to_string",
+            Prim::Size => "size",
             Prim::Exit => "exit",
         }
     }

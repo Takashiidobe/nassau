@@ -174,6 +174,18 @@ fn show(word: u64, ty: &Ty) -> String {
             }
             ("bool", _) => (word == value::TRUE).to_string(),
             ("unit", _) => "()".to_string(),
+            ("char", _) => {
+                let char = char::from_u32((word >> 1) as u32).unwrap_or('?');
+                format!("#\"{}\"", escape(&char.to_string()))
+            }
+            ("string", _) => {
+                // SAFETY: a string block holds its length and then its bytes.
+                let text = unsafe {
+                    let length = (*(word as *const i64) >> 8) as usize;
+                    std::slice::from_raw_parts((word as *const u8).add(8), length)
+                };
+                format!("\"{}\"", escape(&String::from_utf8_lossy(text)))
+            }
             ("real", _) => {
                 let real = f64::from_bits(field(word, 0) as u64);
                 let text = format!("{real:?}");
@@ -191,6 +203,28 @@ fn show(word: u64, ty: &Ty) -> String {
             _ => "-".to_string(),
         },
         Ty::Arrow(..) => "fn".to_string(),
+        Ty::Record(fields) if fields.is_empty() => "()".to_string(),
+        Ty::Record(fields) => {
+            let items: Vec<String> = fields
+                .iter()
+                .enumerate()
+                .map(|(index, (_, ty))| show(field(word, index) as u64, ty))
+                .collect();
+            let tuple = fields
+                .iter()
+                .enumerate()
+                .all(|(index, (label, _))| *label == (index + 1).to_string());
+            if tuple {
+                format!("({})", items.join(","))
+            } else {
+                let items: Vec<String> = fields
+                    .iter()
+                    .zip(items)
+                    .map(|((label, _), item)| format!("{label}={item}"))
+                    .collect();
+                format!("{{{}}}", items.join(","))
+            }
+        }
         _ => "-".to_string(),
     }
 }
@@ -213,4 +247,22 @@ pub fn run(
     )
     .map_err(miette::Report::msg)?
     .run()
+}
+
+/// A string's characters as an SML string literal shows them.
+fn escape(text: &str) -> String {
+    let mut escaped = String::new();
+    for char in text.chars() {
+        match char {
+            '"' => escaped.push_str("\\\""),
+            '\\' => escaped.push_str("\\\\"),
+            '\n' => escaped.push_str("\\n"),
+            '\t' => escaped.push_str("\\t"),
+            char if (char as u32) < 32 => {
+                escaped.push_str(&format!("\\^{}", (char as u8 + 64) as char))
+            }
+            char => escaped.push(char),
+        }
+    }
+    escaped
 }

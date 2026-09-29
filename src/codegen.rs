@@ -732,6 +732,30 @@ impl<M: Module> Translator<'_, M> {
                 self.call_c("nassau_print", &[types::I64], Some(types::I64), args)?;
                 self.word(value::tagged(0))
             }
+            Prim::Concat => self
+                .call_c(
+                    "nassau_concat",
+                    &[types::I64, types::I64],
+                    Some(types::I64),
+                    args,
+                )?
+                .expect("nassau_concat returns a string"),
+            Prim::IntToString => self
+                .call_c(
+                    "nassau_int_to_string",
+                    &[types::I64],
+                    Some(types::I64),
+                    args,
+                )?
+                .expect("nassau_int_to_string returns a string"),
+            Prim::Size => {
+                let header =
+                    self.builder
+                        .ins()
+                        .load(types::I64, MemFlagsData::trusted(), args[0], 0);
+                let length = self.builder.ins().sshr_imm_u(header, 8);
+                self.tag(length)
+            }
             Prim::Exit => {
                 self.call_c("nassau_exit", &[types::I64], None, args)?;
                 self.word(value::tagged(0))

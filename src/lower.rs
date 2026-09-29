@@ -1068,6 +1068,15 @@ impl Lowerer<'_> {
                 Atom::Word(value::tagged(0))
             }
             ExprKind::Apply(..) => self.apply(expr)?,
+            ExprKind::Selector(label) => {
+                let Some(Ty::Arrow(record, _)) = self.ty(expr) else {
+                    return Err(unsupported("selectors on records of unknown shape", expr));
+                };
+                let Some(index) = field_index(record, label) else {
+                    return Err(unsupported("selectors on records of unknown shape", expr));
+                };
+                self.selector_closure(label, index)
+            }
             ExprKind::PosixExit(word8) => {
                 let ExprKind::Word8FromInt(status) = &word8.value else {
                     return Err(unsupported(
@@ -1187,13 +1196,9 @@ impl Lowerer<'_> {
         }
         if let ExprKind::Selector(label) = &head.value {
             let record = self.value(args[0])?;
-            let Some(Ty::Record(labels)) = self.ty(args[0]).cloned() else {
+            let Some(index) = self.ty(args[0]).and_then(|ty| field_index(ty, label)) else {
                 return Err(unsupported("selectors on records of unknown shape", expr));
             };
-            let index = labels
-                .iter()
-                .position(|(known, _)| known == label)
-                .expect("the record type has the selected label");
             function = Some(self.bind("", Op::Select(record, index)));
             rest = &args[1..];
         }
@@ -1246,6 +1251,19 @@ impl Lowerer<'_> {
         self.closure(name, id, Vec::new())
     }
 
+    /// A closure for `#label` used as a value: it selects field `index`.
+    fn selector_closure(&mut self, label: &str, index: usize) -> Atom {
+        let id = self.session.function_id();
+        let name = format!("#{label}");
+        self.frames.push(Builder::new(id, &name, vec!["env", ""]));
+        let argument = Atom::Var(self.frame().params[1]);
+        let result = self.bind("", Op::Select(argument, index));
+        self.terminate(Term::Return(result));
+        let frame = self.frames.pop().expect("the selector's frame");
+        self.functions.push(frame.finish());
+        self.closure(&name, id, Vec::new())
+    }
+
     /// Allocates a closure of the function `code`.
     fn closure(&mut self, name: &str, code: FnId, captured: Vec<Atom>) -> Atom {
         let var = self.frame().var(name);
@@ -1294,6 +1312,15 @@ fn constant(name: &str) -> Option<i64> {
     }
 }
 
+/// Where field `label` of a record of type `ty` is stored: fields are laid out
+/// in label order, so a tuple and the record `{1 = _, 2 = _}` agree.
+fn field_index(ty: &Ty, label: &str) -> Option<usize> {
+    match ty {
+        Ty::Record(labels) => labels.iter().position(|(known, _)| known == label),
+        _ => None,
+    }
+}
+
 fn strip_typed(expr: &Expr) -> &Expr {
     match &expr.value {
         ExprKind::Typed(inner, _) => strip_typed(inner),
@@ -1325,7 +1352,6 @@ fn unsupported_pattern(what: &str, pattern: &Pat) -> Failure {
 fn unsupported_name(kind: &ExprKind) -> &'static str {
     match kind {
         ExprKind::Word(_) => "word literals",
-        ExprKind::Selector(_) => "record selectors used as values",
         ExprKind::Raise(_) => "raise",
         ExprKind::Handle(..) => "handle",
         _ => "this expression",

@@ -139,12 +139,19 @@ function updateCompletions() {
     completionMenu.append(item);
   });
   completionMenu.hidden = false;
+  const wrapper = completionCycle.cm.getWrapperElement();
+  const shell = wrapper.parentElement;
+  const cursor = completionCycle.cm.cursorCoords(completionCycle.cm.getCursor(), 'local');
+  completionMenu.style.top = `${cursor.bottom + 2}px`;
+  completionMenu.style.left = `${Math.max(0, Math.min(cursor.left, shell.clientWidth - completionMenu.offsetWidth))}px`;
   completionMenu.querySelector('.selected')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 }
 function hideCompletions() {
   if (!completionMenu) return;
   completionMenu.hidden = true;
   completionMenu.replaceChildren();
+  completionMenu.style.top = '';
+  completionMenu.style.left = '';
 }
 function append(parent, text, kind) {
   const pre = document.createElement('pre'); pre.className = kind;

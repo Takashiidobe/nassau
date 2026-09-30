@@ -21,11 +21,11 @@ button:focus-visible, select:focus-visible { outline: 1px solid var(--bright); o
 .entry { margin: 0; }
 .input-row { display: flex; align-items: flex-start; padding: 0; }
 .prompt { flex-shrink: 0; padding: 0 8px 0 0; color: #9fb8d0; font: inherit; }
-.editor-shell { flex: 1; min-width: 0; }
-.completion-menu { display: flex; flex-wrap: wrap; gap: 2px; max-height: 9rem; overflow: auto; margin-top: 6px; padding: 4px; border: 1px solid var(--border); border-radius: 3px; background: #202529; scrollbar-color: #495160 #202529; }
+.editor-shell { position: relative; flex: 1; min-width: 0; }
+.completion-menu { position: absolute; z-index: 5; display: grid; grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr)); gap: 2px; width: min(38rem, calc(100% - 1rem)); max-height: 9rem; overflow: auto; padding: 4px; border: 1px solid var(--border); border-radius: 3px; background: #202529; box-shadow: 0 4px 12px #0009; scrollbar-color: #495160 #202529; }
 .completion-menu[hidden] { display: none; }
-.completion-item { flex: 1 0 10rem; overflow: hidden; padding: 2px 6px; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; }
-.completion-item.selected { background: #3b4859; color: var(--bright); }
+.completion-item { min-width: 0; overflow: hidden; padding: 2px 6px; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; }
+.completion-item.selected { border-radius: 2px; background: #52647b; color: var(--bright); }
 .CodeMirror { height: auto; min-height: 0; font: 14px/1.45 var(--mono); }
 .cm-s-material-darker.CodeMirror, .cm-s-material-darker .CodeMirror-gutters { background: var(--terminal); color: var(--text); }
 .CodeMirror-scroll { max-height: none; }

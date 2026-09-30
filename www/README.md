@@ -29,7 +29,7 @@ into the output. End internal phrases with single semicolons; `;;` finishes a su
 and references remain available between submissions.
 
 The key bindings selector supports Standard, Vim and Emacs and remembers your
-choice. Vim supports `:w` and `:submit` to submit a phrase. Ctrl+Up/Ctrl+Down recalls submitted input, preserving your current draft. Tab lists matching names beneath the prompt, completes the selected name, and cycles through candidates on repeated presses.
+choice. Vim supports `:w` and `:submit` to submit a phrase. Ctrl+Up/Ctrl+Down recalls submitted input, preserving your current draft. Tab lists matching names beneath the cursor in columns, completes the highlighted name, and cycles through candidates on repeated presses.
 Examples populate the current prompt without resetting the session. `clear;;`
 clears previous prompts and results but keeps bindings. `reset;;` clears the
 display and starts a fresh session. Both show a confirmation at the top of the

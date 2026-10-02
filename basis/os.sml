@@ -2,7 +2,8 @@ structure Posix =
 struct
   structure Process =
   struct
-    fun exit (status : Word8.word) = Prim.exit (Word8.toInt status)
+    fun exit (status: Word8.word) =
+      Prim.exit (Word8.toInt status)
   end
 end
 
@@ -11,10 +12,10 @@ struct
   structure Process :>
   sig
     type status
-    val success : status
-    val failure : status
-    val isSuccess : status -> bool
-    val exit : status -> 'a
+    val success: status
+    val failure: status
+    val isSuccess: status -> bool
+    val exit: status -> 'a
   end =
   struct
     type status = int

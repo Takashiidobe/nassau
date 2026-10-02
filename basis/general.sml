@@ -2,7 +2,8 @@ structure General =
 struct
   fun ignore _ = ()
 
-  fun op o (f, g) = fn x => f (g x)
+  fun op o (f, g) =
+    fn x => f (g x)
 
   fun op before (x, ()) = x
 end

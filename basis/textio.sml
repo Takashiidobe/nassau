@@ -1,4 +1,1 @@
-structure TextIO =
-struct
-  val print = print
-end
+structure TextIO = struct val print = print end

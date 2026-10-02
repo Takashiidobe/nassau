@@ -13,7 +13,8 @@ struct
   fun getOpt (NONE, default) = default
     | getOpt (SOME x, _) = x
 
-  fun filter p x = if p x then SOME x else NONE
+  fun filter p x =
+    if p x then SOME x else NONE
 
   fun join NONE = NONE
     | join (SOME opt) = opt
@@ -22,7 +23,8 @@ struct
     | app f (SOME x) = f x
 
   fun map f NONE = NONE
-    | map f (SOME x) = SOME (f x)
+    | map f (SOME x) =
+        SOME (f x)
 
   fun mapPartial f NONE = NONE
     | mapPartial f (SOME x) = f x

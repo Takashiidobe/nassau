@@ -6,7 +6,8 @@ struct
 
   val ord = Prim.ord
 
-  fun chr i = if i < 0 orelse i > maxOrd then raise Chr else Prim.chr i
+  fun chr i =
+    if i < 0 orelse i > maxOrd then raise Chr else Prim.chr i
 end
 
 val ord = Char.ord

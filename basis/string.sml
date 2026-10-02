@@ -2,7 +2,7 @@ structure String =
 struct
   val size = size
 
-  val op ^ = op ^
+  val op^ = op^
 
   val str = Prim.charToString
 
@@ -21,7 +21,8 @@ struct
     | concat [s] = s
     | concat ss =
         let
-          fun pairs (a :: b :: rest) = (a ^ b) :: pairs rest
+          fun pairs (a :: b :: rest) =
+                (a ^ b) :: pairs rest
             | pairs rest = rest
         in
           concat (pairs ss)
@@ -39,7 +40,8 @@ struct
     let
       fun join [] = []
         | join [s] = [s]
-        | join (s :: rest) = s :: sep :: join rest
+        | join (s :: rest) =
+            s :: sep :: join rest
     in
       concat (join ss)
     end

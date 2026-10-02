@@ -1,5 +1,6 @@
-fun op @ ([], ys) = ys
-  | op @ (x :: xs, ys) = x :: (xs @ ys)
+fun op@ ([], ys) = ys
+  | op@ (x :: xs, ys) =
+      x :: (xs @ ys)
 
 structure List =
 struct
@@ -11,12 +12,13 @@ struct
   fun length l =
     let
       fun go ([], n) = n
-        | go (_ :: xs, n) = go (xs, n + 1)
+        | go (_ :: xs, n) =
+            go (xs, n + 1)
     in
       go (l, 0)
     end
 
-  val op @ = op @
+  val op@ = op@
 
   fun hd [] = raise Empty
     | hd (x :: _) = x
@@ -34,7 +36,8 @@ struct
   fun nth (l, i) =
     let
       fun go ([], _) = raise Subscript
-        | go (x :: xs, n) = if n = 0 then x else go (xs, n - 1)
+        | go (x :: xs, n) =
+            if n = 0 then x else go (xs, n - 1)
     in
       if i < 0 then raise Subscript else go (l, i)
     end
@@ -43,9 +46,11 @@ struct
     let
       fun go (_, 0, acc) = rev' (acc, [])
         | go ([], _, _) = raise Subscript
-        | go (x :: xs, n, acc) = go (xs, n - 1, x :: acc)
+        | go (x :: xs, n, acc) =
+            go (xs, n - 1, x :: acc)
       and rev' ([], acc) = acc
-        | rev' (x :: xs, acc) = rev' (xs, x :: acc)
+        | rev' (x :: xs, acc) =
+            rev' (xs, x :: acc)
     in
       if i < 0 then raise Subscript else go (l, i, [])
     end
@@ -54,13 +59,15 @@ struct
     let
       fun go (xs, 0) = xs
         | go ([], _) = raise Subscript
-        | go (_ :: xs, n) = go (xs, n - 1)
+        | go (_ :: xs, n) =
+            go (xs, n - 1)
     in
       if i < 0 then raise Subscript else go (l, i)
     end
 
   fun revAppend ([], ys) = ys
-    | revAppend (x :: xs, ys) = revAppend (xs, x :: ys)
+    | revAppend (x :: xs, ys) =
+        revAppend (xs, x :: ys)
 
   fun rev xs = revAppend (xs, [])
 
@@ -68,10 +75,14 @@ struct
     | concat (l :: ls) = l @ concat ls
 
   fun app f [] = ()
-    | app f (x :: xs) = (f x; app f xs)
+    | app f (x :: xs) =
+        (f x; app f xs)
 
   fun map f [] = []
-    | map f (x :: xs) = let val y = f x in y :: map f xs end
+    | map f (x :: xs) =
+        let val y = f x
+        in y :: map f xs
+        end
 
   fun mapPartial f [] = []
     | mapPartial f (x :: xs) =
@@ -80,10 +91,12 @@ struct
          | SOME y => y :: mapPartial f xs)
 
   fun find p [] = NONE
-    | find p (x :: xs) = if p x then SOME x else find p xs
+    | find p (x :: xs) =
+        if p x then SOME x else find p xs
 
   fun filter p [] = []
-    | filter p (x :: xs) = if p x then x :: filter p xs else filter p xs
+    | filter p (x :: xs) =
+        if p x then x :: filter p xs else filter p xs
 
   fun partition p l =
     let
@@ -95,20 +108,25 @@ struct
     end
 
   fun foldl f init [] = init
-    | foldl f init (x :: xs) = foldl f (f (x, init)) xs
+    | foldl f init (x :: xs) =
+        foldl f (f (x, init)) xs
 
   fun foldr f init [] = init
-    | foldr f init (x :: xs) = f (x, foldr f init xs)
+    | foldr f init (x :: xs) =
+        f (x, foldr f init xs)
 
   fun exists p [] = false
-    | exists p (x :: xs) = p x orelse exists p xs
+    | exists p (x :: xs) =
+        p x orelse exists p xs
 
   fun all p [] = true
-    | all p (x :: xs) = p x andalso all p xs
+    | all p (x :: xs) =
+        p x andalso all p xs
 
   fun tabulate (n, f) =
     let
-      fun go i = if i >= n then [] else let val x = f i in x :: go (i + 1) end
+      fun go i =
+        if i >= n then [] else let val x = f i in x :: go (i + 1) end
     in
       if n < 0 then raise Size else go 0
     end

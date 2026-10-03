@@ -2,6 +2,9 @@
 
 A work-in-progress Standard ML implementation in Rust with a Cranelift backend.
 
+- [Docs](https://nassau-docs.takashiidobe.com/)
+- [Repl](https://nassau.takashiidobe.com/)
+
 ## Features
 
 - Native compilation with Cranelift.

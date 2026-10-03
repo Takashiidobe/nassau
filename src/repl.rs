@@ -1,11 +1,10 @@
-use std::collections::HashMap;
 use std::io::{self, BufRead, Write};
 
 use crate::codegen::{Codegen, CodegenOptions, OptLevel, Symbols};
 use crate::error::{CodegenError, SourceError};
 use crate::infer::{self, Ty};
 use crate::lower;
-use crate::parser::{Parser, Program};
+use crate::parser::{Fixity, Parser, Program};
 use crate::runtime;
 use crate::value;
 
@@ -14,9 +13,9 @@ pub struct Repl {
     module: cranelift_jit::JITModule,
     symbols: Symbols,
     next_chunk: usize,
+    fixity: Option<Fixity>,
     types: infer::Session,
     lowering: lower::Session,
-    exceptions: HashMap<i64, Option<Ty>>,
 }
 
 impl Repl {
@@ -46,32 +45,41 @@ impl Repl {
             module,
             symbols: Symbols::default(),
             next_chunk: 0,
+            fixity: None,
             types: infer::Session::new(),
-            lowering: lower::Session::new(),
-            exceptions: HashMap::new(),
+            lowering: lower::Session::new_repl(),
         })
     }
 
-    fn parse(&self, source: &str, chunk: usize) -> miette::Result<Program> {
-        let filename = format!("<repl:{chunk}>");
+    fn execute(&mut self, source: &str, first_line: usize) -> miette::Result<()> {
+        let filename = format!("<repl:{}>", self.next_chunk);
         let named_source = miette::NamedSource::new(filename.clone(), source.to_owned());
-        Parser::from_repl_source(source, &filename)
+        let mut parser = Parser::from_repl_source(source, &filename)
             .map_err(|error| {
                 miette::Report::new(SourceError::from_span(error))
                     .with_source_code(named_source.clone())
             })?
-            .parse()
-            .map_err(|error| {
-                miette::Report::new(SourceError::from_span(error)).with_source_code(named_source)
-            })
+            .with_fixity(self.fixity.as_ref());
+        while let Some((program, fixity)) = parser.repl_chunk().map_err(|error| {
+            miette::Report::new(SourceError::from_span(error))
+                .with_source_code(named_source.clone())
+        })? {
+            self.fixity = Some(fixity);
+            if let Err(error) = self.execute_program(program, source, first_line) {
+                eprintln!("{error:?}");
+            }
+        }
+        Ok(())
     }
 
-    /// Runs the chunk `source`, which starts on line `first_line` of the
-    /// input.
-    fn execute(&mut self, source: &str, first_line: usize) -> miette::Result<()> {
+    fn execute_program(
+        &mut self,
+        program: Program,
+        source: &str,
+        first_line: usize,
+    ) -> miette::Result<()> {
         let chunk = self.next_chunk;
         self.next_chunk += 1;
-        let program = self.parse(source, chunk)?;
         let named_source = miette::NamedSource::new(format!("<repl:{chunk}>"), source.to_owned());
         // Each stage works on a copy of its environment, kept only once the
         // whole chunk has compiled.
@@ -106,22 +114,20 @@ impl Repl {
             println!("\n{}", uncaught(exception));
             return Ok(());
         }
-        for (name, argument) in self.types.exceptions() {
-            let identity = self
-                .lowering
-                .global(&format!("exn {name}"))
-                .and_then(|global| Codegen::global_address(&self.module, &self.symbols, global))
-                .map(|address| unsafe { address.read() as i64 })
-                .or_else(|| value::builtin_exception(&name).map(runtime::builtin_exception));
-            if let Some(identity) = identity {
-                self.exceptions.insert(identity, argument);
+        let printer = Printer { types: &self.types };
+        for index in 0..=checked.bindings.len() {
+            for (_, echo) in checked.echoes.iter().filter(|(at, _)| *at == index) {
+                println!("{echo}");
             }
-        }
-        let printer = Printer {
-            types: &self.types,
-            exceptions: &self.exceptions,
-        };
-        for binding in &checked.bindings {
+            let Some(binding) = checked.bindings.get(index) else {
+                continue;
+            };
+            if checked.bindings[index + 1..]
+                .iter()
+                .any(|later| later.name == binding.name)
+            {
+                continue;
+            }
             let word = self
                 .lowering
                 .global(&binding.name)
@@ -132,7 +138,11 @@ impl Repl {
                 || "-".to_string(),
                 |word| printer.show(word, &binding.resolved, 10),
             );
-            println!("val {} = {shown} : {}", binding.name, binding.ty);
+            println!(
+                "val {} = {shown} : {}",
+                binding.name,
+                self.types.binding_type(&binding.resolved)
+            );
         }
         if program.statements.is_empty() {
             println!("val it = {status} : int");
@@ -193,7 +203,6 @@ fn report<E: std::error::Error + Send + Sync + 'static>(
 /// A value as SML/NJ's top level prints it.
 struct Printer<'a> {
     types: &'a infer::Session,
-    exceptions: &'a HashMap<i64, Option<Ty>>,
 }
 
 impl Printer<'_> {
@@ -247,12 +256,26 @@ impl Printer<'_> {
                         depth,
                     );
                     let name = name.trim_matches('"');
-                    match self.exceptions.get(&identity) {
-                        Some(Some(argument_ty)) => format!(
+                    let described = if unsafe { *(identity as *const i64) >> 8 } > 1 {
+                        let descriptor = field(identity, 1);
+                        (descriptor != value::NIL).then(|| descriptor_type(descriptor))
+                    } else {
+                        (identity
+                            == runtime::builtin_exception(
+                                value::builtin_exception("Fail").expect("basis Fail"),
+                            ))
+                        .then(|| Ty::Con {
+                            name: "string".into(),
+                            stamp: 0,
+                            args: vec![],
+                        })
+                    };
+                    match described {
+                        Some(argument_ty) => format!(
                             "{name} {}",
-                            argument(self.show(field(word, 1) as u64, argument_ty, depth - 1))
+                            argument(self.show(field(word, 1) as u64, &argument_ty, depth - 1))
                         ),
-                        _ => name.to_string(),
+                        None => name.to_string(),
                     }
                 }
                 ("unit", _) => "()".to_string(),
@@ -390,6 +413,44 @@ fn uncaught(exception: i64) -> String {
 
 /// A constructor's argument as SML/NJ shows it: parenthesised when it is
 /// itself a constructor application.
+fn descriptor_type(descriptor: i64) -> Ty {
+    let field = |block: i64, index: usize| unsafe { *((block as *const i64).add(index + 1)) };
+    let fields = |block: i64| unsafe {
+        std::slice::from_raw_parts(
+            (block as *const i64).add(1),
+            (*(block as *const i64) >> 8) as usize,
+        )
+    };
+    let text = |block: i64| unsafe {
+        String::from_utf8_lossy(std::slice::from_raw_parts(
+            (block as *const u8).add(8),
+            (*(block as *const i64) >> 8) as usize,
+        ))
+        .into_owned()
+    };
+    match field(descriptor, 0) >> 1 {
+        0 => Ty::Con {
+            name: text(field(descriptor, 1)),
+            stamp: (field(descriptor, 2) >> 1) as usize,
+            args: fields(field(descriptor, 3))
+                .iter()
+                .map(|&word| descriptor_type(word))
+                .collect(),
+        },
+        1 => Ty::Record(
+            fields(field(descriptor, 1))
+                .iter()
+                .map(|&word| (text(field(word, 0)), descriptor_type(field(word, 1))))
+                .collect(),
+        ),
+        2 => Ty::Arrow(Box::new(Ty::Record(vec![])), Box::new(Ty::Record(vec![]))),
+        _ => Ty::Var {
+            id: 0,
+            equality: false,
+        },
+    }
+}
+
 fn argument(shown: String) -> String {
     if shown.contains(' ') && !shown.starts_with(['(', '[', '{', '"', '#']) {
         format!("({shown})")

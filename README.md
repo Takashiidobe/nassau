@@ -38,6 +38,11 @@ transcripts with FileCheck. Run it with:
 cargo test --test repl
 ```
 
+`(* ORACLE-VALUES *)` compares binding echoes with Poly/ML; `(* ORACLE-REPL *)`
+compares the complete declaration transcript. Both ignore layout whitespace
+outside strings. `CHECK-STDOUT` assertions in a REPL fixture check program
+output in both Nassau and Poly/ML.
+
 The tests use `poly` from `PATH` (override with `POLYML`) and skip if it is
 not installed. SML/NJ and MLton are not required.
 

@@ -173,10 +173,17 @@ the new names, while keeping the already allocated function and global IDs.
 Effects on existing references and output already printed are not rolled back.
 
 The REPL prints bindings by reading their compiled global cells and decoding
-values according to their resolved types. User datatype and exception display
-is still incomplete. Each chunk also gets a fresh parser, so custom fixity does
-not yet survive between inputs. These are REPL gaps rather than alternative
-execution semantics.
+values according to their resolved types. Inference supplies declaration
+echoes and constructor payload types. JIT exception identities also carry a
+heap type descriptor, so local and generative exceptions remain printable
+outside their declaring scope. Native compilation keeps the smaller identity
+cell because it does not need a value printer.
+
+The parser carries fixity between inputs and separates top-level semicolon
+phrases before checking and executing each transaction. A later failed phrase
+therefore preserves earlier successful bindings, including phrases on the
+same input line. Printers bound recursion and list traversal to terminate on
+cyclic references and large values.
 
 ## Finding a problem in the pipeline
 

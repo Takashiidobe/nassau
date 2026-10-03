@@ -42,6 +42,24 @@ fn run_with_input(command: &mut Command, input: &str) -> std::io::Result<Output>
     child.wait_with_output()
 }
 
+fn compact(text: &str) -> String {
+    let mut quoted = false;
+    let mut escaped = false;
+    text.chars()
+        .filter(|&ch| {
+            let keep = quoted || !ch.is_whitespace();
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == '"' {
+                quoted = !quoted;
+            }
+            keep
+        })
+        .collect()
+}
+
 fn value_echoes(transcript: &str) -> Vec<String> {
     let mut bindings = Vec::<String>::new();
     let mut binding = None;
@@ -57,26 +75,7 @@ fn value_echoes(transcript: &str) -> Vec<String> {
             binding = None;
         }
     }
-    bindings
-        .iter()
-        .map(|line| {
-            let mut quoted = false;
-            let mut escaped = false;
-            line.chars()
-                .filter(|&ch| {
-                    let keep = quoted || !ch.is_whitespace();
-                    if escaped {
-                        escaped = false;
-                    } else if ch == '\\' {
-                        escaped = true;
-                    } else if ch == '"' {
-                        quoted = !quoted;
-                    }
-                    keep
-                })
-                .collect()
-        })
-        .collect()
+    bindings.iter().map(|line| compact(line)).collect()
 }
 
 fn compare_repl(fixture: &Path, polyml: &str) {
@@ -94,7 +93,7 @@ fn compare_repl(fixture: &Path, polyml: &str) {
         .env("NASSAU_ORACLE_FILE", fixture)
         .env(
             "NASSAU_ORACLE_ECHO",
-            if source.contains("(* ORACLE-VALUES *)") {
+            if source.contains("(* ORACLE-VALUES *)") || source.contains("(* ORACLE-REPL *)") {
                 "1"
             } else {
                 "0"
@@ -139,6 +138,14 @@ fn compare_repl(fixture: &Path, polyml: &str) {
             value_echoes(&transcript),
             value_echoes(&String::from_utf8_lossy(&reference.stdout)),
             "{}: binding values differ from Poly/ML",
+            fixture.display()
+        );
+    }
+    if source.contains("(* ORACLE-REPL *)") {
+        assert_eq!(
+            compact(&transcript),
+            compact(&String::from_utf8_lossy(&reference.stdout)),
+            "{}: declaration transcript differs from Poly/ML",
             fixture.display()
         );
     }

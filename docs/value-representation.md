@@ -60,7 +60,12 @@ collector must trace; string and real blocks hold raw bytes.
   cell holding the exception's name, allocated each time the `exception`
   declaration is evaluated, so declarations inside functions are
   generative; a replication (`exception F = E`) shares its original's
-  identity. A match compares identities by address.
+  identity. A match compares identities by address. In the REPL, the identity
+  is a record `[name, payload type descriptor]`; nullary exceptions use `()`
+  for the descriptor. A descriptor is a record: tag 0 holds a type name,
+  stamp and record of argument descriptors; tag 1 holds a record of
+  `[label, descriptor]` fields; tags 2 and 3 denote functions and unknown
+  variables. This metadata survives local scopes and generative declarations.
 - **Raising** does not unwind the stack by jumping. A function that raises
   records the exception with the runtime and returns the word `0`, which is
   no value: immediates are odd and blocks are non-null. Every call checks

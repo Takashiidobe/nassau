@@ -32,11 +32,11 @@ pub(super) struct StructEnv {
 
 #[derive(Clone)]
 pub(super) struct Sig {
-    items: Vec<SigItem>,
+    pub(super) items: Vec<SigItem>,
 }
 
 #[derive(Clone)]
-enum SigItem {
+pub(super) enum SigItem {
     Val {
         name: String,
         scheme: Scheme,
@@ -75,8 +75,9 @@ enum SigItem {
 pub(super) struct Functor {
     /// `None` when the parameter is a list of specifications, whose names
     /// the body sees unqualified.
-    parameter: Option<String>,
-    sig: Sig,
+    pub(super) parameter: Option<String>,
+    pub(super) sig: Sig,
+    pub(super) result: StructEnv,
     body: StrExp,
     scope: Scope,
 }
@@ -128,7 +129,7 @@ impl Infer {
             self.bind_parameter(parameter.as_deref(), env);
             let checked = self.elab_strexp(&binding.body);
             self.release(mark);
-            checked?;
+            let result = checked?;
             let scope = Scope {
                 values: self.values.clone(),
                 types: self.types.clone(),
@@ -141,6 +142,7 @@ impl Infer {
                 Rc::new(Functor {
                     parameter,
                     sig,
+                    result,
                     body: binding.body.clone(),
                     scope,
                 }),

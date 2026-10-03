@@ -24,12 +24,12 @@ and values are displayed.
 | Application, `fn`, `fun`, recursion, currying               | Yes                          | Yes                                 | Yes                                                         |
 | `if`, `case`, `andalso`, `orelse`, sequences                | Yes                          | Yes                                 | Yes                                                         |
 | `val`, `let`, `local`, type annotations and aliases         | Yes                          | Yes                                 | Yes                                                         |
-| Datatypes, `withtype`, `abstype`, user datatype replication | Yes                          | Yes                                 | Values work; constructor display is incomplete              |
-| Exceptions, replication, `raise`, `handle`                  | Yes                          | Yes                                 | Values and handlers work; declaration display is incomplete |
+| Datatypes, `withtype`, `abstype`, user datatype replication | Yes                          | Yes                                 | Yes              |
+| Exceptions, replication, `raise`, `handle`                  | Yes                          | Yes                                 | Yes |
 | References, assignment, `while`, `before`                   | Yes                          | Yes                                 | Yes                                                         |
-| Fixity declarations and user infix functions                | Yes                          | Yes                                 | Fixity lasts only within the parsed input chunk             |
-| Structures, signatures, `open`, module-qualified names      | Yes                          | Yes                                 | Values work; declaration display is incomplete              |
-| Functors and structure/type sharing                         | Yes                          | Yes                                 | Values work; declaration display is incomplete              |
+| Fixity declarations and user infix functions                | Yes                          | Yes                                 | Yes; fixity persists between inputs             |
+| Structures, signatures, `open`, module-qualified names      | Yes                          | Yes                                 | Yes              |
+| Functors and structure/type sharing                         | Yes                          | Yes                                 | Yes              |
 | Full Standard Basis Library                                 | A small subset is recognized | A smaller subset is executable      | Same as native                                              |
 
 The predefined names `Int.toString`, `Word8.fromInt`, and `Posix.Process.exit`
@@ -266,19 +266,25 @@ structures remain outside the implemented subset.
 
 ## REPL and compatibility limits
 
-Functions and heap values survive between REPL inputs. User datatype values
-can be constructed and matched across inputs, but they display as `-` rather
-than with their constructors. Datatype and exception declarations also lack
-the complete SML/NJ echo. Built-in lists, options, references, tuples, records,
-strings, and functions have value printers, without SML/NJ's depth and length
-limits. Fixity is reset when a new input chunk is parsed.
+Functions and heap values survive between REPL inputs. Datatypes, exceptions,
+structures, signatures, functors, aliases, replication, `open`, `local`, and
+fixity declarations are accepted and echoed. Fixity persists across inputs;
+private fixity stays local and public fixity is exported. Top-level semicolons
+separate transactions, including multiple phrases on the same input line.
+
+Values are decoded using their inferred types, including user constructors
+and exception payloads whose declaring scope has ended. Printing is bounded
+to ten recursive levels and twenty list elements; abstract values print as
+`-`. Nassau keeps its compact value layout and runtime exception diagnostics.
+Oracle fixtures compare value and declaration echoes with Poly/ML while
+ignoring layout whitespace outside quoted strings.
 
 Nassau uses 31-bit `int` values. Integer-limit fixtures compare with Poly/ML
 only when its `Int.precision` matches, and always check Nassau with FileCheck.
 Poly/ML validates the exception-values and opaque functor-result fixtures.
 The where-type arity error retains FileCheck coverage with an explicit oracle
-exclusion because Poly/ML 5.9.2 accepts it. Runtime diagnostics and REPL value
-printing remain Nassau-specific and use retained FileCheck expectations.
+exclusion because Poly/ML 5.9.2 accepts it. Runtime diagnostics, truncation and abstract-value formatting use retained
+Nassau FileCheck expectations.
 There is no garbage collector yet; heap values remain
 allocated for the lifetime of the process.
 

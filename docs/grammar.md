@@ -266,10 +266,11 @@ strings, and functions have value printers, without SML/NJ's depth and length
 limits. Fixity is reset when a new input chunk is parsed.
 
 Nassau's 31-bit `int` model matches the older SML/NJ configuration used by the
-fixtures. The installed 64-bit SML/NJ uses wider integers, so integer-limit
-oracle results can differ. Existing oracle discrepancies are tracked in
-`nassau-dx5`. There is no garbage collector yet; heap values remain allocated
-for the lifetime of the process.
+fixtures. Integer-limit fixtures compare with SML/NJ only when its
+`Int.precision` matches, and always check Nassau with FileCheck. The
+exception-values and opaque functor-result fixtures use MLton to avoid bugs
+in SML/NJ 110.99.9. There is no garbage collector yet; heap values remain
+allocated for the lifetime of the process.
 
 Examples and regression coverage live in [the fixtures](../tests/fixtures)
 and [REPL transcripts](../tests/repl). When a language feature changes, update

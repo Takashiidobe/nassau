@@ -78,8 +78,9 @@ collector must trace; string and real blocks hold raw bytes.
 ## `int`
 
 `int` is 31 bits wide: `Int.minInt` is `~1073741824` and `Int.maxInt` is
-`1073741823`, as in SML/NJ, which Nassau's fixtures are checked against.
-MLton uses 32 bits. Tagging leaves 63 bits, so any 31-bit width fits, and
+`1073741823`, matching 32-bit SML/NJ. The fixture harness checks SML/NJ's
+`Int.precision` before comparing integer-limit behavior; 64-bit SML/NJ uses
+63-bit integers. MLton uses 32 bits. Tagging leaves 63 bits, so any 31-bit width fits, and
 matching SML/NJ keeps oracle fixtures that print or overflow at the limits
 comparable.
 

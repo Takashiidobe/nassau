@@ -33,6 +33,7 @@ exception Copy = Code
 val () = print (describe (Copy 9) ^ "\n")
 local exception Hidden in val hidden = Hidden fun isHidden Hidden = true | isHidden _ = false end
 val () = print (if isHidden hidden andalso not (isHidden Oops) then "hidden\n" else "wrong\n")
+(* ORACLE: mlton *)
 (* CHECK-EXIT: 0 *)
 (* CHECK-STDOUT: oops, code 3, hi 2, fail no, div, something else, oops *)
 (* CHECK-STDOUT-NEXT: code 1, code 2 *)

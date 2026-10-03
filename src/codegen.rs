@@ -27,6 +27,8 @@ use crate::error::CodegenError;
 use crate::runtime;
 use crate::value;
 
+mod helpers;
+
 #[derive(Clone, Copy, Debug, ValueEnum)]
 pub enum OptLevel {
     None,
@@ -77,6 +79,7 @@ pub struct Symbols {
     globals: HashMap<GlobalId, DataId>,
     /// How many anonymous data objects (literals) exist.
     data: usize,
+    helpers: HashMap<&'static str, FuncId>,
 }
 
 struct FunctionBuild {
@@ -262,6 +265,7 @@ impl Codegen {
         symbols: &mut Symbols,
         module: &core::Module,
     ) -> Result<(FuncId, Vec<FunctionBuild>), CodegenError> {
+        let mut builds = self.define_helpers(target, symbols, module)?;
         for (global, name) in &module.globals {
             let id = target
                 .declare_data(
@@ -292,7 +296,6 @@ impl Codegen {
         let entry = target
             .declare_function(&module.entry.name, Linkage::Export, &entry_signature)
             .map_err(backend)?;
-        let mut builds = Vec::new();
         for function in &module.functions {
             let id = symbols.functions[&function.id];
             builds.push(self.define_function(
@@ -353,6 +356,16 @@ impl Codegen {
         translator.builder.finalize(frontend_config);
         let frontend = total_start.elapsed();
 
+        self.finish_function(target, id, context, frontend)
+    }
+
+    fn finish_function<M: Module>(
+        &self,
+        target: &mut M,
+        id: FuncId,
+        mut context: cranelift_codegen::Context,
+        frontend: Duration,
+    ) -> Result<FunctionBuild, CodegenError> {
         let dump_ir = self.debug_passes || self.dump_ir;
         let dump_optimized_ir = self.debug_passes || self.dump_optimized_ir;
         let needs_manual_optimization = dump_optimized_ir || self.verify || self.stats;
@@ -483,9 +496,13 @@ impl<M: Module> Translator<'_, M> {
             self.builder.switch_to_block(landing);
             match handler {
                 Some(handler) => {
-                    let exception = self
-                        .call_c("nassau_caught", &[], Some(types::I64), &[])?
-                        .expect("nassau_caught returns the exception");
+                    let state = self.raised_address()?;
+                    let exception =
+                        self.builder
+                            .ins()
+                            .load(types::I64, MemFlagsData::trusted(), state, 0);
+                    let empty = self.word(value::RAISED);
+                    self.store(empty, state, 0);
                     self.builder
                         .ins()
                         .jump(self.blocks[handler], &[exception.into()]);
@@ -592,10 +609,13 @@ impl<M: Module> Translator<'_, M> {
             .params
             .extend(params.iter().map(|param| AbiParam::new(*param)));
         signature.returns.extend(returns.map(AbiParam::new));
-        let id = self
-            .target
-            .declare_function(name, Linkage::Import, &signature)
-            .map_err(backend)?;
+        let id = if let Some(id) = self.symbols.helpers.get(name) {
+            *id
+        } else {
+            self.target
+                .declare_function(name, Linkage::Import, &signature)
+                .map_err(backend)?
+        };
         let func = self.target.declare_func_in_func(id, self.builder.func);
         self.imports.insert(name, func);
         Ok(func)
@@ -863,12 +883,21 @@ impl<M: Module> Translator<'_, M> {
     fn raise_builtin(&mut self, name: &str, location: Value) -> Result<(), CodegenError> {
         let index = value::builtin_exception(name).expect("a built-in exception");
         let index = self.word(value::tagged(index));
-        self.call_c(
-            "nassau_raise_builtin",
-            &[types::I64, types::I64],
-            None,
-            &[index, location],
-        )?;
+        let identity = self
+            .call_c(
+                "nassau_exception",
+                &[types::I64],
+                Some(types::I64),
+                &[index],
+            )?
+            .expect("nassau_exception returns an identity");
+        let exception = self.allocate(3, value::KIND_RECORD)?;
+        self.store(identity, exception, 8);
+        let unit = self.word(value::NIL);
+        self.store(unit, exception, 16);
+        self.store(location, exception, 24);
+        let state = self.raised_address()?;
+        self.store(exception, state, 0);
         let landing = self.landing();
         self.builder.ins().jump(landing, &[]);
         Ok(())
@@ -1047,12 +1076,7 @@ impl<M: Module> Translator<'_, M> {
                     // A handler passing an exception on keeps its position.
                     None => self.word(0),
                 };
-                self.call_c(
-                    "nassau_raise_exception",
-                    &[types::I64, types::I64],
-                    None,
-                    &[exception, location],
-                )?;
+                self.raise_exception(exception, location)?;
                 let landing = self.landing();
                 self.builder.ins().jump(landing, &[]);
             }

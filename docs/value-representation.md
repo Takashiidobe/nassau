@@ -10,12 +10,12 @@ generation and the runtime share.
 
 An immediate stores a small integer `n` as `(n << 1) | 1`.
 
-| Type | Value of `n` |
-| --- | --- |
-| `int` | the integer itself |
-| `char` | the character code |
-| `bool` | `false` = 0, `true` = 1 |
-| `unit` | 0 |
+| Type                                     | Value of `n`                                                      |
+| ---------------------------------------- | ----------------------------------------------------------------- |
+| `int`                                    | the integer itself                                                |
+| `char`                                   | the character code                                                |
+| `bool`                                   | `false` = 0, `true` = 1                                           |
+| `unit`                                   | 0                                                                 |
 | nullary constructor (`nil`, `NONE`, ...) | the constructor's index among the datatype's nullary constructors |
 
 `nil` is therefore the word 1, the same word as `false`, `()` and `0`; types
@@ -31,13 +31,13 @@ later garbage collector can walk the heap without type information:
 header = (length << 8) | kind
 ```
 
-| Kind | Value | Length counts | Contents |
-| --- | --- | --- | --- |
-| record | 0 | fields | values: tuples, records, cons cells, constructor payloads |
-| closure | 1 | fields | field 0 is a code address, the rest are free variables' values |
-| string | 2 | bytes | the bytes, NUL-terminated and padded to a word |
-| real | 3 | 1 | one IEEE double, not a value |
-| ref | 4 | 1 | one mutable value |
+| Kind    | Value | Length counts | Contents                                                       |
+| ------- | ----- | ------------- | -------------------------------------------------------------- |
+| record  | 0     | fields        | values: tuples, records, cons cells, constructor payloads      |
+| closure | 1     | fields        | field 0 is a code address, the rest are free variables' values |
+| string  | 2     | bytes         | the bytes, NUL-terminated and padded to a word                 |
+| real    | 3     | 1             | one IEEE double, not a value                                   |
+| ref     | 4     | 1             | one mutable value                                              |
 
 Values of the record and ref kinds and closures after field 0 are values the
 collector must trace; string and real blocks hold raw bytes.

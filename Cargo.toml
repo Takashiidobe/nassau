@@ -3,7 +3,12 @@ name = "nassau"
 version = "0.1.0"
 edition = "2024"
 
+[workspace]
+members = ["runtime"]
+resolver = "3"
+
 [dependencies]
+nassau-runtime = { path = "runtime" }
 clap = { version = "4", features = ["derive"] }
 miette = { version = "7", features = ["fancy"] }
 thiserror = "2"

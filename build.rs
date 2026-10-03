@@ -2,37 +2,45 @@ use std::env;
 use std::path::PathBuf;
 use std::process::Command;
 
-fn run(command: &mut Command) {
-    let status = command
-        .status()
-        .unwrap_or_else(|error| panic!("failed to run {command:?}: {error}"));
-    assert!(status.success(), "{command:?} failed with {status}");
-}
-
 fn main() {
-    let source = "runtime/nassau_runtime.rs";
-    println!("cargo:rerun-if-changed={source}");
+    println!("cargo:rerun-if-changed=runtime");
     println!("cargo:rerun-if-changed=src/value.rs");
+    println!("cargo:rerun-if-changed=Cargo.toml");
+    println!("cargo:rerun-if-changed=Cargo.lock");
     let out = PathBuf::from(env::var("OUT_DIR").expect("cargo sets OUT_DIR"));
-    let object = out.join("nassau_runtime.o");
-    let archive = out.join("libnassau_runtime.a");
-    let rustc = env::var_os("RUSTC").expect("cargo sets RUSTC");
+    let runtime_target = out.join("runtime-target");
     let target = env::var("TARGET").expect("cargo sets TARGET");
-    run(Command::new(rustc)
+    let cargo = env::var_os("CARGO").expect("cargo sets CARGO");
+    let result = Command::new(cargo)
         .args([
-            "--edition=2024",
-            "--crate-type=lib",
-            "--emit=obj",
-            "-O",
-            "-D",
-            "warnings",
+            "rustc",
+            "--package",
+            "nassau-runtime",
+            "--lib",
+            "--release",
+            "--locked",
         ])
-        .args(["-C", "panic=abort", "-C", "relocation-model=pic"])
-        .args(["-A", "dead_code", "--target", &target, "-o"])
-        .arg(&object)
-        .arg(source));
-    let _ = std::fs::remove_file(&archive);
-    run(Command::new("ar").arg("crs").arg(&archive).arg(&object));
-    println!("cargo:rustc-link-search=native={}", out.display());
-    println!("cargo:rustc-link-lib=static=nassau_runtime");
+        .args(["--target", &target, "--target-dir"])
+        .arg(&runtime_target)
+        .args(["--", "--print=native-static-libs", "-D", "warnings"])
+        .env("CARGO_PROFILE_RELEASE_PANIC", "abort")
+        .output()
+        .expect("build the native runtime archive");
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert!(
+        result.status.success(),
+        "native runtime build failed:\n{stderr}"
+    );
+    let libraries = stderr
+        .lines()
+        .find_map(|line| line.strip_prefix("note: native-static-libs: "))
+        .expect("rustc reports native libraries for the runtime staticlib");
+    println!("cargo:rustc-env=NASSAU_RUNTIME_NATIVE_LIBS={libraries}");
+    std::fs::copy(
+        runtime_target
+            .join(target)
+            .join("release/libnassau_runtime.a"),
+        out.join("libnassau_runtime.a"),
+    )
+    .expect("embed the native runtime archive");
 }

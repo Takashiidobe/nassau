@@ -28,6 +28,7 @@ use crate::runtime;
 use crate::value;
 
 mod helpers;
+mod roots;
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
 pub enum OptLevel {
@@ -80,6 +81,9 @@ pub struct Symbols {
     /// How many anonymous data objects (literals) exist.
     data: usize,
     helpers: HashMap<&'static str, FuncId>,
+    dependencies: HashMap<FnId, std::collections::BTreeSet<GlobalId>>,
+    pending_globals: Vec<GlobalId>,
+    pending_functions: Vec<FnId>,
 }
 
 struct FunctionBuild {
@@ -241,6 +245,7 @@ impl Codegen {
             .arg(output)
             .arg(&object_path)
             .arg(&runtime_path)
+            .args(runtime::NATIVE_LIBS.split_whitespace())
             .output()
             .map_err(|error| CodegenError::Tool(format!("failed to invoke {linker}: {error}")));
         let _ = fs::remove_file(&object_path);
@@ -296,6 +301,8 @@ impl Codegen {
         let entry = target
             .declare_function(&module.entry.name, Linkage::Export, &entry_signature)
             .map_err(backend)?;
+        symbols.functions.insert(module.entry.id, entry);
+        roots::global_dependencies(module, symbols);
         for function in &module.functions {
             let id = symbols.functions[&function.id];
             builds.push(self.define_function(
@@ -338,6 +345,7 @@ impl Codegen {
             sml_signature(function.params.len())
         };
         let mut builder_context = FunctionBuilderContext::new();
+        let root_function = target.declare_func_in_func(id, &mut context.func);
         let builder = FunctionBuilder::new(&mut context.func, &mut builder_context);
         let mut translator = Translator {
             target,
@@ -350,6 +358,8 @@ impl Codegen {
             file,
             handler: None,
             landings: Vec::new(),
+            roots: None,
+            root_function: Some(root_function),
         };
         translator.function(function)?;
         translator.builder.seal_all_blocks();
@@ -451,6 +461,8 @@ fn symbol_name(name: &str) -> String {
 }
 
 struct Translator<'a, M: Module> {
+    roots: Option<roots::RootFrame>,
+    root_function: Option<FuncRef>,
     target: &'a mut M,
     symbols: &'a mut Symbols,
     builder: FunctionBuilder<'a>,
@@ -484,12 +496,49 @@ impl<M: Module> Translator<'_, M> {
         for (var, value) in function.params.iter().zip(params) {
             self.vars.insert(*var, value);
         }
-        for (block, created) in function.blocks.iter().zip(self.blocks.clone()) {
+        let points = roots::live_roots(function);
+        let capacity = points
+            .iter()
+            .flatten()
+            .map(|live| live.len())
+            .max()
+            .unwrap_or(0)
+            + function
+                .blocks
+                .iter()
+                .flat_map(|block| &block.stmts)
+                .map(|stmt| match stmt {
+                    Stmt::Closures(closures) => closures.len(),
+                    _ => 0,
+                })
+                .max()
+                .unwrap_or(0)
+            + 16;
+        for (index, (block, created)) in function.blocks.iter().zip(self.blocks.clone()).enumerate()
+        {
             self.builder.switch_to_block(created);
+            if index == 0 {
+                self.begin_roots(capacity)?;
+                if self.entry {
+                    self.register_module_roots()?;
+                }
+            }
             self.handler = block.handler;
-            for stmt in &block.stmts {
+            for (position, stmt) in block.stmts.iter().enumerate() {
+                let values: Vec<_> = points[index][position]
+                    .iter()
+                    .map(|var| self.vars[var])
+                    .collect();
+                self.publish_roots(&values);
                 self.stmt(stmt)?;
             }
+            let values: Vec<_> = points[index]
+                .last()
+                .unwrap()
+                .iter()
+                .map(|var| self.vars[var])
+                .collect();
+            self.publish_roots(&values);
             self.term(&block.term)?;
         }
         for (handler, landing) in self.landings.clone() {
@@ -511,10 +560,12 @@ impl<M: Module> Translator<'_, M> {
                     let status = self
                         .call_c("nassau_uncaught", &[], Some(types::I32), &[])?
                         .expect("nassau_uncaught returns an exit status");
+                    self.end_roots()?;
                     self.builder.ins().return_(&[status]);
                 }
                 None => {
                     let raised = self.word(value::RAISED);
+                    self.end_roots()?;
                     self.builder.ins().return_(&[raised]);
                 }
             }
@@ -630,17 +681,28 @@ impl<M: Module> Translator<'_, M> {
     ) -> Result<Option<Value>, CodegenError> {
         let func = self.import(name, params, returns)?;
         let call = self.builder.ins().call(func, args);
-        Ok(self.builder.inst_results(call).first().copied())
+        let result = self.builder.inst_results(call).first().copied();
+        if returns == Some(types::I64)
+            && name != "nassau_raised"
+            && let Some(value) = result
+        {
+            self.root_temporary(value);
+        }
+        Ok(result)
     }
 
     /// A heap block with room for `fields` words after its header.
     fn allocate(&mut self, fields: usize, kind: i64) -> Result<Value, CodegenError> {
         let size = self.word(fields as i64);
+        let kind = self.word(kind);
         let block = self
-            .call_c("nassau_alloc", &[types::I64], Some(types::I64), &[size])?
+            .call_c(
+                "nassau_alloc",
+                &[types::I64, types::I64],
+                Some(types::I64),
+                &[size, kind],
+            )?
             .expect("nassau_alloc returns a pointer");
-        let header = self.word(value::header(fields as i64, kind));
-        self.store(header, block, 0);
         Ok(block)
     }
 
@@ -1063,7 +1125,7 @@ impl<M: Module> Translator<'_, M> {
         match term {
             Term::Return(atom) => {
                 let value = self.atom(atom)?;
-                self.ret(value);
+                self.ret(value)?;
             }
             Term::Jump(target, args) => {
                 let args: Vec<BlockArg> = self.atoms(args)?.into_iter().map(Into::into).collect();
@@ -1090,6 +1152,7 @@ impl<M: Module> Translator<'_, M> {
                     "a call under a handler is not a tail call"
                 );
                 let call = self.callee(callee, args)?;
+                self.end_roots()?;
                 match call.target {
                     CallTarget::Direct(func) => {
                         self.builder.ins().return_call(func, &call.values);
@@ -1124,7 +1187,8 @@ impl<M: Module> Translator<'_, M> {
         Ok(())
     }
 
-    fn ret(&mut self, value: Value) {
+    fn ret(&mut self, value: Value) -> Result<(), CodegenError> {
+        self.end_roots()?;
         if self.entry {
             // The entry returns the exit status, an int.
             let status = self.untag(value);
@@ -1133,6 +1197,7 @@ impl<M: Module> Translator<'_, M> {
         } else {
             self.builder.ins().return_(&[value]);
         }
+        Ok(())
     }
 }
 

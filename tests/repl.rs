@@ -82,11 +82,10 @@ fn compare_repl(fixture: &Path, polyml: &str) {
     let source = fs::read_to_string(fixture).expect("read fixture");
     let input = repl_source(&source);
     let directory = fixture.parent().unwrap();
-    let nassau = run_with_input(
-        Command::new(env!("CARGO_BIN_EXE_nassau")).current_dir(directory),
-        &input,
-    )
-    .expect("run Nassau REPL");
+    let mut command = Command::new(env!("CARGO_BIN_EXE_nassau"));
+    command.current_dir(directory);
+    common::configure_gc(&mut command, &source);
+    let nassau = run_with_input(&mut command, &input).expect("run Nassau REPL");
     let reference = Command::new(polyml)
         .args(["-q", "--script"])
         .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("tools/polyml_oracle.sml"))

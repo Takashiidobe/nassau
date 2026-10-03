@@ -69,6 +69,8 @@ impl Codegen {
                 file: "",
                 handler: None,
                 landings: Vec::new(),
+                roots: None,
+                root_function: None,
             };
             let entry = translator.builder.create_block();
             translator
@@ -76,6 +78,8 @@ impl Codegen {
                 .append_block_params_for_function_params(entry);
             translator.builder.switch_to_block(entry);
             let args = translator.builder.block_params(entry).to_vec();
+            translator.begin_roots(args.len() + 16)?;
+            translator.publish_roots(&args);
             match name {
                 "nassau_concat" => translator.concat(&args)?,
                 "nassau_int_to_string" => translator.int_to_string(args[0])?,
@@ -128,19 +132,15 @@ impl<M: Module> Translator<'_, M> {
     }
 
     fn allocate_string(&mut self, length: Value) -> Result<Value, CodegenError> {
-        let words = self.builder.ins().ushr_imm_u(length, 3);
-        let words = self.builder.ins().iadd_imm_s(words, 1);
+        let kind = self.word(value::KIND_STRING);
         let block = self
-            .call_c("nassau_alloc", &[types::I64], Some(types::I64), &[words])?
+            .call_c(
+                "nassau_alloc",
+                &[types::I64, types::I64],
+                Some(types::I64),
+                &[length, kind],
+            )?
             .expect("nassau_alloc returns a pointer");
-        let header = self.builder.ins().ishl_imm_u(length, 8);
-        let header = self.builder.ins().bor_imm_u(header, value::KIND_STRING);
-        self.store(header, block, 0);
-        let end = self.builder.ins().iadd(block, length);
-        let zero = self.builder.ins().iconst(types::I8, 0);
-        self.builder
-            .ins()
-            .store(MemFlagsData::trusted(), zero, end, 8);
         Ok(block)
     }
 
@@ -164,6 +164,7 @@ impl<M: Module> Translator<'_, M> {
         let destination = self.builder.ins().iadd(destination, left);
         let source = self.builder.ins().iadd_imm_s(args[1], 8);
         self.copy_bytes(source, destination, right);
+        self.end_roots()?;
         self.builder.ins().return_(&[string]);
         Ok(())
     }
@@ -226,6 +227,7 @@ impl<M: Module> Translator<'_, M> {
         let string = self.allocate_string(length)?;
         let destination = self.builder.ins().iadd_imm_s(string, 8);
         self.copy_bytes(cursor, destination, length);
+        self.end_roots()?;
         self.builder.ins().return_(&[string]);
         Ok(())
     }
@@ -344,9 +346,11 @@ impl<M: Module> Translator<'_, M> {
         self.builder.ins().jump(fields, &[next.into()]);
         self.builder.switch_to_block(yes);
         let yes = self.word(value::TRUE);
+        self.end_roots()?;
         self.builder.ins().return_(&[yes]);
         self.builder.switch_to_block(no);
         let no = self.word(value::FALSE);
+        self.end_roots()?;
         self.builder.ins().return_(&[no]);
         Ok(())
     }

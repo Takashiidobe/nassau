@@ -1,0 +1,22 @@
+[package]
+name = "nassau-runtime"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lib]
+path = "nassau_runtime.rs"
+crate-type = ["rlib", "staticlib"]
+test = false
+doctest = false
+
+[dependencies]
+mmtk = { version = "=0.33.0", default-features = false, features = ["vo_bit"] }
+
+[lints.clippy]
+missing_safety_doc = "allow"
+
+[[test]]
+name = "object-model"
+path = "../tests/fixtures/runtime/mmtk-object-model.rs"
+harness = false

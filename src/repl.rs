@@ -111,7 +111,9 @@ impl Repl {
             // A chunk that raises binds nothing.
             self.types = earlier_types;
             self.lowering.forget_bindings(&earlier_lowering);
-            println!("\n{}", uncaught(exception));
+            let shown = runtime::with_root(exception, || uncaught(exception));
+            println!("\n{shown}");
+            self.publish_global_roots();
             return Ok(());
         }
         let printer = Printer { types: &self.types };
@@ -136,7 +138,9 @@ impl Repl {
                 .map(|address| unsafe { address.read() });
             let shown = word.map_or_else(
                 || "-".to_string(),
-                |word| printer.show(word, &binding.resolved, 10),
+                |word| {
+                    runtime::with_root(word as i64, || printer.show(word, &binding.resolved, 10))
+                },
             );
             println!(
                 "val {} = {shown} : {}",
@@ -147,7 +151,19 @@ impl Repl {
         if program.statements.is_empty() {
             println!("val it = {status} : int");
         }
+        self.publish_global_roots();
         Ok(())
+    }
+
+    fn publish_global_roots(&self) {
+        let addresses: Vec<_> = self
+            .lowering
+            .root_globals()
+            .into_iter()
+            .filter_map(|global| Codegen::global_address(&self.module, &self.symbols, global))
+            .map(|address| address as usize)
+            .collect();
+        runtime::replace_global_roots(&addresses);
     }
 
     pub fn run(&mut self) -> miette::Result<()> {

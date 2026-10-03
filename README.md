@@ -56,10 +56,12 @@ tools/update_filecheck.py --check             # fail if any block is stale
 A `(* XFAIL: reason *)` line marks a REPL fixture whose output is known to
 differ from SML/NJ; it fails the suite once it starts passing.
 
-Compiled fixtures normally compare against SML/NJ. `(* ORACLE: mlton *)`
-selects MLton instead (`MLTON` or `--mlton` for the updater). The exception-values
-and opaque functor-result fixtures use MLton because SML/NJ 110.99.9 crashes on
-the former and incorrectly accepts the latter.
+Compiled fixtures compare against SML/NJ. `(* SMLNJ-SKIP: reason *)` excludes
+an oracle comparison for a documented SML/NJ bug. Nassau's FileCheck checks
+still run. The updater validates and retains existing runtime expectations
+for these fixtures, and regenerates Nassau diagnostics for error fixtures.
+The exception-values and opaque functor-result fixtures carry this annotation
+because SML/NJ 110.99.9 crashes on the former and incorrectly accepts the latter.
 
 `(* SMLNJ-INT-PRECISION: 31 *)` marks a fixture that depends on Nassau's integer
 width. The harness probes `Int.precision` and compares with SML/NJ only when it
@@ -67,11 +69,6 @@ matches. Nassau's FileCheck checks still run on every marked fixture. When the
 oracle has a different width, the updater validates and retains the existing
 runtime checks from the compatible oracle, and regenerates Nassau diagnostics
 for error fixtures.
-
-The harness also checks module and functor fixtures with MLton when installed.
-`(* MLTON-SKIP: reason *)` excludes an additional MLton comparison for a
-documented dialect difference, such as functors declared inside `local`.
-SML/NJ and FileCheck checks still run for those fixtures.
 
 ## Project documentation
 

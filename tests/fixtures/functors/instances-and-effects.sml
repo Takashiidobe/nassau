@@ -24,7 +24,6 @@ in
 end
 structure P = Public (struct end)
 val () = print (Int.toString P.n ^ "\n")
-(* MLTON-SKIP: MLton rejects functors declared inside local *)
 (* CHECK-EXIT: 0 *)
 (* CHECK-STDOUT: 13 223 *)
 (* CHECK-STDOUT-NEXT: 4 *)

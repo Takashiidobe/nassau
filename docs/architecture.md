@@ -211,13 +211,11 @@ status. [tests/repl.rs](../tests/repl.rs) runs complete REPL transcripts.
 Expected output lives beside the input as FileCheck directives, except for
 lexer token snapshots. [tests/common/mod.rs](../tests/common/mod.rs) runs the
 checks, and [tools/update_filecheck.py](../tools/update_filecheck.py) regenerates
-expectations from SML/NJ. The harness also compares against the installed
-oracle; its optional MLton checks cover lexer and module fixtures. Module
+expectations from SML/NJ. The harness also compares against SML/NJ. Module
 runtime fixtures cover every valid module and functor type fixture, plus
-scope, effect, representation, and exception-identity cases. Fixtures using
-SML/NJ's local-functor extension carry an explicit MLton exclusion. Integer
-fixtures declare the oracle precision they require, while known SML/NJ bugs
-use MLton as their primary oracle.
+scope, effect, representation, and exception-identity cases. Integer
+fixtures declare the oracle precision they require. Known SML/NJ bugs carry
+an explicit oracle exclusion; Nassau's FileCheck checks still run.
 
 Beads stores implementation work and durable project notes in the local Dolt
 database under `.beads/dolt/`. The tracked JSONL files are exports of that

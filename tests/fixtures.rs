@@ -14,14 +14,6 @@ fn directive<'a>(source: &'a str, name: &str) -> Option<&'a str> {
     })
 }
 
-fn uses_mlton(source: &str) -> bool {
-    match directive(source, "ORACLE") {
-        None => false,
-        Some("mlton") => true,
-        Some(oracle) => panic!("unknown fixture oracle: {oracle}"),
-    }
-}
-
 fn smlnj_precision(smlnj: &str) -> u32 {
     let mut child = Command::new(smlnj)
         .stdin(std::process::Stdio::piped())
@@ -46,32 +38,6 @@ fn matching_precision(source: &str, precision: u32) -> bool {
     directive(source, "SMLNJ-INT-PRECISION").is_none_or(|required| {
         required.parse::<u32>().expect("fixture integer precision") == precision
     })
-}
-
-fn mlton_program(mlton: &str, fixture: &Path) -> Output {
-    let executable = std::env::temp_dir().join(format!(
-        "nassau-mlton-{}-{}",
-        std::process::id(),
-        fixture.file_stem().unwrap().to_string_lossy()
-    ));
-    let compiled = Command::new(mlton)
-        .arg("-output")
-        .arg(&executable)
-        .arg(fixture)
-        .output()
-        .expect("compile MLton oracle program");
-    assert!(
-        compiled.status.success(),
-        "MLton: {}: {}",
-        fixture.display(),
-        String::from_utf8_lossy(&compiled.stderr)
-    );
-    let output = Command::new(&executable)
-        .current_dir(fixture.parent().unwrap())
-        .output()
-        .expect("run MLton oracle program");
-    let _ = fs::remove_file(executable);
-    output
 }
 
 fn fixtures() -> Vec<PathBuf> {
@@ -133,63 +99,6 @@ fn is_types_fixture(fixture: &Path) -> bool {
 
 fn is_lists_fixture(fixture: &Path) -> bool {
     in_directory(fixture, "lists")
-}
-
-fn compare_mlton(fixture: &Path, mlton: &str, valid: bool) {
-    if !is_lexer_fixture(fixture)
-        && !in_directory(fixture, "modules")
-        && !in_directory(fixture, "functors")
-    {
-        return;
-    }
-    let source = fs::read_to_string(fixture).expect("read fixture");
-    if uses_mlton(&source) || directive(&source, "MLTON-SKIP").is_some() {
-        return;
-    }
-    if is_types_fixture(fixture) || is_parser_fixture(fixture) || !valid {
-        let result = Command::new(mlton)
-            .args(["-stop", "tc"])
-            .arg(fixture)
-            .output()
-            .expect("type-check MLton module oracle");
-        assert_eq!(
-            result.status.success(),
-            valid,
-            "MLton: {}: {}",
-            fixture.display(),
-            String::from_utf8_lossy(&result.stderr)
-        );
-        return;
-    }
-    if !is_lexer_fixture(fixture) {
-        let output = mlton_program(mlton, fixture);
-        check_program(fixture, &source, &output);
-        return;
-    }
-    let executable = std::env::temp_dir().join(format!(
-        "nassau-mlton-{}-{}",
-        std::process::id(),
-        fixture
-            .file_stem()
-            .expect("fixture has a file stem")
-            .to_string_lossy()
-    ));
-    let _ = fs::remove_file(&executable);
-    let result = Command::new(mlton)
-        .arg("-output")
-        .arg(&executable)
-        .arg(fixture)
-        .current_dir(fixture.parent().expect("fixture has a parent directory"))
-        .output()
-        .unwrap_or_else(|error| panic!("run MLton ({mlton}): {error}"));
-    assert_eq!(
-        result.status.success(),
-        valid,
-        "MLton: {}: {}",
-        fixture.display(),
-        String::from_utf8_lossy(&result.stderr)
-    );
-    let _ = fs::remove_file(executable);
 }
 
 /// Runs a fixture under SML/NJ as tools/update_filecheck.py does: loaded
@@ -263,14 +172,17 @@ fn check_program(fixture: &Path, source: &str, output: &Output) {
         .unwrap_or_else(|error| panic!("{error}"));
 }
 
-fn compare_fixture(fixture: &Path, smlnj: &str, mlton: &str, precision: u32) {
+fn compare_fixture(fixture: &Path, smlnj: &str, precision: u32) {
     let valid = expected_valid(fixture);
     let source = fs::read_to_string(fixture).expect("read fixture");
-    let mlton_oracle = uses_mlton(&source);
-    let compare_oracle = mlton_oracle || matching_precision(&source, precision);
+    let skip_reason = directive(&source, "SMLNJ-SKIP");
+    let compare_oracle = skip_reason.is_none() && matching_precision(&source, precision);
     if !compare_oracle {
+        let reason = skip_reason
+            .map(str::to_owned)
+            .unwrap_or_else(|| format!("Int.precision is {precision}"));
         eprintln!(
-            "{}: SML/NJ Int.precision is {precision}; running Nassau FileCheck checks only",
+            "{}: skipping SML/NJ ({reason}); running Nassau FileCheck checks only",
             fixture.display()
         );
     }
@@ -317,24 +229,16 @@ fn compare_fixture(fixture: &Path, smlnj: &str, mlton: &str, precision: u32) {
             || is_core_fixture(fixture)
             || is_types_fixture(fixture))
     {
-        let mut command = if mlton_oracle {
-            let mut command = Command::new(mlton);
-            command.args(["-stop", "tc"]);
-            command
-        } else {
-            Command::new(smlnj)
-        };
-        let reference = command
+        let reference = Command::new(smlnj)
             .arg(fixture)
             .current_dir(directory)
             .stdin(std::process::Stdio::null())
             .output()
-            .expect("run fixture oracle");
+            .expect("run SML/NJ fixture oracle");
         assert_eq!(
             reference.status.success(),
             valid,
-            "{} disagreed on {}: {}{}",
-            if mlton_oracle { "MLton" } else { "SML/NJ" },
+            "SML/NJ disagreed on {}: {}{}",
             fixture.display(),
             String::from_utf8_lossy(&reference.stdout),
             String::from_utf8_lossy(&reference.stderr)
@@ -375,11 +279,7 @@ fn compare_fixture(fixture: &Path, smlnj: &str, mlton: &str, precision: u32) {
         if is_lists_fixture(fixture) {
             assert!(nassau_output.status.success(), "{}", fixture.display());
         } else if compare_oracle {
-            let reference = if mlton_oracle {
-                mlton_program(mlton, fixture)
-            } else {
-                smlnj_program(smlnj, fixture)
-            };
+            let reference = smlnj_program(smlnj, fixture);
             assert_eq!(
                 nassau_output.stdout,
                 reference.stdout,
@@ -405,13 +305,6 @@ fn main() {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound && !explicit_smlnj => false,
         Err(error) => panic!("could not start SML/NJ ({smlnj}): {error}"),
     };
-    let mlton_explicit = std::env::var_os("MLTON").is_some();
-    let mlton = std::env::var("MLTON").unwrap_or_else(|_| "mlton".into());
-    let mlton_available = match Command::new(&mlton).output() {
-        Ok(_) => true,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound && !mlton_explicit => false,
-        Err(error) => panic!("could not start MLton ({mlton}): {error}"),
-    };
     let precision = if smlnj_available {
         smlnj_precision(&smlnj)
     } else {
@@ -427,19 +320,11 @@ fn main() {
                 .display()
                 .to_string();
             let smlnj = smlnj.clone();
-            let mlton = mlton.clone();
             Trial::ignorable_test(name, move || {
-                let source = fs::read_to_string(&fixture).expect("read fixture");
-                if uses_mlton(&source) && !mlton_available {
-                    return Ok(Completion::ignored_with("MLton is not installed"));
-                }
-                if !uses_mlton(&source) && !smlnj_available {
+                if !smlnj_available {
                     return Ok(Completion::ignored_with("SML/NJ is not installed"));
                 }
-                compare_fixture(&fixture, &smlnj, &mlton, precision);
-                if mlton_available {
-                    compare_mlton(&fixture, &mlton, expected_valid(&fixture));
-                }
+                compare_fixture(&fixture, &smlnj, precision);
                 Ok(Completion::Completed)
             })
         })

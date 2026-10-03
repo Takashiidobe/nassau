@@ -9,7 +9,6 @@ in
   structure T = G (struct val y = 4 end)
 end
 val b = T.z
-(* MLTON-SKIP: MLton rejects functors declared inside local *)
 (* CHECK-STDOUT: val base : int *)
 (* CHECK-STDOUT-NEXT: val base : string *)
 (* CHECK-STDOUT-NEXT: val a : int *)

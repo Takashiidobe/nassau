@@ -2353,6 +2353,77 @@ impl Session {
         }
     }
 
+    pub fn constructors(&self, ty: &Ty) -> Option<Vec<(String, Option<Ty>)>> {
+        let Ty::Con { stamp, args, .. } = ty else {
+            return None;
+        };
+        let info = self.infer.datatypes.get(stamp)?;
+        let visible = self.infer.values.iter().any(|entry| {
+            entry.constructor && match self.infer.prune(&entry.scheme.ty) {
+                Type::Con(con, _) => con.stamp == *stamp,
+                Type::Arrow(_, result) => matches!(self.infer.prune(&result), Type::Con(con, _) if con.stamp == *stamp),
+                _ => false,
+            }
+        }) || self.infer.paths.contains_key(stamp);
+        if !visible {
+            return None;
+        }
+        Some(
+            info.constructors
+                .iter()
+                .map(|(name, scheme)| {
+                    let argument = match self.infer.resolve(&scheme.ty) {
+                        Ty::Arrow(argument, _) => Some(substitute(&argument, &scheme.vars, args)),
+                        _ => None,
+                    };
+                    (name.clone(), argument)
+                })
+                .collect(),
+        )
+    }
+
+    pub fn exceptions(&self) -> Vec<(String, Option<Ty>)> {
+        fn collect(
+            infer: &Infer,
+            values: &[Entry],
+            structs: &[(String, StructEnv)],
+            prefix: &str,
+            out: &mut Vec<(String, Option<Ty>)>,
+        ) {
+            for entry in values {
+                if !entry.constructor {
+                    continue;
+                }
+                let ty = infer.resolve(&entry.scheme.ty);
+                let (result, argument) = match ty {
+                    Ty::Arrow(argument, result) => (*result, Some(*argument)),
+                    ty => (ty, None),
+                };
+                if result.is("exn") {
+                    out.push((format!("{prefix}{}", entry.name), argument));
+                }
+            }
+            for (name, structure) in structs {
+                collect(
+                    infer,
+                    &structure.values,
+                    &structure.structs,
+                    &format!("{prefix}{name}."),
+                    out,
+                );
+            }
+        }
+        let mut out = Vec::new();
+        collect(
+            &self.infer,
+            &self.infer.values,
+            &self.infer.structs,
+            "",
+            &mut out,
+        );
+        out
+    }
+
     /// Checks `program` in the environment left by earlier programs. On an
     /// error the environment is left as it was.
     pub fn check(&mut self, program: &Program) -> Result<Checked, Failure> {
@@ -2455,5 +2526,34 @@ impl Infer {
                     .collect(),
             ),
         }
+    }
+}
+
+fn substitute(ty: &Ty, variables: &[usize], arguments: &[Ty]) -> Ty {
+    match ty {
+        Ty::Var { id, .. } => variables
+            .iter()
+            .position(|var| var == id)
+            .and_then(|index| arguments.get(index))
+            .cloned()
+            .unwrap_or_else(|| ty.clone()),
+        Ty::Con { name, stamp, args } => Ty::Con {
+            name: name.clone(),
+            stamp: *stamp,
+            args: args
+                .iter()
+                .map(|ty| substitute(ty, variables, arguments))
+                .collect(),
+        },
+        Ty::Arrow(from, to) => Ty::Arrow(
+            Box::new(substitute(from, variables, arguments)),
+            Box::new(substitute(to, variables, arguments)),
+        ),
+        Ty::Record(fields) => Ty::Record(
+            fields
+                .iter()
+                .map(|(name, ty)| (name.clone(), substitute(ty, variables, arguments)))
+                .collect(),
+        ),
     }
 }

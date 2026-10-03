@@ -552,11 +552,11 @@ impl<M: Module> Translator<'_, M> {
                 self.data(bytes)?
             }
             Atom::String(text) => {
-                let length = text.len() as i64;
+                let length = text.chars().count() as i64;
                 let mut bytes = value::header(length, value::KIND_STRING)
                     .to_le_bytes()
                     .to_vec();
-                bytes.extend(text.as_bytes());
+                bytes.extend(text.chars().map(|ch| ch as u8));
                 bytes.push(0);
                 while !bytes.len().is_multiple_of(8) {
                     bytes.push(0);

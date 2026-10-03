@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::io::{self, BufRead, Write};
 
 use crate::codegen::{Codegen, CodegenOptions, OptLevel, Symbols};
@@ -15,6 +16,7 @@ pub struct Repl {
     next_chunk: usize,
     types: infer::Session,
     lowering: lower::Session,
+    exceptions: HashMap<i64, Option<Ty>>,
 }
 
 impl Repl {
@@ -46,6 +48,7 @@ impl Repl {
             next_chunk: 0,
             types: infer::Session::new(),
             lowering: lower::Session::new(),
+            exceptions: HashMap::new(),
         })
     }
 
@@ -103,6 +106,21 @@ impl Repl {
             println!("\n{}", uncaught(exception));
             return Ok(());
         }
+        for (name, argument) in self.types.exceptions() {
+            let identity = self
+                .lowering
+                .global(&format!("exn {name}"))
+                .and_then(|global| Codegen::global_address(&self.module, &self.symbols, global))
+                .map(|address| unsafe { address.read() as i64 })
+                .or_else(|| value::builtin_exception(&name).map(runtime::builtin_exception));
+            if let Some(identity) = identity {
+                self.exceptions.insert(identity, argument);
+            }
+        }
+        let printer = Printer {
+            types: &self.types,
+            exceptions: &self.exceptions,
+        };
         for binding in &checked.bindings {
             let word = self
                 .lowering
@@ -110,7 +128,10 @@ impl Repl {
                 .and_then(|global| Codegen::global_address(&self.module, &self.symbols, global))
                 // SAFETY: a global's cell holds one word, written by the chunk.
                 .map(|address| unsafe { address.read() });
-            let shown = word.map_or_else(|| "-".to_string(), |word| show(word, &binding.resolved));
+            let shown = word.map_or_else(
+                || "-".to_string(),
+                |word| printer.show(word, &binding.resolved, 10),
+            );
             println!("val {} = {shown} : {}", binding.name, binding.ty);
         }
         if program.statements.is_empty() {
@@ -170,94 +191,159 @@ fn report<E: std::error::Error + Send + Sync + 'static>(
 }
 
 /// A value as SML/NJ's top level prints it.
-fn show(word: u64, ty: &Ty) -> String {
-    let word = word as i64;
-    // SAFETY (for every read below): the type says the word points to a heap
-    // block of the matching shape.
-    let field = |block: i64, index: usize| unsafe { *((block as *const i64).add(index + 1)) };
-    match ty {
-        Ty::Con {
-            name,
-            stamp: 0,
-            args,
-        } => match (name.as_str(), args.as_slice()) {
-            ("int", _) => {
-                let value = word >> 1;
-                if value < 0 {
-                    format!("~{}", -value)
-                } else {
-                    value.to_string()
+struct Printer<'a> {
+    types: &'a infer::Session,
+    exceptions: &'a HashMap<i64, Option<Ty>>,
+}
+
+impl Printer<'_> {
+    fn show(&self, word: u64, ty: &Ty, depth: usize) -> String {
+        if depth == 0 {
+            return "#".to_string();
+        }
+        let word = word as i64;
+        // SAFETY (for every read below): the type says the word points to a heap
+        // block of the matching shape.
+        let field = |block: i64, index: usize| unsafe { *((block as *const i64).add(index + 1)) };
+        match ty {
+            Ty::Con {
+                name,
+                stamp: 0,
+                args,
+            } => match (name.as_str(), args.as_slice()) {
+                ("int", _) => {
+                    let value = word >> 1;
+                    if value < 0 {
+                        format!("~{}", -value)
+                    } else {
+                        value.to_string()
+                    }
                 }
-            }
-            ("bool", _) => (word == value::TRUE).to_string(),
-            ("word", _) => format!("0wx{:X}", word >> 1),
-            ("order", _) => ["LESS", "EQUAL", "GREATER"][(word >> 1) as usize].to_string(),
-            ("option", [element]) if word == value::tagged(0) => "NONE".to_string(),
-            ("option", [element]) => {
-                format!(
-                    "SOME {}",
-                    argument(show(field(word, 0) as u64, element), element)
-                )
-            }
-            ("ref", [element]) => {
-                format!(
-                    "ref {}",
-                    argument(show(field(word, 0) as u64, element), element)
-                )
-            }
-            ("unit", _) => "()".to_string(),
-            ("char", _) => {
-                let char = char::from_u32((word >> 1) as u32).unwrap_or('?');
-                format!("#\"{}\"", escape(&char.to_string()))
-            }
-            ("string", _) => {
-                // SAFETY: a string block holds its length and then its bytes.
-                let text = unsafe {
-                    let length = (*(word as *const i64) >> 8) as usize;
-                    std::slice::from_raw_parts((word as *const u8).add(8), length)
+                ("bool", _) => (word == value::TRUE).to_string(),
+                ("word", _) => format!("0wx{:X}", word >> 1),
+                ("order", _) => ["LESS", "EQUAL", "GREATER"][(word >> 1) as usize].to_string(),
+                ("option", [element]) if word == value::tagged(0) => "NONE".to_string(),
+                ("option", [element]) => {
+                    format!(
+                        "SOME {}",
+                        argument(self.show(field(word, 0) as u64, element, depth - 1))
+                    )
+                }
+                ("ref", [element]) => {
+                    format!(
+                        "ref {}",
+                        argument(self.show(field(word, 0) as u64, element, depth - 1))
+                    )
+                }
+                ("exn", _) => {
+                    let identity = field(word, 0);
+                    let name = self.show(
+                        field(identity, 0) as u64,
+                        &Ty::Con {
+                            name: "string".into(),
+                            stamp: 0,
+                            args: vec![],
+                        },
+                        depth,
+                    );
+                    let name = name.trim_matches('"');
+                    match self.exceptions.get(&identity) {
+                        Some(Some(argument_ty)) => format!(
+                            "{name} {}",
+                            argument(self.show(field(word, 1) as u64, argument_ty, depth - 1))
+                        ),
+                        _ => name.to_string(),
+                    }
+                }
+                ("unit", _) => "()".to_string(),
+                ("char", _) => {
+                    format!("#\"{}\"", escape(&[(word >> 1) as u8]))
+                }
+                ("string", _) => {
+                    // SAFETY: a string block holds its length and then its bytes.
+                    let text = unsafe {
+                        let length = (*(word as *const i64) >> 8) as usize;
+                        std::slice::from_raw_parts((word as *const u8).add(8), length)
+                    };
+                    format!("\"{}\"", escape(text))
+                }
+                ("real", _) => {
+                    let real = f64::from_bits(field(word, 0) as u64);
+                    let text = format!("{real:?}");
+                    text.replace('-', "~")
+                }
+                ("list", [element]) => {
+                    let mut items = Vec::new();
+                    let mut cell = word;
+                    while cell != value::NIL && items.len() < 20 {
+                        items.push(self.show(field(cell, 0) as u64, element, depth - 1));
+                        cell = field(cell, 1);
+                    }
+                    if cell != value::NIL {
+                        items.push("...".to_string());
+                    }
+                    format!("[{}]", items.join(","))
+                }
+                _ => "-".to_string(),
+            },
+            Ty::Con { .. } => {
+                let Some(constructors) = self.types.constructors(ty) else {
+                    return "-".to_string();
                 };
-                format!("\"{}\"", escape(&String::from_utf8_lossy(text)))
-            }
-            ("real", _) => {
-                let real = f64::from_bits(field(word, 0) as u64);
-                let text = format!("{real:?}");
-                text.replace('-', "~")
-            }
-            ("list", [element]) => {
-                let mut items = Vec::new();
-                let mut cell = word;
-                while cell != value::NIL {
-                    items.push(show(field(cell, 0) as u64, element));
-                    cell = field(cell, 1);
+                let carries = word & 1 == 0;
+                let carriers = constructors
+                    .iter()
+                    .filter(|(_, argument)| argument.is_some())
+                    .count();
+                let index = if carries {
+                    if carriers > 1 { field(word, 0) >> 1 } else { 0 }
+                } else {
+                    word >> 1
+                };
+                let Some((name, payload)) = constructors
+                    .iter()
+                    .filter(|(_, argument)| argument.is_some() == carries)
+                    .nth(index as usize)
+                else {
+                    return "-".to_string();
+                };
+                match payload {
+                    Some(payload) => format!(
+                        "{name} {}",
+                        argument(self.show(
+                            field(word, usize::from(carriers > 1)) as u64,
+                            payload,
+                            depth - 1
+                        ))
+                    ),
+                    None => name.clone(),
                 }
-                format!("[{}]", items.join(","))
             }
-            _ => "-".to_string(),
-        },
-        Ty::Arrow(..) => "fn".to_string(),
-        Ty::Record(fields) if fields.is_empty() => "()".to_string(),
-        Ty::Record(fields) => {
-            let items: Vec<String> = fields
-                .iter()
-                .enumerate()
-                .map(|(index, (_, ty))| show(field(word, index) as u64, ty))
-                .collect();
-            let tuple = fields
-                .iter()
-                .enumerate()
-                .all(|(index, (label, _))| *label == (index + 1).to_string());
-            if tuple {
-                format!("({})", items.join(","))
-            } else {
+            Ty::Arrow(..) => "fn".to_string(),
+            Ty::Record(fields) if fields.is_empty() => "()".to_string(),
+            Ty::Record(fields) => {
                 let items: Vec<String> = fields
                     .iter()
-                    .zip(items)
-                    .map(|((label, _), item)| format!("{label}={item}"))
+                    .enumerate()
+                    .map(|(index, (_, ty))| self.show(field(word, index) as u64, ty, depth - 1))
                     .collect();
-                format!("{{{}}}", items.join(","))
+                let tuple = fields
+                    .iter()
+                    .enumerate()
+                    .all(|(index, (label, _))| *label == (index + 1).to_string());
+                if tuple {
+                    format!("({})", items.join(","))
+                } else {
+                    let items: Vec<String> = fields
+                        .iter()
+                        .zip(items)
+                        .map(|((label, _), item)| format!("{label}={item}"))
+                        .collect();
+                    format!("{{{}}}", items.join(","))
+                }
             }
+            _ => "-".to_string(),
         }
-        _ => "-".to_string(),
     }
 }
 
@@ -304,10 +390,12 @@ fn uncaught(exception: i64) -> String {
 
 /// A constructor's argument as SML/NJ shows it: parenthesised when it is
 /// itself a constructor application.
-fn argument(shown: String, ty: &Ty) -> String {
-    let applied =
-        matches!(ty, Ty::Con { name, .. } if name == "option" || name == "ref") && shown != "NONE";
-    if applied { format!("({shown})") } else { shown }
+fn argument(shown: String) -> String {
+    if shown.contains(' ') && !shown.starts_with(['(', '[', '{', '"', '#']) {
+        format!("({shown})")
+    } else {
+        shown
+    }
 }
 
 pub fn run(
@@ -331,18 +419,20 @@ pub fn run(
 }
 
 /// A string's characters as an SML string literal shows them.
-fn escape(text: &str) -> String {
+fn escape(text: &[u8]) -> String {
     let mut escaped = String::new();
-    for char in text.chars() {
-        match char {
-            '"' => escaped.push_str("\\\""),
-            '\\' => escaped.push_str("\\\\"),
-            '\n' => escaped.push_str("\\n"),
-            '\t' => escaped.push_str("\\t"),
-            char if (char as u32) < 32 => {
-                escaped.push_str(&format!("\\^{}", (char as u8 + 64) as char))
-            }
-            char => escaped.push(char),
+    for &byte in text {
+        match byte {
+            b'"' => escaped.push_str("\\\""),
+            b'\\' => escaped.push_str("\\\\"),
+            b'\n' => escaped.push_str("\\n"),
+            b'\t' => escaped.push_str("\\t"),
+            b'\r' => escaped.push_str("\\r"),
+            8 => escaped.push_str("\\b"),
+            12 => escaped.push_str("\\f"),
+            0..32 => escaped.push_str(&format!("\\^{}", (byte + 64) as char)),
+            127..=255 => escaped.push_str(&format!("\\{byte:03}")),
+            byte => escaped.push(byte as char),
         }
     }
     escaped

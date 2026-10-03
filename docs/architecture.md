@@ -59,9 +59,11 @@ that table to choose operations and layouts. The table keys nodes by their
 addresses, so the parsed tree stays in place between checking and lowering.
 
 [infer/modules.rs](../src/infer/modules.rs) handles structures, signature
-matching, ascription, sharing, and functor elaboration. That part of the front
-end is ahead of the backend: module declarations type-check but are rejected
-by lowering.
+matching, ascription, sharing, and functor elaboration. The type table records
+each structure's exports and retains a separate syntax tree for every
+functor application. Each tree has its own expression and pattern types, so
+applications with different argument types get the correct operations and
+value layouts.
 
 ### Making execution explicit
 
@@ -81,7 +83,11 @@ chooses record field positions, and records which handler covers a call.
 [lower/decision.rs](../src/lower/decision.rs) compiles patterns into decision
 trees with SML's first-match behavior. The resulting core IR already says
 which values to construct, fields to read, tests to perform, and exceptions to
-raise. Code generation does not need to rediscover those language decisions.
+raise. Structures keep exported value bindings and substructures in the
+lowering environment, with no runtime module object. Functors capture their
+declaration environment and lower the typed body of each application with
+the argument's restricted exports. Code generation does not need to
+rediscover those language decisions.
 
 ### Giving Cranelift the program
 
@@ -206,9 +212,12 @@ Expected output lives beside the input as FileCheck directives, except for
 lexer token snapshots. [tests/common/mod.rs](../tests/common/mod.rs) runs the
 checks, and [tools/update_filecheck.py](../tools/update_filecheck.py) regenerates
 expectations from SML/NJ. The harness also compares against the installed
-oracle; its optional MLton checks currently cover lexer fixtures. Oracle
-version differences are real test constraints, especially for the integer
-width. Existing discrepancies are tracked in `nassau-dx5`.
+oracle; its optional MLton checks cover lexer and module fixtures. Module
+runtime fixtures cover every valid module and functor type fixture, plus
+scope, effect, representation, and exception-identity cases. Fixtures using
+SML/NJ's local-functor extension carry an explicit MLton exclusion. Integer
+fixtures declare the oracle precision they require, while known SML/NJ bugs
+use MLton as their primary oracle.
 
 Beads stores implementation work and durable project notes in the local Dolt
 database under `.beads/dolt/`. The tracked JSONL files are exports of that

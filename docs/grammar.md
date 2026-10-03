@@ -1,8 +1,8 @@
 # Language support
 
 Nassau can compile the core SML constructs used to write functions, build data,
-match patterns, mutate references, and handle exceptions. The module language is
-parsed and type-checked, but structures and functors cannot be run yet.
+match patterns, mutate references, and handle exceptions. Structures,
+signatures, and functors compile to native code too.
 
 This document describes what works today. The grammar sketches show the forms
 the implementation accepts; they are not a complete grammar from the SML
@@ -28,8 +28,8 @@ and values are displayed.
 | Exceptions, replication, `raise`, `handle`                  | Yes                          | Yes                                 | Values and handlers work; declaration display is incomplete |
 | References, assignment, `while`, `before`                   | Yes                          | Yes                                 | Yes                                                         |
 | Fixity declarations and user infix functions                | Yes                          | Yes                                 | Fixity lasts only within the parsed input chunk             |
-| Structures, signatures, `open`, module-qualified names      | Yes                          | Unsupported for user modules        | Unsupported for user modules                                |
-| Functors and structure/type sharing                         | Yes                          | Unsupported                         | Unsupported                                                 |
+| Structures, signatures, `open`, module-qualified names      | Yes                          | Yes                                 | Values work; declaration display is incomplete              |
+| Functors and structure/type sharing                         | Yes                          | Yes                                 | Values work; declaration display is incomplete              |
 | Full Standard Basis Library                                 | A small subset is recognized | A smaller subset is executable      | Same as native                                              |
 
 The predefined names `Int.toString`, `Word8.fromInt`, and `Posix.Process.exit`
@@ -198,7 +198,7 @@ constructors are `Div`, `Overflow`, `Match`, `Bind`, `Fail`, `Subscript`, and
 four where appropriate. Array subscripting and the Basis operations that would
 raise `Subscript` or `Empty` are not implemented yet.
 
-## Modules: front end only
+## Modules
 
 The front end accepts structures, signatures, and functors, including nested
 structures, aliases, qualified names, `open`, `and` groups, and structure-local
@@ -221,8 +221,13 @@ end
 structure Counter = MakeCounter (struct val step = 1 end)
 ```
 
-This can be inspected with `--dump-ast` and `--dump-types`. Native compilation
-and the REPL reject module declarations during lowering.
+Structures compile to their exported value bindings. Aliases reuse those
+bindings, and `open` brings them into the current scope. Signatures restrict
+exports without creating runtime objects. Each functor application compiles
+a separate typed body in the environment of its declaration, with the
+argument bound to its parameter. Datatypes and exceptions in the body have
+fresh identities per application. The REPL keeps module bindings between
+inputs, but does not yet echo module declarations like SML/NJ.
 
 Signature specifications support `val`, `type`, `eqtype`, `datatype`, datatype
 replication, `exception`, `structure`, `include`, `sharing type`, and structure
@@ -235,11 +240,14 @@ Functors support named parameters (`F (X : SIG)`), specification parameters
 (`F (val x : int)`), structure arguments, declaration arguments, and transparent
 or opaque result signatures. Bodies are checked against the parameter
 signature; applications elaborate the body with the supplied argument and
-fresh identities where required. Higher-order functors are not implemented.
+fresh identities where required. Functors in top-level `local` declarations
+are a supported SML/NJ extension; MLton rejects that form. Higher-order
+functors are not implemented.
 
 ## The small Basis subset
 
-Executable built-ins include `print`, `size`, `Int.toString`, `not`, `~`,
+Executable built-ins include `print`, `size`, `Int.toString`, `length`, `map`,
+`foldl`, `not`, `~`,
 `ref`, `!`, `:=`, `ignore`, `before`, equality, string concatenation `^`, list
 construction `::`, and function composition `o`. The built-in datatype
 constructors include booleans, `nil`/`::`, `NONE`/`SOME`, and
@@ -249,8 +257,8 @@ Process exit is currently supported through the specific form
 `Posix.Process.exit (Word8.fromInt e)`. General uses of these two functions are
 not compiled.
 
-The checker also knows the types of `@`, `hd`, `tl`, `null`, `length`, `rev`,
-`map`, `foldl`, `foldr`, `real`, `floor`, `ord`, `chr`, `str`, `explode`,
+The checker also knows the types of `@`, `hd`, `tl`, `null`, `rev`,
+`foldr`, `real`, `floor`, `ord`, `chr`, `str`, `explode`,
 `implode`, and `concat`. The backend has no built-in implementations for them.
 Ordinary SML definitions of functions such as `map` and `foldl` work; several
 fixtures define their own. Arrays, vectors, general file I/O, and most Basis

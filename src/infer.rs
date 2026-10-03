@@ -216,9 +216,35 @@ pub struct TypeTable {
     /// Each datatype's constructors in declaration order, by stamp, with
     /// whether each takes an argument.
     datatypes: HashMap<usize, Vec<(String, bool)>>,
+    structures: HashMap<usize, StructureInfo>,
+    declaration_constructors: HashMap<usize, Vec<(String, usize)>>,
+}
+
+#[derive(Clone, Default)]
+pub struct StructureInfo {
+    pub values: Vec<Export>,
+    pub structures: Vec<(String, StructureInfo)>,
+    pub application: Option<std::rc::Rc<crate::parser::StrExp>>,
+    pub parameter: Option<Box<StructureInfo>>,
+}
+
+#[derive(Clone)]
+pub struct Export {
+    pub name: String,
+    pub constructor: bool,
+    pub carries: bool,
 }
 
 impl TypeTable {
+    pub fn structure(&self, exp: &crate::parser::StrExp) -> &StructureInfo {
+        &self.structures[&(exp as *const _ as usize)]
+    }
+
+    pub fn declaration_constructors(&self, decl: &Decl) -> &[(String, usize)] {
+        self.declaration_constructors
+            .get(&(decl as *const _ as usize))
+            .map_or(&[], Vec::as_slice)
+    }
     /// The constructors of the datatype with `stamp`.
     pub fn constructors(&self, stamp: usize) -> Option<&[(String, bool)]> {
         self.datatypes.get(&stamp).map(Vec::as_slice)
@@ -427,6 +453,8 @@ struct Infer {
     tyvars: HashMap<String, Type>,
     /// The type inferred for each expression and pattern, until resolved.
     node_types: Vec<Node<Type>>,
+    structure_info: HashMap<usize, StructureInfo>,
+    declaration_constructors: HashMap<usize, Vec<(String, usize)>>,
 }
 
 impl Infer {
@@ -446,6 +474,8 @@ impl Infer {
             flexible: Vec::new(),
             tyvars: HashMap::new(),
             node_types: Vec::new(),
+            structure_info: HashMap::new(),
+            declaration_constructors: HashMap::new(),
         };
         infer.install_builtins();
         infer
@@ -1809,7 +1839,19 @@ impl Infer {
                 Ok(Vec::new())
             }
             DeclKind::Datatype { bindings, withtype } => {
-                self.infer_datatypes(bindings, withtype)?;
+                let stamps = self.infer_datatypes(bindings, withtype)?;
+                self.declaration_constructors.insert(
+                    decl as *const _ as usize,
+                    bindings
+                        .iter()
+                        .zip(stamps)
+                        .flat_map(|(binding, tycon)| {
+                            binding.constructors.iter().map(move |constructor| {
+                                (constructor.value.name.clone(), tycon.stamp)
+                            })
+                        })
+                        .collect(),
+                );
                 Ok(Vec::new())
             }
             DeclKind::Exception(bindings) => {
@@ -1817,7 +1859,25 @@ impl Infer {
                 Ok(Vec::new())
             }
             DeclKind::DatatypeCopy { name, original } => {
+                let before = self.values.len();
                 self.copy_datatype(name, original, decl.source_span())?;
+                self.declaration_constructors.insert(
+                    decl as *const _ as usize,
+                    self.values[before..]
+                        .iter()
+                        .map(|entry| {
+                            let ty = self.prune(&entry.scheme.ty);
+                            let ty = match ty {
+                                Type::Arrow(_, result) => self.prune(&result),
+                                ty => ty,
+                            };
+                            let Type::Con(tycon, _) = ty else {
+                                unreachable!("datatype constructor result")
+                            };
+                            (entry.name.clone(), tycon.stamp)
+                        })
+                        .collect(),
+                );
                 Ok(Vec::new())
             }
             DeclKind::Abstype {
@@ -1827,6 +1887,18 @@ impl Infer {
             } => {
                 let before = self.values.len();
                 let tycons = self.infer_datatypes(bindings, withtype)?;
+                self.declaration_constructors.insert(
+                    decl as *const _ as usize,
+                    bindings
+                        .iter()
+                        .zip(&tycons)
+                        .flat_map(|(binding, tycon)| {
+                            binding.constructors.iter().map(move |constructor| {
+                                (constructor.value.name.clone(), tycon.stamp)
+                            })
+                        })
+                        .collect(),
+                );
                 let after = self.values.len();
                 let mut bound = Vec::new();
                 for declaration in body {
@@ -2322,6 +2394,8 @@ impl Session {
             nodes,
             index,
             datatypes,
+            structures: std::mem::take(&mut infer.structure_info),
+            declaration_constructors: std::mem::take(&mut infer.declaration_constructors),
         };
         self.infer = infer;
         Ok(Checked { bindings, types })

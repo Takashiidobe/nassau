@@ -14,28 +14,31 @@ fn directive<'a>(source: &'a str, name: &str) -> Option<&'a str> {
     })
 }
 
-fn smlnj_precision(smlnj: &str) -> u32 {
-    let mut child = Command::new(smlnj)
+fn polyml_precision(polyml: &str) -> u32 {
+    let mut child = Command::new(polyml)
+        .arg("-q")
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()
-        .expect("probe SML/NJ integer precision");
+        .expect("probe Poly/ML integer precision");
     child.stdin.take().unwrap().write_all(
         b"val _ = print (\"NASSAU-INT-PRECISION: \" ^ (case Int.precision of SOME n => Int.toString n | NONE => \"0\") ^ \"\\n\");\n",
-    ).expect("write SML/NJ precision probe");
-    let output = child.wait_with_output().expect("wait for SML/NJ precision");
-    assert!(output.status.success(), "SML/NJ precision probe failed");
+    ).expect("write Poly/ML precision probe");
+    let output = child
+        .wait_with_output()
+        .expect("wait for Poly/ML precision");
+    assert!(output.status.success(), "Poly/ML precision probe failed");
     String::from_utf8_lossy(&output.stdout)
         .split("NASSAU-INT-PRECISION: ")
         .nth(1)
         .and_then(|rest| rest.lines().next())
         .and_then(|number| number.trim().parse().ok())
-        .expect("SML/NJ reports Int.precision")
+        .expect("Poly/ML reports Int.precision")
 }
 
 fn matching_precision(source: &str, precision: u32) -> bool {
-    directive(source, "SMLNJ-INT-PRECISION").is_none_or(|required| {
+    directive(source, "ORACLE-INT-PRECISION").is_none_or(|required| {
         required.parse::<u32>().expect("fixture integer precision") == precision
     })
 }
@@ -101,49 +104,15 @@ fn is_lists_fixture(fixture: &Path) -> bool {
     in_directory(fixture, "lists")
 }
 
-/// Runs a fixture under SML/NJ as tools/update_filecheck.py does: loaded
-/// by base name with the echo of bindings silenced, so stdout is the
-/// program's own output.
-fn smlnj_program(smlnj: &str, fixture: &Path) -> Output {
-    let name = fixture.file_name().expect("fixture has a file name");
-    let wrapper = std::env::temp_dir().join(format!(
-        "nassau-smlnj-{}-{}.sml",
-        std::process::id(),
-        name.to_string_lossy()
-    ));
-    fs::write(
-        &wrapper,
-        format!(
-            "val _ = Control.Print.out := {{say = fn _ => (), flush = fn () => ()}};\nuse \"{}\";\n",
-            name.to_string_lossy()
-        ),
-    )
-    .expect("write SML/NJ wrapper");
-    let mut output = Command::new(smlnj)
-        .arg(&wrapper)
+fn polyml_program(polyml: &str, fixture: &Path) -> Output {
+    Command::new(polyml)
+        .args(["-q", "--script"])
+        .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("tools/polyml_oracle.sml"))
+        .env("NASSAU_ORACLE_FILE", fixture)
         .current_dir(fixture.parent().expect("fixture has a parent directory"))
         .stdin(std::process::Stdio::null())
         .output()
-        .expect("run SML/NJ");
-    let _ = fs::remove_file(&wrapper);
-    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
-    let noise = [
-        "Standard ML of New Jersey",
-        "[opening ",
-        "[autoloading",
-        "[library ",
-        "[scanning ",
-        "[parsing ",
-    ];
-    let mut lines: Vec<&str> = stdout.split('\n').collect();
-    while lines
-        .first()
-        .is_some_and(|line| noise.iter().any(|prefix| line.starts_with(prefix)))
-    {
-        lines.remove(0);
-    }
-    output.stdout = lines.join("\n").into_bytes();
-    output
+        .expect("run Poly/ML fixture oracle")
 }
 
 fn check_program(fixture: &Path, source: &str, output: &Output) {
@@ -172,17 +141,17 @@ fn check_program(fixture: &Path, source: &str, output: &Output) {
         .unwrap_or_else(|error| panic!("{error}"));
 }
 
-fn compare_fixture(fixture: &Path, smlnj: &str, precision: u32) {
+fn compare_fixture(fixture: &Path, polyml: &str, precision: u32) {
     let valid = expected_valid(fixture);
     let source = fs::read_to_string(fixture).expect("read fixture");
-    let skip_reason = directive(&source, "SMLNJ-SKIP");
+    let skip_reason = directive(&source, "POLYML-SKIP");
     let compare_oracle = skip_reason.is_none() && matching_precision(&source, precision);
     if !compare_oracle {
         let reason = skip_reason
             .map(str::to_owned)
             .unwrap_or_else(|| format!("Int.precision is {precision}"));
         eprintln!(
-            "{}: skipping SML/NJ ({reason}); running Nassau FileCheck checks only",
+            "{}: skipping Poly/ML ({reason}); running Nassau FileCheck checks only",
             fixture.display()
         );
     }
@@ -229,16 +198,16 @@ fn compare_fixture(fixture: &Path, smlnj: &str, precision: u32) {
             || is_core_fixture(fixture)
             || is_types_fixture(fixture))
     {
-        let reference = Command::new(smlnj)
-            .arg(fixture)
-            .current_dir(directory)
-            .stdin(std::process::Stdio::null())
-            .output()
-            .expect("run SML/NJ fixture oracle");
+        let reference = polyml_program(polyml, fixture);
+        let warning = directive(&source, "POLYML-WARNING");
+        let accepted = reference.status.success()
+            && !warning.is_some_and(|message| {
+                String::from_utf8_lossy(&reference.stderr).contains(message)
+            });
         assert_eq!(
-            reference.status.success(),
+            accepted,
             valid,
-            "SML/NJ disagreed on {}: {}{}",
+            "Poly/ML disagreed on {}: {}{}",
             fixture.display(),
             String::from_utf8_lossy(&reference.stdout),
             String::from_utf8_lossy(&reference.stderr)
@@ -279,7 +248,7 @@ fn compare_fixture(fixture: &Path, smlnj: &str, precision: u32) {
         if is_lists_fixture(fixture) {
             assert!(nassau_output.status.success(), "{}", fixture.display());
         } else if compare_oracle {
-            let reference = smlnj_program(smlnj, fixture);
+            let reference = polyml_program(polyml, fixture);
             assert_eq!(
                 nassau_output.stdout,
                 reference.stdout,
@@ -298,15 +267,15 @@ fn compare_fixture(fixture: &Path, smlnj: &str, precision: u32) {
 
 fn main() {
     let arguments = Arguments::from_args();
-    let explicit_smlnj = std::env::var_os("SMLNJ").is_some();
-    let smlnj = std::env::var("SMLNJ").unwrap_or_else(|_| "smlnj".into());
-    let smlnj_available = match Command::new(&smlnj).arg("-h").output() {
+    let explicit_polyml = std::env::var_os("POLYML").is_some();
+    let polyml = std::env::var("POLYML").unwrap_or_else(|_| "poly".into());
+    let polyml_available = match Command::new(&polyml).arg("--help").output() {
         Ok(_) => true,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound && !explicit_smlnj => false,
-        Err(error) => panic!("could not start SML/NJ ({smlnj}): {error}"),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound && !explicit_polyml => false,
+        Err(error) => panic!("could not start Poly/ML ({polyml}): {error}"),
     };
-    let precision = if smlnj_available {
-        smlnj_precision(&smlnj)
+    let precision = if polyml_available {
+        polyml_precision(&polyml)
     } else {
         0
     };
@@ -319,12 +288,12 @@ fn main() {
                 .expect("fixture is under tests/fixtures")
                 .display()
                 .to_string();
-            let smlnj = smlnj.clone();
+            let polyml = polyml.clone();
             Trial::ignorable_test(name, move || {
-                if !smlnj_available {
-                    return Ok(Completion::ignored_with("SML/NJ is not installed"));
+                if !polyml_available {
+                    return Ok(Completion::ignored_with("Poly/ML is not installed"));
                 }
-                compare_fixture(&fixture, &smlnj, precision);
+                compare_fixture(&fixture, &polyml, precision);
                 Ok(Completion::Completed)
             })
         })

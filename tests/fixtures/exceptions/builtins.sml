@@ -16,7 +16,7 @@ fun classify f =
   handle Div => "div" | Overflow => "overflow" | Match => "match" | Bind => "bind"
 val () = print (classify (fn () => 1 mod 0) ^ " " ^ classify (fn () => 1073741823 + 1)
   ^ " " ^ classify (fn () => first []) ^ " " ^ classify (fn () => 5) ^ "\n")
-(* SMLNJ-INT-PRECISION: 31 *)
+(* ORACLE-INT-PRECISION: 31 *)
 (* CHECK-EXIT: 0 *)
 (* CHECK-STDOUT: 3 0 *)
 (* CHECK-STDOUT-NEXT: 536870912 *)

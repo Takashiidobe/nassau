@@ -273,11 +273,13 @@ the complete SML/NJ echo. Built-in lists, options, references, tuples, records,
 strings, and functions have value printers, without SML/NJ's depth and length
 limits. Fixity is reset when a new input chunk is parsed.
 
-Nassau's 31-bit `int` model matches the older SML/NJ configuration used by the
-fixtures. Integer-limit fixtures compare with SML/NJ only when its
-`Int.precision` matches, and always check Nassau with FileCheck. The
-exception-values and opaque functor-result fixtures skip the SML/NJ oracle
-comparison because of bugs in SML/NJ 110.99.9, and retain FileCheck coverage. There is no garbage collector yet; heap values remain
+Nassau uses 31-bit `int` values. Integer-limit fixtures compare with Poly/ML
+only when its `Int.precision` matches, and always check Nassau with FileCheck.
+Poly/ML validates the exception-values and opaque functor-result fixtures.
+The where-type arity error retains FileCheck coverage with an explicit oracle
+exclusion because Poly/ML 5.9.2 accepts it. Runtime diagnostics and REPL value
+printing remain Nassau-specific and use retained FileCheck expectations.
+There is no garbage collector yet; heap values remain
 allocated for the lifetime of the process.
 
 Examples and regression coverage live in [the fixtures](../tests/fixtures)

@@ -31,13 +31,15 @@ Earlier stages have their own dumps: `--dump-expr-types` prints the inferred typ
 
 `--objdump` disassembles the actual Cranelift object bytes and requires `objdump` to be installed. `--debug-passes` remains as a shortcut for the main IR and instruction dumps.
 
-The REPL integration test compares Nassau sessions with SML/NJ. Run it with:
+The REPL integration test validates inputs with Poly/ML and checks Nassau's
+transcripts with FileCheck. Run it with:
 
 ```sh
 cargo test --test repl
 ```
 
-The test uses `smlnj` from `PATH` and skips if `smlnj` is not installed.
+The tests use `poly` from `PATH` (override with `POLYML`) and skip if it is
+not installed. SML/NJ and MLton are not required.
 
 ## Fixture expectations
 
@@ -45,7 +47,7 @@ Fixtures carry their expected output as FileCheck comments at the end of the
 file (`CHECK-EXIT`, `CHECK-STDOUT`, `CHECK-STDERR` for compiled programs,
 `CHECK-ERR` for fixtures under an `error/` directory, `CHECK-STDOUT` for the inferred types of `tests/fixtures/types` (every node's under `types/nodes`) and the core IR of `tests/fixtures/core`, and `CHECK-REPL` for `tests/repl`). LLVM's
 `FileCheck` must be on `PATH` (or set `FILECHECK`). Regenerate them from
-SML/NJ with:
+Poly/ML with:
 
 ```sh
 tools/update_filecheck.py                     # every fixture
@@ -54,21 +56,25 @@ tools/update_filecheck.py --check             # fail if any block is stale
 ```
 
 A `(* XFAIL: reason *)` line marks a REPL fixture whose output is known to
-differ from SML/NJ; it fails the suite once it starts passing.
+differ from the expected Nassau transcript; it fails the suite once it starts passing.
 
-Compiled fixtures compare against SML/NJ. `(* SMLNJ-SKIP: reason *)` excludes
-an oracle comparison for a documented SML/NJ bug. Nassau's FileCheck checks
-still run. The updater validates and retains existing runtime expectations
-for these fixtures, and regenerates Nassau diagnostics for error fixtures.
-The exception-values and opaque functor-result fixtures carry this annotation
-because SML/NJ 110.99.9 crashes on the former and incorrectly accepts the latter.
+Compiled fixtures compare stdout and exit status against Poly/ML. The shared
+[oracle driver](tools/polyml_oracle.sml) suppresses binding echoes and separates
+compiler warnings from program output. `(* POLYML-WARNING: text *)` checks an
+oracle warning for a fixture Nassau rejects as an error, such as a redundant
+match. `(* POLYML-SKIP: reason *)` excludes an oracle comparison for a documented
+Poly/ML bug; Nassau's FileCheck checks still run.
 
-`(* SMLNJ-INT-PRECISION: 31 *)` marks a fixture that depends on Nassau's integer
-width. The harness probes `Int.precision` and compares with SML/NJ only when it
-matches. Nassau's FileCheck checks still run on every marked fixture. When the
-oracle has a different width, the updater validates and retains the existing
-runtime checks from the compatible oracle, and regenerates Nassau diagnostics
-for error fixtures.
+`(* ORACLE-INT-PRECISION: 31 *)` marks a fixture that depends on Nassau's integer
+width. The harness probes `Int.precision` and compares with Poly/ML only when it
+matches. Nassau's FileCheck checks always run. The updater validates and retains
+existing runtime checks when the oracle width differs.
+
+The updater generates program stdout and exit checks from Poly/ML, and compiler
+diagnostics and IR dumps from Nassau. Runtime diagnostic wording and REPL value
+printing are Nassau-specific: the updater validates their existing FileCheck
+checks and retains them. Edit these checks explicitly when changing the printer. REPL fixtures with an
+uncaught exception declare `(* ORACLE-EXIT: 1 *)`.
 
 ## Project documentation
 

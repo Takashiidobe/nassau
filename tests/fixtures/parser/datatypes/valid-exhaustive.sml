@@ -19,3 +19,4 @@ fun nested (Some (Some x)) = x | nested (Some None) = 0 | nested None = 0
 (* CHECK-STDERR: warning: match nonexhaustive at 3:13 *)
 (* CHECK-STDERR-NEXT: warning: match nonexhaustive at 7:11 *)
 (* CHECK-STDERR-NEXT: warning: match nonexhaustive at 8:23 *)
+(* CHECK-RUN-EXIT: 0 *)

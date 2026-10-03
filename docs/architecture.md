@@ -213,7 +213,9 @@ currently execute.
 Tests are SML fixtures, not isolated unit tests. [tests/fixtures.rs](../tests/fixtures.rs)
 selects the appropriate compiler mode for each fixture: tokens, syntax, types,
 core IR, or a compiled program. Executable fixtures check output and exit
-status. [tests/repl.rs](../tests/repl.rs) runs complete REPL transcripts.
+status. Valid parser, type and core fixtures have a second native execution
+trial with `CHECK-RUN-*` expectations, including explicit checked rejections
+for unsupported constructs. [tests/repl.rs](../tests/repl.rs) runs complete REPL transcripts.
 
 Expected output lives beside the input as FileCheck directives, except for
 lexer token snapshots. [tests/common/mod.rs](../tests/common/mod.rs) runs the

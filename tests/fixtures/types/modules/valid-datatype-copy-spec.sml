@@ -5,3 +5,4 @@ val a = B.v
 val b = [B.v, A.X, B.X]
 (* CHECK-STDOUT: val a : A.t *)
 (* CHECK-STDOUT-NEXT: val b : A.t list *)
+(* CHECK-RUN-EXIT: 0 *)

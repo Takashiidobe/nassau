@@ -10,3 +10,4 @@ val c = V.pair
 (* CHECK-STDOUT: val a : string *)
 (* CHECK-STDOUT-NEXT: val b : int * int *)
 (* CHECK-STDOUT-NEXT: val c : bool * bool *)
+(* CHECK-RUN-EXIT: 0 *)

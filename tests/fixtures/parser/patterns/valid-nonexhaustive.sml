@@ -34,3 +34,4 @@ val outer = fn x => fn 0 => x
 (* CHECK-STDERR-NEXT: warning: match nonexhaustive at 10:14 *)
 (* CHECK-STDERR-NEXT: warning: match nonexhaustive at 11:23 *)
 (* CHECK-STDERR-NEXT: warning: match nonexhaustive at 12:21 *)
+(* CHECK-RUN-EXIT: 0 *)

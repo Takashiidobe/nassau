@@ -9,3 +9,4 @@ end
 structure U = Use (Impl)
 val a = U.value + 1
 (* CHECK-STDOUT: val a : int *)
+(* CHECK-RUN-EXIT: 0 *)

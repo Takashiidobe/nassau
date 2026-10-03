@@ -12,3 +12,4 @@ fun total 0 = 1 | total n = n
 (* CHECK-STDERR-NEXT: warning: match nonexhaustive at 2:13 *)
 (* CHECK-STDERR-NEXT: warning: match nonexhaustive at 3:13 *)
 (* CHECK-STDERR-NEXT: warning: match nonexhaustive at 4:11 *)
+(* CHECK-RUN-EXIT: 0 *)

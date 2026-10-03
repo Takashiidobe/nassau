@@ -17,3 +17,4 @@ val mutual = let fun even 0 = true | even n = odd (n - 1) and odd 0 = false | od
 (* CHECK-STDOUT-NEXT: (val nested (let ((val a 1)) (let ((val b (+ a 1))) (+ a b)))) *)
 (* CHECK-STDOUT-NEXT: (val local_in_let (let ((local ((val a 1)) ((val b a)))) b)) *)
 (* CHECK-STDOUT-NEXT: (val mutual (let ((fun (even ((0) true) ((n) (app odd (- n 1)))) (odd ((0) false) ((n) (app even (- n 1)))))) (app even 4))) *)
+(* CHECK-RUN-EXIT: 0 *)

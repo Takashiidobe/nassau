@@ -16,3 +16,4 @@ val e = (raise Outer 5) handle Outer n => n
 (* CHECK-STDOUT-NEXT: (local ((exception (Hidden))) ((exception (Shown)) (val c (handle (raise Hidden) (Hidden 3))) (val d (handle (raise Shown) (Shown 4))))) *)
 (* CHECK-STDOUT-NEXT: (exception (Outer int)) *)
 (* CHECK-STDOUT-NEXT: (val e (handle (raise (app Outer 5)) ((con Outer n) n))) *)
+(* CHECK-RUN-EXIT: 0 *)

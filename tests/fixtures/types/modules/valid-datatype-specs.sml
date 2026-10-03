@@ -21,3 +21,4 @@ val d = Sealed.area Sealed.Empty
 (* CHECK-STDOUT-NEXT: val describe : Shapes.shape -> string *)
 (* CHECK-STDOUT-NEXT: val c : string *)
 (* CHECK-STDOUT-NEXT: val d : int *)
+(* CHECK-RUN-EXIT: 0 *)

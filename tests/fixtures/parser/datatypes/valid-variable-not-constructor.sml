@@ -8,3 +8,4 @@ fun after_a A = 1 | after_a other = 2
 (* CHECK-STDOUT-NEXT: (fun (unbound ((Foo) 1))) *)
 (* CHECK-STDOUT-NEXT: (fun (lowercase ((a) a))) *)
 (* CHECK-STDOUT-NEXT: (fun (after_a ((A) 1) ((other) 2))) *)
+(* CHECK-RUN-EXIT: 0 *)

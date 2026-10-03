@@ -18,3 +18,4 @@ val chained = 1 : int : int
 (* CHECK-STDOUT-NEXT: (val record (: (record (a 1)) (record (a int)))) *)
 (* CHECK-STDOUT-NEXT: (val variable (: (list) (tycon list 'a))) *)
 (* CHECK-STDOUT-NEXT: (val chained (: (: 1 int) int)) *)
+(* CHECK-RUN-EXIT: 0 *)

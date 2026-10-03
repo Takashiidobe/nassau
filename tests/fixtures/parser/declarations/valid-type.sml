@@ -16,3 +16,4 @@ val r : record = {x = 1, y = 2}
 (* CHECK-STDOUT-NEXT: (val (: x t) 1) *)
 (* CHECK-STDOUT-NEXT: (val (: p (tycon pair int)) (tuple 1 2)) *)
 (* CHECK-STDOUT-NEXT: (val (: r record) (record (x 1) (y 2))) *)
+(* CHECK-RUN-EXIT: 0 *)

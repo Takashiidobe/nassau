@@ -39,3 +39,4 @@ val fun_exn = case Fn (fn n => n + 1) of Fn f => f 1 | _ => 0
 (* CHECK-STDOUT-NEXT: val catch_all : int -> int *)
 (* CHECK-STDOUT-NEXT: val bound_exn : exn -> int *)
 (* CHECK-STDOUT-NEXT: val fun_exn : int *)
+(* CHECK-RUN-EXIT: 0 *)

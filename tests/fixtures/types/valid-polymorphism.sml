@@ -14,6 +14,7 @@ val pairs = map (fn x => (x, x)) [1, 2]
 val folded = foldl (fn (x, acc) => x + acc) 0 [1, 2, 3]
 fun apply_all fs x = map (fn f => f x) fs
 val opt = SOME (SOME 1)
+(* RUNTIME-SKIP: built-in functions used as values, such as hd, are not supported by code generation yet *)
 (* CHECK-STDOUT: val id : 'a -> 'a *)
 (* CHECK-STDOUT-NEXT: val const : 'a -> 'b -> 'a *)
 (* CHECK-STDOUT-NEXT: val swap : 'a * 'b -> 'b * 'a *)
@@ -30,3 +31,5 @@ val opt = SOME (SOME 1)
 (* CHECK-STDOUT-NEXT: val folded : int *)
 (* CHECK-STDOUT-NEXT: val apply_all : ('a -> 'b) list -> 'a -> 'b list *)
 (* CHECK-STDOUT-NEXT: val opt : int option option *)
+(* CHECK-RUN-ERR: × built-in functions used as values, such as hd, are not supported by code *)
+(* CHECK-RUN-ERR: :10:15] *)

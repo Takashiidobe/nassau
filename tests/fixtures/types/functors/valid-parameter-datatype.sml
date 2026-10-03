@@ -8,3 +8,4 @@ val a = N.names
 val b = N.name Colors.Red
 (* CHECK-STDOUT: val a : string list *)
 (* CHECK-STDOUT-NEXT: val b : string *)
+(* CHECK-RUN-EXIT: 0 *)

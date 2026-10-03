@@ -14,3 +14,4 @@ val d = 1 :: L.none
 (* CHECK-STDOUT-NEXT: val b : int * string *)
 (* CHECK-STDOUT-NEXT: val c : int *)
 (* CHECK-STDOUT-NEXT: val d : int list *)
+(* CHECK-RUN-EXIT: 0 *)

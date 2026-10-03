@@ -47,3 +47,4 @@ fun both ([], []) = 0
 (* CHECK-STDOUT-NEXT:     g0 := v0 *)
 (* CHECK-STDOUT-NEXT:     return #0 *)
 (* CHECK-STDOUT-NEXT: } *)
+(* CHECK-RUN-EXIT: 0 *)

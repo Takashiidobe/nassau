@@ -26,3 +26,4 @@ val handler = (1 div 0) handle Div => 0
 (* CHECK-STDOUT-NEXT: (val layered (fn ((as all (tuple a b)) (+ a b)))) *)
 (* CHECK-STDOUT-NEXT: (val case_expression (case (tuple 1 true) ((tuple _ true) 1) ((tuple n false) n))) *)
 (* CHECK-STDOUT-NEXT: (val handler (handle (div 1 0) (Div 0))) *)
+(* CHECK-RUN-EXIT: 0 *)

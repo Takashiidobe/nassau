@@ -14,3 +14,4 @@ fun j A = 1 | j B = 2
 (* CHECK-STDOUT-NEXT: (fun (j ((A) 1) ((B) 2))) *)
 (* CHECK-STDERR: warning: match nonexhaustive at 3:7 *)
 (* CHECK-STDERR-NEXT: warning: match nonexhaustive at 7:7 *)
+(* CHECK-RUN-EXIT: 0 *)

@@ -19,3 +19,4 @@ end
 val y = length [B.X.v, B.Y.w]
 (* CHECK-STDOUT: val x : int *)
 (* CHECK-STDOUT-NEXT: val y : int *)
+(* CHECK-RUN-EXIT: 0 *)

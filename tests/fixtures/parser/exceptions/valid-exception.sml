@@ -12,3 +12,4 @@ exception Fun of int -> int
 (* CHECK-STDOUT-NEXT: (exception (Both = Empty) (Also = Unit_like)) *)
 (* CHECK-STDOUT-NEXT: (exception (Wrapped (record (code int)))) *)
 (* CHECK-STDOUT-NEXT: (exception (Fun (-> int int))) *)
+(* CHECK-RUN-EXIT: 0 *)

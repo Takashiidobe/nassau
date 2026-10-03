@@ -12,3 +12,4 @@ datatype t = op A | op B of int
 (* CHECK-STDOUT-NEXT: (datatype (fn_box () (Box (-> int int)))) *)
 (* CHECK-STDOUT-NEXT: (datatype (nested ('a) (Nil) (Cons {{[(]}}* 'a (tycon list (tycon nested 'a)))))) *)
 (* CHECK-STDOUT-NEXT: (datatype (t () (A) (B int))) *)
+(* CHECK-RUN-EXIT: 0 *)

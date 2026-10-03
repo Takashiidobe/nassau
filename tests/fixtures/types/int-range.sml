@@ -3,3 +3,4 @@ val largest = 1073741823
 val smallest = ~1073741824
 (* CHECK-STDOUT: val largest : int *)
 (* CHECK-STDOUT-NEXT: val smallest : int *)
+(* CHECK-RUN-EXIT: 0 *)

@@ -14,3 +14,4 @@ val b = T.z
 (* CHECK-STDOUT-NEXT: val base : string *)
 (* CHECK-STDOUT-NEXT: val a : int *)
 (* CHECK-STDOUT-NEXT: val b : int *)
+(* CHECK-RUN-EXIT: 0 *)

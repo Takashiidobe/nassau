@@ -12,3 +12,4 @@ structure F :> S where type t = int = struct type t = int val x = 3 end
 (* CHECK-STDOUT-NEXT: (structure (D (: A S))) *)
 (* CHECK-STDOUT-NEXT: (structure (E (:> (struct (type (t () int)) (val x 2)) S))) *)
 (* CHECK-STDOUT-NEXT: (structure (F (:> (struct (type (t () int)) (val x 3)) (where S (type () t int))))) *)
+(* CHECK-RUN-EXIT: 0 *)

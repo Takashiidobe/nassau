@@ -18,3 +18,4 @@ val d = (raise Local "l") handle Local m => m
 (* CHECK-STDOUT-NEXT: val b : string *)
 (* CHECK-STDOUT-NEXT: val c : int *)
 (* CHECK-STDOUT-NEXT: val d : string *)
+(* CHECK-RUN-EXIT: 0 *)

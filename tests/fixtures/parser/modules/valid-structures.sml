@@ -11,3 +11,4 @@ structure G = let val n = 3 in struct val m = n end end
 (* CHECK-STDOUT-NEXT: (structure (D B.C)) *)
 (* CHECK-STDOUT-NEXT: (structure (E (struct (val a 1))) (F (struct (val b 2)))) *)
 (* CHECK-STDOUT-NEXT: (structure (G (let ((val n 3)) (struct (val m n))))) *)
+(* CHECK-RUN-EXIT: 0 *)

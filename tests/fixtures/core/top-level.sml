@@ -31,3 +31,5 @@ val nested = [[1, 2], []]
 (* CHECK-STDOUT-NEXT:   b3(): *)
 (* CHECK-STDOUT-NEXT:     jump b1(#1) *)
 (* CHECK-STDOUT-NEXT: } *)
+(* CHECK-RUN-EXIT: 0 *)
+(* CHECK-RUN-STDOUT: start *)

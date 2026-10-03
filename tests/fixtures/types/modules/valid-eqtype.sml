@@ -12,3 +12,4 @@ val w = D.mk 1 = D.mk 2
 (* CHECK-STDOUT-NEXT: val y : bool *)
 (* CHECK-STDOUT-NEXT: val z : bool *)
 (* CHECK-STDOUT-NEXT: val w : bool *)
+(* CHECK-RUN-EXIT: 0 *)

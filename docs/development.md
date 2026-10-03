@@ -58,6 +58,19 @@ tools/update_filecheck.py 'tests/repl/*.sml'  # a glob or a single file
 tools/update_filecheck.py --check             # fail if any block is stale
 ```
 
+Valid type, parser, and core fixtures also compile and run as separate
+`runtime/<fixture>` trials. Their `CHECK-RUN-EXIT`, `CHECK-RUN-STDOUT`, and
+`CHECK-RUN-STDERR` blocks coexist with the original dump checks; the updater
+generates program output and exit status from Poly/ML. Run these trials with
+`cargo test --test fixtures runtime/`.
+
+`(* RUNTIME-SKIP: reason *)` documents a fixture the backend cannot compile.
+Its `CHECK-RUN-ERR` lines verify the current rejection. Both the harness and
+updater fail if it begins compiling, requiring removal of the exclusion and
+regeneration of runtime checks. The seven remaining exclusions are tracked in
+`nassau-949.12`: infix datatype constructors, list append, word arithmetic,
+first-class Basis functions, and `List` applications.
+
 A `(* XFAIL: reason *)` line marks a REPL fixture whose output is known to
 differ from the expected Nassau transcript; it fails the suite once it starts passing.
 

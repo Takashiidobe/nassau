@@ -38,3 +38,4 @@ val alias_total = let val (a, b) : pair = (1, 2) in a + b end
 (* CHECK-STDOUT-NEXT: val shadow : int *)
 (* CHECK-STDOUT-NEXT: val shadow : string *)
 (* CHECK-STDOUT-NEXT: val alias_total : int *)
+(* CHECK-RUN-EXIT: 0 *)

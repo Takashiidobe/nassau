@@ -11,3 +11,4 @@ val c = T.q
 (* CHECK-STDOUT: val a : int *)
 (* CHECK-STDOUT-NEXT: val b : int *)
 (* CHECK-STDOUT-NEXT: val c : string *)
+(* CHECK-RUN-EXIT: 0 *)

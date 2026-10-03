@@ -25,3 +25,4 @@ val kept = first
 (* CHECK-STDOUT-NEXT: val again : u *)
 (* CHECK-STDOUT-NEXT: val name : u -> string *)
 (* CHECK-STDOUT-NEXT: val kept : t *)
+(* CHECK-RUN-EXIT: 0 *)

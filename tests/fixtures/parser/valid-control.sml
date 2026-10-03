@@ -14,3 +14,5 @@ val many_handlers = (raise Fail "x") handle Div => 1 | _ => 2
 (* CHECK-STDOUT-NEXT: (val loop (while false ())) *)
 (* CHECK-STDOUT-NEXT: (val guarded (handle (raise (app Fail "x")) (_ 1))) *)
 (* CHECK-STDOUT-NEXT: (val many_handlers (handle (raise (app Fail "x")) (Div 1) (_ 2))) *)
+(* CHECK-RUN-EXIT: 0 *)
+(* CHECK-RUN-STDOUT: ab *)

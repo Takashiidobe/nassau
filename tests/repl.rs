@@ -89,6 +89,14 @@ fn compare_repl(fixture: &Path, polyml: &str) {
         .trim_end()
         .to_owned()
         + "\n";
+    if source.contains("(* CHECK-STDOUT:") {
+        for stream in [transcript.as_bytes(), reference.stdout.as_slice()] {
+            common::check_stream(fixture, &source, "CHECK-STDOUT", stream, true)
+                .unwrap_or_else(|error| panic!("{error}"));
+        }
+    }
+    common::check_stream(fixture, &source, "CHECK-ERR", &nassau.stderr, false)
+        .unwrap_or_else(|error| panic!("{error}"));
     let result = common::check_stream(fixture, &source, "CHECK-REPL", transcript.as_bytes(), true);
     match (has_xfail(&source), result) {
         (false, Ok(())) | (true, Err(_)) => {}

@@ -166,7 +166,9 @@ its graph checks complement production native/REPL collection fixtures.
 The native collecting fixture allocates a million iterations of unreachable
 cycles under an 8 MiB heap while preserving a shared live graph. The REPL
 history fixture shadows 40 large strings under that heap and verifies that
-a saved closure still accesses its earlier global after collection.
+a saved closure still accesses its earlier global after collection. The functor
+history fixture retains forty functors while shadowing large strings, then checks
+original structure and exception dependencies through a forwarding functor.
 
 Generated functions publish precise shadow-stack frames. A backward fixed-point
 analysis computes tagged variables live across each statement and terminator,
@@ -198,11 +200,16 @@ rooting every historical module. JIT code and dependency metadata are retained
 for the executable code's lifetime; code unloading remains outside the scope.
 
 After a successful REPL phrase and its printing, persistent roots become the
-visible globals, visible structure exports and captured lexical environments
+visible globals, visible structure exports and captured dependencies
 of visible functors. A failed phrase restores the earlier environment before
-updating roots. Functor environments currently retain their visible lexical
-bindings conservatively; pruning unused functor captures remains part of
-`nassau-949.9.5`. Native global registrations last for the executable's lifetime.
+updating roots. Functor roots select declaration-time bindings whose names appear
+in the body,
+including exception patterns and replications, referenced structures and the
+transitive roots of applied functors. Unmentioned lexical bindings are excluded.
+This syntactic analysis may retain a matching outer name that the body shadows,
+and retains all exports of a referenced structure. The compiler still keeps the
+full lexical metadata for later elaboration; it does not root its heap values.
+Native global registrations last for the executable's lifetime.
 
 Fixture comments `GC-PLAN`, `GC-HEAP`, and `GC-STRESS` set the corresponding
 runtime options only for Nassau execution. Poly/ML still checks the same SML

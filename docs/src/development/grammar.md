@@ -15,22 +15,22 @@ through the compiler.
 same lowering and code generation, with additional limits on how declarations
 and values are displayed.
 
-| Form                                                        | Parser and type checker      | Native                              | REPL                                                        |
-| ----------------------------------------------------------- | ---------------------------- | ----------------------------------- | ----------------------------------------------------------- |
-| Integers, reals, strings, characters, booleans, unit        | Yes                          | Yes                                 | Yes                                                         |
-| Word literals and equality                                  | Yes                          | Limited to supported word constants | Same as native                                              |
-| Word arithmetic and ordering                                | Yes                          | Unsupported                         | Unsupported                                                 |
-| Tuples, records, lists, selectors                           | Yes                          | Yes                                 | Yes                                                         |
-| Application, `fn`, `fun`, recursion, currying               | Yes                          | Yes                                 | Yes                                                         |
-| `if`, `case`, `andalso`, `orelse`, sequences                | Yes                          | Yes                                 | Yes                                                         |
-| `val`, `let`, `local`, type annotations and aliases         | Yes                          | Yes                                 | Yes                                                         |
-| Datatypes, `withtype`, `abstype`, user datatype replication | Yes                          | Yes                                 | Yes              |
-| Exceptions, replication, `raise`, `handle`                  | Yes                          | Yes                                 | Yes |
-| References, assignment, `while`, `before`                   | Yes                          | Yes                                 | Yes                                                         |
-| Fixity declarations and user infix functions                | Yes                          | Yes                                 | Yes; fixity persists between inputs             |
-| Structures, signatures, `open`, module-qualified names      | Yes                          | Yes                                 | Yes              |
-| Functors and structure/type sharing                         | Yes                          | Yes                                 | Yes              |
-| Full Standard Basis Library                                 | A small subset is recognized | A smaller subset is executable      | Same as native                                              |
+| Form                                                        | Parser and type checker      | Native                              | REPL                                |
+| ----------------------------------------------------------- | ---------------------------- | ----------------------------------- | ----------------------------------- |
+| Integers, reals, strings, characters, booleans, unit        | Yes                          | Yes                                 | Yes                                 |
+| Word literals and equality                                  | Yes                          | Limited to supported word constants | Same as native                      |
+| Word arithmetic and ordering                                | Yes                          | Unsupported                         | Unsupported                         |
+| Tuples, records, lists, selectors                           | Yes                          | Yes                                 | Yes                                 |
+| Application, `fn`, `fun`, recursion, currying               | Yes                          | Yes                                 | Yes                                 |
+| `if`, `case`, `andalso`, `orelse`, sequences                | Yes                          | Yes                                 | Yes                                 |
+| `val`, `let`, `local`, type annotations and aliases         | Yes                          | Yes                                 | Yes                                 |
+| Datatypes, `withtype`, `abstype`, user datatype replication | Yes                          | Yes                                 | Yes                                 |
+| Exceptions, replication, `raise`, `handle`                  | Yes                          | Yes                                 | Yes                                 |
+| References, assignment, `while`, `before`                   | Yes                          | Yes                                 | Yes                                 |
+| Fixity declarations and user infix functions                | Yes                          | Yes                                 | Yes; fixity persists between inputs |
+| Structures, signatures, `open`, module-qualified names      | Yes                          | Yes                                 | Yes                                 |
+| Functors and structure/type sharing                         | Yes                          | Yes                                 | Yes                                 |
+| Full Standard Basis Library                                 | A small subset is recognized | A smaller subset is executable      | Same as native                      |
 
 ## Tokens and literals
 

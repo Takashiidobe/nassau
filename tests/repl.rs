@@ -78,14 +78,28 @@ fn value_echoes(transcript: &str) -> Vec<String> {
     bindings.iter().map(|line| compact(line)).collect()
 }
 
-fn compare_repl(fixture: &Path, polyml: &str) {
+fn compare_repl(fixture: &Path, polyml: &str, interpret: bool) {
     let source = fs::read_to_string(fixture).expect("read fixture");
     let input = repl_source(&source);
     let directory = fixture.parent().unwrap();
     let mut command = Command::new(env!("CARGO_BIN_EXE_nassau"));
+    if interpret {
+        command.arg("--interpret");
+    }
     command.current_dir(directory);
     common::configure_gc(&mut command, &source);
     let nassau = run_with_input(&mut command, &input).expect("run Nassau REPL");
+    if source.contains("(* REPL-COMMANDS *)") {
+        assert!(nassau.status.success(), "{}", fixture.display());
+        let stdout = String::from_utf8_lossy(&nassau.stdout);
+        assert_eq!(stdout.matches("\x1b[2J\x1b[H").count(), 3);
+        let transcript = stdout.replace("nassau> ", "").replace("\x1b[2J\x1b[H", "");
+        common::check_stream(fixture, &source, "CHECK-REPL", transcript.as_bytes(), true)
+            .unwrap_or_else(|error| panic!("{error}"));
+        common::check_stream(fixture, &source, "CHECK-ERR", &nassau.stderr, false)
+            .unwrap_or_else(|error| panic!("{error}"));
+        return;
+    }
     let reference = Command::new(polyml)
         .args(["-q", "--script"])
         .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("tools/polyml_oracle.sml"))
@@ -180,6 +194,10 @@ fn repl_matches_polyml() {
     }
 
     for fixture in fixtures() {
-        compare_repl(&fixture, polyml);
+        compare_repl(&fixture, polyml, false);
+        let source = fs::read_to_string(&fixture).expect("read REPL fixture");
+        if !source.contains("(* GC-PLAN:") {
+            compare_repl(&fixture, polyml, true);
+        }
     }
 }

@@ -3,6 +3,9 @@ use std::path::PathBuf;
 use std::process::Command;
 
 fn main() {
+    if env::var_os("CARGO_FEATURE_NATIVE").is_none() {
+        return;
+    }
     println!("cargo:rerun-if-changed=runtime");
     println!("cargo:rerun-if-changed=src/value.rs");
     println!("cargo:rerun-if-changed=Cargo.toml");

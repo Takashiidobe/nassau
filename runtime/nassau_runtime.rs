@@ -185,3 +185,7 @@ pub extern "C" fn nassau_code_global(code: usize, address: usize) {
 pub fn replace_global_roots(addresses: &[usize]) {
     gc::replace_globals(addresses);
 }
+
+pub fn reset_repl_roots() {
+    gc::reset_repl_roots();
+}

@@ -17,7 +17,10 @@ A work-in-progress Standard ML implementation in Rust with a Cranelift backend.
 ## Usage
 
 - Start the REPL: `cargo run`.
+- Start the interpreter REPL: `cargo run -- --interpret`.
+- In either REPL, `clear;;` clears the display; `reset;;` clears it and discards bindings.
 - Compile a program: `cargo run -- input.sml`.
+- Interpret a program with the portable Rust backend: `cargo run -- --interpret input.sml`.
 - Run fixtures: `cargo test` (requires `poly` and `FileCheck`).
 
 ## Documentation
@@ -26,3 +29,7 @@ A work-in-progress Standard ML implementation in Rust with a Cranelift backend.
 - [Compiler architecture](docs/architecture.md)
 - [Value representation](docs/value-representation.md)
 - [Development and fixture guidance](docs/development.md)
+
+The [browser playground](www/README.md) runs a persistent SML REPL entirely
+on the client. Build with `./www/build.sh`, then serve `www/dist` with a static
+HTTP server.

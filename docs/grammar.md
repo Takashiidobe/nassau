@@ -66,8 +66,8 @@ by that parser.
 
 Files normally contain declarations, with optional semicolons between them.
 A file containing just one integer is also accepted as a legacy shortcut for a
-program's exit status. The REPL accepts semicolon-terminated declarations; it
-does not yet provide general SML expression phrases with an implicit `val it`.
+program's exit status. The REPL accepts semicolon-terminated declarations and
+expression phrases, which bind their result to `it`.
 
 ## Expressions
 

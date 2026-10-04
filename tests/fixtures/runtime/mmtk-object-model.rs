@@ -73,7 +73,10 @@ mod binding {
             code_roots(0x123400),
             vec![TaggedSlot(Address::from_mut_ptr(&mut global))]
         );
-        CODE_ROOTS.lock().unwrap().clear();
+        register_global((&raw mut global) as usize);
+        reset_repl_roots();
+        assert!(GLOBAL_ROOTS.lock().unwrap().is_empty());
+        assert!(code_roots(0x123400).is_empty());
 
         let child = allocate(16, super::value::header(1, KIND_REF));
         let object = memory_manager::is_mmtk_object(Address::from_ptr(child)).unwrap();

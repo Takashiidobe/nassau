@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#151719">
+  <title>Nassau REPL</title>
+  <link rel="icon" href="./assets/nassau.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./assets/codemirror.min.css">
+  <link rel="stylesheet" href="./assets/codemirror-dialog.min.css">
+  <link rel="stylesheet" href="./assets/codemirror-material-darker.min.css">
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+<main>
+  <h1>Nassau REPL</h1>
+  <p class="hint"><code>;;</code> submits · Enter starts a new line · Ctrl+↑ / Ctrl+↓ goes up and down in history</p>
+  <div class="toolbar">
+    <select id="examples" aria-label="Load an example">
+      <option value="">Examples</option>
+      <option value="welcome">Functions &amp; lists</option>
+      <option value="datatypes">Datatypes &amp; pattern matching</option>
+      <option value="modules">Modules &amp; functors</option>
+      <option value="references">References &amp; closures</option>
+      <option value="exceptions">Exceptions &amp; recovery</option>
+    </select>
+    <select id="keymap" aria-label="CodeMirror key bindings">
+      <option value="default">Standard</option>
+      <option value="vim">Vim</option>
+      <option value="emacs">Emacs</option>
+    </select>
+    <span id="vim-mode"></span>
+    <button id="stop" class="secondary" hidden>Stop</button>
+    <button id="reset" class="secondary">Reset</button>
+    <button id="clear" class="secondary">Clear output</button>
+    <button id="share" class="secondary">Share</button>
+    <span id="status" role="status" aria-live="polite">Loading…</span>
+  </div>
+  <section class="repl" aria-label="Nassau REPL">
+    <div id="transcript" tabindex="0" aria-label="REPL session">
+      <div class="input-row">
+        <label class="prompt" for="source">nassau&gt;</label>
+        <div class="editor-shell"><textarea id="source" spellcheck="false" aria-label="Standard ML input"></textarea></div>
+      </div>
+    </div>
+  </section>
+</main>
+<script src="./assets/codemirror.min.js"></script>
+<script src="./assets/codemirror-dialog.min.js"></script>
+<script src="./assets/codemirror-searchcursor.min.js"></script>
+<script src="./assets/codemirror-vim.min.js"></script>
+<script src="./assets/codemirror-emacs.min.js"></script>
+<script src="./sml-mode.js"></script>
+<script src="./assets/codemirror-runmode.js"></script>
+<script type="module" src="./app.js"></script>
+</body>
+</html>

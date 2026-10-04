@@ -1,19 +1,7 @@
 mod ast_dump;
 mod codegen;
-mod constructors;
-mod core;
-mod error;
-mod infer;
-mod lexer;
-mod lower;
-mod matching;
-mod parser;
 mod repl;
 mod runtime;
-mod scope;
-mod span;
-mod value;
-mod walk;
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -23,6 +11,7 @@ use crate::error::SourceError;
 use crate::lexer::Lexer;
 use crate::parser::Parser as SmlParser;
 use clap::Parser;
+use nassau::{core, error, infer, interpreter, lexer, lower, matching, parser, scope, value};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -32,6 +21,8 @@ use clap::Parser;
 struct Cli {
     #[arg(value_name = "FILE")]
     input: Option<PathBuf>,
+    #[arg(long, conflicts_with_all = ["asm", "dump_ir", "dump_optimized_ir", "debug_passes", "objdump", "timings", "stats", "verify"], help = "Run a source file with the portable Rust interpreter")]
+    interpret: bool,
     #[arg(
         long,
         help = "Print IR before and after optimization and lowered instructions"
@@ -150,6 +141,52 @@ fn run(cli: &Cli) -> miette::Result<Option<PathBuf>> {
     if cli.dump_core {
         print!("{module}");
         return Ok(None);
+    }
+    if cli.interpret {
+        use interpreter::{Interpreter, Signal, Value};
+        use std::io::Write;
+
+        let mut interpreter = Interpreter::default();
+        let result = interpreter.run(module);
+        std::io::stdout()
+            .write_all(&interpreter.output)
+            .map_err(miette::Report::msg)?;
+        let status = match result {
+            Ok(value) => (value.word() >> 1) as i32,
+            Err(Signal::Exit(status)) => i32::from(status),
+            Err(Signal::Raised(exception)) => {
+                let name = exception.field(0).field(0);
+                let argument = exception.field(1);
+                let location = exception.field(2);
+                let detail = match &argument {
+                    Value::Word(word) => (word >> 1).to_string().into_bytes(),
+                    Value::Block(object) if object.kind == value::KIND_STRING => {
+                        [b"\"", object.bytes.as_slice(), b"\""].concat()
+                    }
+                    _ => b"<unknown>".to_vec(),
+                };
+                let separator: &[u8] = if matches!(argument, Value::Word(_)) {
+                    b"\n raised at "
+                } else {
+                    b" raised at "
+                };
+                let diagnostic = [
+                    b"/usr/lib/smlnj/bin/sml: Fatal error -- Uncaught exception ",
+                    name.object().bytes.as_slice(),
+                    b" with ",
+                    &detail,
+                    separator,
+                    &location.object().bytes,
+                    b"\n\n",
+                ]
+                .concat();
+                std::io::stderr()
+                    .write_all(&diagnostic)
+                    .map_err(miette::Report::msg)?;
+                1
+            }
+        };
+        std::process::exit(status);
     }
     let output = if cli.asm {
         input.with_extension("S")
@@ -273,6 +310,7 @@ fn main() {
     }
     if cli.input.is_none() {
         if let Err(error) = repl::run(
+            cli.interpret,
             cli.opt_level,
             cli.debug_passes,
             cli.dump_ir,

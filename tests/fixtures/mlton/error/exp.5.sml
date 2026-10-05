@@ -1,0 +1,5 @@
+(* mlton regression/fail/exp.5.sml @5fe943391; HPND licence in tests/fixtures/mlton/LICENSE *)
+fun f () = ()
+and f () = ()
+(* CHECK-ERR: × duplicate function name 'f' *)
+(* CHECK-ERR: :2:1] *)

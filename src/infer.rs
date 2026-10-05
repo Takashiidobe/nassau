@@ -2041,7 +2041,10 @@ impl Infer {
         ty: &SyntaxTy,
     ) -> Res<()> {
         if variables.len() > bound
-            && let Some(name) = variables.keys().find(|name| !parameters.contains(name))
+            && let Some(name) = variables
+                .keys()
+                .filter(|name| !parameters.contains(name))
+                .min()
         {
             return Err((
                 TypeError::UnboundTypeVariable(name.clone()),
@@ -2235,7 +2238,7 @@ impl Infer {
                 ExceptionKind::Fresh(Some(ty)) => {
                     let mut variables = HashMap::new();
                     let argument = self.convert(ty, &mut variables)?;
-                    if let Some(name) = variables.keys().next() {
+                    if let Some(name) = variables.keys().min() {
                         return Err((
                             TypeError::UnboundTypeVariable(name.clone()),
                             ty.source_span(),

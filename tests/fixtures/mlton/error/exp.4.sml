@@ -1,0 +1,5 @@
+(* mlton regression/fail/exp.4.sml @5fe943391; HPND licence in tests/fixtures/mlton/LICENSE *)
+val rec x = fn () => ()
+and x = fn () => ()
+(* CHECK-ERR: × duplicate variable 'x' in pattern *)
+(* CHECK-ERR: :3:5] *)

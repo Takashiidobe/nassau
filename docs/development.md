@@ -90,6 +90,17 @@ or by producing different output natively or in the interpreter). Once one
 passes, its trial fails and prints the `git mv` that moves it into
 `tests/fixtures/grammar`. The same applies to any `*.unsupported/` directory.
 
+External suites are imported with `tools/import_suite.py <suite> --source <checkout>`
+at a pinned upstream commit, with Poly/ML as the only oracle. Each suite keeps its
+own licence and `PROVENANCE` in `tests/fixtures/<suite>/`, and every file's first
+line names its upstream path and commit. Programs land in `<suite>/` (agree),
+`<suite>/error/` (both reject), `<suite>.unsupported/` (Poly/ML accepts, Nassau
+does not match) and `<suite>.unsupported/error/` (Poly/ML rejects, Nassau
+accepts), or `<suite>.ignored/` where Poly/ML itself disagrees with the suite
+(line 2 says why; the harness never runs these). `<suite>/EXCLUDED.tsv` lists
+programs skipped for MLton primitives, FFI imports or `use`. Re-running the tool
+on the pinned commit reproduces the layout.
+
 A `(* XFAIL: reason *)` line marks a REPL fixture whose output is known to
 differ from the expected Nassau transcript; it fails the suite once it starts passing.
 

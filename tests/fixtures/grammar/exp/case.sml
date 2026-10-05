@@ -1,0 +1,5 @@
+(* SML'97 grammar, expression: case. *)
+fun pi n = print (Int.toString n ^ "\n")
+val _ = pi (case [1, 2] of [] => 0 | [x] => x | x :: y :: _ => x + y)
+(* CHECK-EXIT: 0 *)
+(* CHECK-STDOUT: 3 *)

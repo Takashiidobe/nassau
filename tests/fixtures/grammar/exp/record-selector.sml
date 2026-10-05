@@ -1,0 +1,10 @@
+(* SML'97 grammar, expression: record selector. *)
+fun pi n = print (Int.toString n ^ "\n")
+val r = {name = "x", age = 3}
+val _ = pi (#age r)
+val _ = print (#name r ^ "\n")
+val _ = pi (#1 (4, 5))
+(* CHECK-EXIT: 0 *)
+(* CHECK-STDOUT: 3 *)
+(* CHECK-STDOUT-NEXT: x *)
+(* CHECK-STDOUT-NEXT: 4 *)

@@ -1,0 +1,5 @@
+(* SML'97 grammar, declaration: local in let. *)
+fun pi n = print (Int.toString n ^ "\n")
+val _ = pi (let local val a = 1 in val b = a + 1 end in b end)
+(* CHECK-EXIT: 0 *)
+(* CHECK-STDOUT: 2 *)

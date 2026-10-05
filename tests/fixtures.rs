@@ -104,6 +104,73 @@ fn is_lists_fixture(fixture: &Path) -> bool {
     in_directory(fixture, "lists")
 }
 
+fn supported_path(fixture: &Path) -> Option<PathBuf> {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    let relative = fixture.strip_prefix(&root).ok()?;
+    let mut unsupported = false;
+    let supported = relative
+        .iter()
+        .map(|part| {
+            match part
+                .to_str()
+                .and_then(|part| part.strip_suffix(".unsupported"))
+            {
+                Some(stem) => {
+                    unsupported = true;
+                    stem.into()
+                }
+                None => part.to_owned(),
+            }
+        })
+        .collect::<PathBuf>();
+    unsupported.then(|| root.join(supported))
+}
+
+fn unsupported_fixture(fixture: &Path, supported: &Path, polyml: &str) {
+    let reference = polyml_program(polyml, fixture);
+    assert!(
+        reference.status.success(),
+        "Poly/ML rejects {}: {}",
+        fixture.display(),
+        String::from_utf8_lossy(&reference.stderr)
+    );
+    let directory = fixture.parent().expect("fixture has a parent directory");
+    let compiled = Command::new(env!("CARGO_BIN_EXE_nassau"))
+        .arg(fixture)
+        .current_dir(directory)
+        .output()
+        .expect("run Nassau compiler");
+    if !compiled.status.success() {
+        return;
+    }
+    let executable = fixture.with_extension("");
+    let native = Command::new(&executable).current_dir(directory).output();
+    let _ = fs::remove_file(&executable);
+    let native = native.expect("run Nassau output");
+    let interpreted = Command::new(env!("CARGO_BIN_EXE_nassau"))
+        .arg("--interpret")
+        .arg(fixture)
+        .current_dir(directory)
+        .output()
+        .expect("interpret fixture");
+    let matches_oracle = |output: &Output| {
+        output.stdout == reference.stdout && output.status.code() == reference.status.code()
+    };
+    if matches_oracle(&native) && matches_oracle(&interpreted) {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let from = fixture.strip_prefix(root).unwrap_or(fixture).display();
+        let to = supported.strip_prefix(root).unwrap_or(supported).display();
+        panic!(
+            "{from} now passes; run `mkdir -p {} && git mv {from} {to} && tools/update_filecheck.py {to}`",
+            supported
+                .parent()
+                .and_then(|parent| parent.strip_prefix(root).ok())
+                .unwrap_or(Path::new("."))
+                .display()
+        );
+    }
+}
+
 fn polyml_program(polyml: &str, fixture: &Path) -> Output {
     Command::new(polyml)
         .args(["-q", "--script"])
@@ -399,6 +466,17 @@ fn main() {
             .expect("fixture root")
             .display()
             .to_string();
+        if let Some(supported) = supported_path(&fixture) {
+            let polyml = polyml.clone();
+            trials.push(Trial::ignorable_test(name, move || {
+                if !polyml_available {
+                    return Ok(Completion::ignored_with("Poly/ML is not installed"));
+                }
+                unsupported_fixture(&fixture, &supported, &polyml);
+                Ok(Completion::Completed)
+            }));
+            continue;
+        }
         if expected_valid(&fixture) && !is_lexer_fixture(&fixture) {
             let source = fs::read_to_string(&fixture).expect("read fixture");
             let interpreter_path = fixture.clone();

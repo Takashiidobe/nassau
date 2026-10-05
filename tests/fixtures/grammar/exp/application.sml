@@ -1,0 +1,5 @@
+(* SML'97 grammar, expression: application. *)
+fun pi n = print (Int.toString n ^ "\n")
+fun f x = x + 1 val _ = pi (f (f 1))
+(* CHECK-EXIT: 0 *)
+(* CHECK-STDOUT: 3 *)

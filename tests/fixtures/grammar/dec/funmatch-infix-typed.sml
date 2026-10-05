@@ -1,0 +1,5 @@
+(* SML'97 grammar, declaration: funmatch infix typed. *)
+fun pi n = print (Int.toString n ^ "\n")
+infix ++ fun x ++ y : int = x + y val _ = pi (3 ++ 4)
+(* CHECK-EXIT: 0 *)
+(* CHECK-STDOUT: 7 *)

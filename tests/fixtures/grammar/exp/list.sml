@@ -1,0 +1,5 @@
+(* SML'97 grammar, expression: list. *)
+fun pi n = print (Int.toString n ^ "\n")
+val xs = [1, 2, 3] val e = [] : int list val _ = pi (length xs + length e)
+(* CHECK-EXIT: 0 *)
+(* CHECK-STDOUT: 3 *)

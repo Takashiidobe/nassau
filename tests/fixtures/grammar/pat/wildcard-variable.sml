@@ -1,0 +1,5 @@
+(* SML'97 grammar, pattern: wildcard variable. *)
+fun pi n = print (Int.toString n ^ "\n")
+val _ = 99 val x = 1 val op y = 2 val _ = pi (x + y)
+(* CHECK-EXIT: 0 *)
+(* CHECK-STDOUT: 3 *)

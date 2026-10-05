@@ -1,0 +1,5 @@
+(* SML'97 grammar, expression: if. *)
+fun pi n = print (Int.toString n ^ "\n")
+val _ = pi (if 1 < 2 then 3 else 4)
+(* CHECK-EXIT: 0 *)
+(* CHECK-STDOUT: 3 *)

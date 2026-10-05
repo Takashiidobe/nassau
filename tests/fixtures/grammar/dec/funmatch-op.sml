@@ -1,0 +1,5 @@
+(* SML'97 grammar, declaration: funmatch op. *)
+fun pi n = print (Int.toString n ^ "\n")
+infix ++ fun op ++ (a, b) = a + b val _ = pi (op ++ (1, 2))
+(* CHECK-EXIT: 0 *)
+(* CHECK-STDOUT: 3 *)

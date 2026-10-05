@@ -1,0 +1,5 @@
+(* SML'97 grammar, pattern: type annotation. *)
+fun pi n = print (Int.toString n ^ "\n")
+fun f (x : int, y : int list) = x + length y val (z : int) = 4 val _ = pi (f (z, [1]))
+(* CHECK-EXIT: 0 *)
+(* CHECK-STDOUT: 5 *)

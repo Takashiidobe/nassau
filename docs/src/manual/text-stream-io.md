@@ -30,20 +30,43 @@ val outputSubstr : outstream * substring -> unit
 #### Description
 
 <span id="SIG:TEXT_STREAM_IO.inputLine:VAL"></span>
+
+### `inputLine`
+
+```sml
+val inputLine : instream -> (string * instream) option
+```
 `inputLine ``strm`` `  
 returns [`SOME`](option.md#SIG:OPTION.option:TY:SPEC)`(``ln``, ``strm'``)`, where `ln` is the next line of input in the stream `strm` and `strm'` is the residual stream. Specifically, `ln` returns all characters from the current position up to and including the next newline (`#"\n"`) character. If it detects an end-of-stream before the next newline, it returns the characters read appended with a newline. Thus, `ln` is guaranteed to always be new-line terminated (and thus nonempty). If the current stream position is the end-of-stream, then it returns [`NONE`](option.md#SIG:OPTION.option:TY:SPEC). It raises [`Size`](general.md#SIG:GENERAL.Size:EXN:SPEC) if the length of the line exceeds the length of the longest string.
 
+
+
+```repl
+val input = TextIO.getInstream (TextIO.openString "hello\n");;
+TextIO.StreamIO.inputLine input;; (* SOME ("hello\n", rest) *)
+```
 <span id="SIG:TEXT_STREAM_IO.outputSubstr:VAL"></span>
+
+### `outputSubstr`
+
+```sml
+val outputSubstr : outstream * substring -> unit
+```
 `outputSubstr (``strm``, ``ss``) `  
 outputs the substring `ss` to the text stream `strm`. This is equivalent to:
 
 output (`strm`, [Substring.string](substring.md#SIG:SUBSTRING.string:VAL:SPEC) `ss`)
 
 
+
+
+```repl
+TextIO.StreamIO.outputSubstr (TextIO.getOutstream TextIO.stdOut, Substring.full "hello");; (* writes hello *)
+```
 #### Examples
 
 ```repl
-TextIO.stdIn;;
+TextIO.StreamIO.inputLine (TextIO.getInstream (TextIO.openString ""));; (* NONE *)
 ```
 
 #### See Also

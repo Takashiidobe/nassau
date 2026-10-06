@@ -46,15 +46,40 @@ val ~>> : int * Word.word -> int
 #### Description
 
 <span id="SIG:INT_INF.divMod:VAL"></span>
-`divMod (``i``, ``j``) `  
+
+### `divMod`
+
+```sml
+val divMod : int * int -> int * int
+```
 returns the pair `(``i`` `[`div`](integer.md#SIG:INTEGER.div:VAL:SPEC)` ``j``, ``i`` `[`mod`](integer.md#SIG:INTEGER.mod:VAL:SPEC)` ``j``)`, but is likely to be more efficient than computing both components separately. It raises [`Div`](general.md#SIG:GENERAL.Div:EXN:SPEC) if `j` = 0.
 
+
+```repl
+IntInf.divMod (~7, 3);; (* (~3, 2) *)
+```
+
 <span id="SIG:INT_INF.quotRem:VAL"></span>
-`quotRem (``i``, ``j``) `  
+
+### `quotRem`
+
+```sml
+val quotRem : int * int -> int * int
+```
 returns the pair `(``i`` `[`quot`](integer.md#SIG:INTEGER.quot:VAL:SPEC)` ``j``, ``i`` `[`rem`](integer.md#SIG:INTEGER.rem:VAL:SPEC)` ``j``)`, but is likely to be more efficient than computing both components separately. It raises [`Div`](general.md#SIG:GENERAL.Div:EXN:SPEC) if `j` = 0.
 
+
+```repl
+IntInf.quotRem (~7, 3);; (* (~2, ~1) *)
+```
+
 <span id="SIG:INT_INF.pow:VAL"></span>
-`pow (``i``, ``j``) `  
+
+### `pow`
+
+```sml
+val pow : int * Int.int -> int
+```
 returns the result of raising `i` to the `j`<sup>(th)</sup> power. This is well-defined when `j` \> 0. When `j` = 0, [`pow`](int-inf.md#SIG:INT_INF.pow:VAL:SPEC)`(``i``, ``j``)` is 1; in particular, [`pow`](int-inf.md#SIG:INT_INF.pow:VAL:SPEC)`(0, 0)` is 1. When `j` \< 0, we define the following exceptional cases:
 
 ---
@@ -78,32 +103,95 @@ Raise [`Div`](general.md#SIG:GENERAL.Div:EXN:SPEC)
 ---
 
 
-<span id="SIG:INT_INF.log2:VAL"></span>
-`log2 ``i`` `  
-returns the truncated base-2 logarithm of its argument, _i.e._, the largest integer `k` for which `pow`(2, `k`) \<= `i`. It raises [`Domain`](general.md#SIG:GENERAL.Domain:EXN:SPEC) if `i` \<= 0 and [`Overflow`](general.md#SIG:GENERAL.Overflow:EXN:SPEC) if the result is not representable as an [`Int.int`](integer.md#SIG:INTEGER.int:TY:SPEC).
-
-<span id="SIG:INT_INF.orb:VAL"></span>**`val`**` orb `**`:`**` int `**`*`**` int `**`->`**` int`
-**`val`**` xorb `**`:`**` int `**`*`**` int `**`->`**` int`
-**`val`**` andb `**`:`**` int `**`*`**` int `**`->`**` int`  
-These functions return the bit-wise OR, bit-wise exclusive OR, and bit-wise AND, respectively, of the arguments.
-
-<span id="SIG:INT_INF.notb:VAL"></span>
-`notb ``i`` `  
-returns the bit-wise complement (NOT) of `i`. It is equivalent to `~(``i`` + 1)`.
-
-<span id="SIG:INT_INF.\|@LT\|\|@LT\|:VAL"></span>
-`<< (``i``, ``n``) `  
-shifts `i` to the left by `n` bit positions, filling in zeros from the right. When `i` and `n` are interpreted as integers, the latter non-negative, this returns (`i` \* 2<sup>(`n`)</sup>).
-
-<span id="SIG:INT_INF.~\|@GT\|\|@GT\|:VAL"></span>
-`~>> (``i``, ``n``) `  
-shifts `i` to the right by `n` bit positions. When `i` and `n` are interpreted as integers, the latter non-negative, this returns **floor**(((`i` / 2<sup>(`n`)</sup>))).
-
-#### Examples
 
 ```repl
-IntInf.pow (2, 100);;
+IntInf.pow (2, 10);; (* 1024 *)
+IntInf.pow (2, 0);; (* 1 *)
 ```
+
+<span id="SIG:INT_INF.log2:VAL"></span>
+
+### `log2`
+
+```sml
+val log2 : int -> Int.int
+```
+returns the truncated base-2 logarithm of its argument, _i.e._, the largest integer `k` for which `pow`(2, `k`) \<= `i`. It raises [`Domain`](general.md#SIG:GENERAL.Domain:EXN:SPEC) if `i` \<= 0 and [`Overflow`](general.md#SIG:GENERAL.Overflow:EXN:SPEC) if the result is not representable as an [`Int.int`](integer.md#SIG:INTEGER.int:TY:SPEC).
+
+
+```repl
+IntInf.log2 1024;; (* 10 *)
+```
+
+<span id="SIG:INT_INF.orb:VAL"></span>
+
+### `orb`
+
+```sml
+val orb : int * int -> int
+```
+
+### `xorb`
+
+```sml
+val xorb : int * int -> int
+```
+
+### `andb`
+
+```sml
+val andb : int * int -> int
+```
+These functions return the bit-wise OR, bit-wise exclusive OR, and bit-wise AND, respectively, of the arguments.
+
+
+```repl
+IntInf.orb (12, 10);; (* 14 *)
+IntInf.xorb (12, 10);; (* 6 *)
+IntInf.andb (12, 10);; (* 8 *)
+```
+
+<span id="SIG:INT_INF.notb:VAL"></span>
+
+### `notb`
+
+```sml
+val notb : int -> int
+```
+returns the bit-wise complement (NOT) of `i`. It is equivalent to `~(``i`` + 1)`.
+
+
+```repl
+IntInf.notb 0;; (* ~1 *)
+```
+
+<span id="SIG:INT_INF.\|@LT\|\|@LT\|:VAL"></span>
+
+### `<<`
+
+```sml
+val << : int * Word.word -> int
+```
+shifts `i` to the left by `n` bit positions, filling in zeros from the right. When `i` and `n` are interpreted as integers, the latter non-negative, this returns (`i` \* 2<sup>(`n`)</sup>).
+
+
+```repl
+IntInf.<< (3, 0w2);; (* 12 *)
+```
+
+<span id="SIG:INT_INF.~\|@GT\|\|@GT\|:VAL"></span>
+
+### `~>>`
+
+```sml
+val ~>> : int * Word.word -> int
+```
+shifts `i` to the right by `n` bit positions. When `i` and `n` are interpreted as integers, the latter non-negative, this returns **floor**(((`i` / 2<sup>(`n`)</sup>))).
+
+```repl
+IntInf.~>> (~8, 0w1);; (* ~4 *)
+```
+
 
 #### See Also
 

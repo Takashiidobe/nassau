@@ -7,7 +7,13 @@
 <span id="ImperativeIO:FCT:SPEC"></span>
 
 ```sml
-functor ImperativeIO ( ... ) : IMPERATIVE_IO (* OPTIONAL *)
+functor ImperativeIO (
+  structure StreamIO : STREAM_IO
+  structure Vector : MONO_VECTOR
+  structure Array : MONO_ARRAY
+  sharing type StreamIO.elem = Vector.elem = Array.elem
+  sharing type StreamIO.vector = Vector.vector = Array.vector
+) : IMPERATIVE_IO
 ```
 
 The optional `ImperativeIO` functor can be used to implement (derive) an imperative-style stream I/O facility in terms of a lazy functional stream I/O facility. In the imperative style, input and output operations do not return a new stream each time but cause side-effects on their arguments. Most functions can raise the [`Io`](io.md#SIG:IO.Io:EXN:SPEC) exception for various reasons, including illegal or inconsistent parameters, IO failures, and attempts to do I/O on closed output streams.
@@ -28,13 +34,23 @@ sharing type StreamIO.vector = Vector.vector = Array.vector
 
 #### Description
 
+### `ImperativeIO`
+
+```sml
+functor ImperativeIO (
+  structure StreamIO : STREAM_IO
+  structure Vector : MONO_VECTOR
+  structure Array : MONO_ARRAY
+  sharing type StreamIO.elem = Vector.elem = Array.elem
+  sharing type StreamIO.vector = Vector.vector = Array.vector
+) : IMPERATIVE_IO
+```
+
 <span id="ARG:ImperativeIO.StreamIO:STR"></span>**`structure`**` StreamIO `**`:`**` `[`STREAM_IO`](stream-io.md#STREAM_IO:SIG:SPEC)  
 The particular functional stream I/O facility from which this imperative I/O facility is derived. Most functions just call functions in `StreamIO` and do a little extra bookkeeping.
 
-#### Examples
-
 ```repl
-TextIO.inputLine TextIO.stdIn;;
+TextIO.inputLine (TextIO.openString "hello\n");; (* SOME "hello\n" *)
 ```
 
 #### See Also

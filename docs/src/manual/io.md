@@ -43,11 +43,13 @@ datatype buffer_mode = NO_BUF | LINE_BUF | BLOCK_BUF
 
 #### Description
 
-<span id="SIG:IO.Io:EXN"></span>**`exception`**` Io `**`of`**` {`
-`  name `**`:`**` string,`
-`  function `**`:`**` string,`
-`  cause `**`:`**` exn`
-`}`  
+<span id="SIG:IO.Io:EXN"></span>
+
+### `Io`
+
+```sml
+exception Io of {name : string, function : string, cause : exn}
+```
 This is the principal exception raised when an error occurs in the I/O subsystem. The components of [`Io`](io.md#SIG:IO.Io:EXN:SPEC) are:
 
 `name`  
@@ -69,20 +71,74 @@ Some of the standard causes are:
 
 The `cause` field of [`Io`](io.md#SIG:IO.Io:EXN:SPEC) is not limited to these particular exceptions. Users who create their own readers or writers may raise any exception they like, which will be reported as the `cause` field of the resulting [`Io`](io.md#SIG:IO.Io:EXN:SPEC) exception.
 
-<span id="SIG:IO.BlockingNotSupported:EXN"></span>**`exception`**` BlockingNotSupported`  
+```repl
+IO.Io {name = "read", function = "input", cause = Fail "example"};; (* Io {name = "read", function = "input", cause = Fail "example"} *)
+```
+
+<span id="SIG:IO.BlockingNotSupported:EXN"></span>
+
+### `BlockingNotSupported`
+
+```sml
+exception BlockingNotSupported
+```
 The exception used in the [`output`](stream-io.md#SIG:STREAM_IO.output:VAL:SPEC), [`outputSubstr`](text-stream-io.md#SIG:TEXT_STREAM_IO.outputSubstr:VAL:SPEC), [`output1`](stream-io.md#SIG:STREAM_IO.output1:VAL:SPEC), and [`flushOut`](stream-io.md#SIG:STREAM_IO.flushOut:VAL:SPEC) I/O operations if the underlying writer does not support blocking writes; or in the [`input`](stream-io.md#SIG:STREAM_IO.input:VAL:SPEC), [`inputN`](stream-io.md#SIG:STREAM_IO.inputN:VAL:SPEC), and [`input1`](stream-io.md#SIG:STREAM_IO.input1:VAL:SPEC) I/O operations if the underlying reader does not support blocking reads. It should never be raised within the I/O system; it should only be used in the `cause` field of an [`Io`](io.md#SIG:IO.Io:EXN:SPEC) exception.
 
-<span id="SIG:IO.NonblockingNotSupported:EXN"></span>**`exception`**` NonblockingNotSupported`  
+```repl
+(raise IO.BlockingNotSupported) handle IO.BlockingNotSupported => true;; (* true *)
+```
+
+<span id="SIG:IO.NonblockingNotSupported:EXN"></span>
+
+### `NonblockingNotSupported`
+
+```sml
+exception NonblockingNotSupported
+```
 The exception used by the [`canInput`](stream-io.md#SIG:STREAM_IO.canInput:VAL:SPEC) I/O operation if the underlying stream does not support non-blocking input. It should never be raised within the I/O system; it should only be used in the `cause` field of an [`Io`](io.md#SIG:IO.Io:EXN:SPEC) exception.
 
-<span id="SIG:IO.RandomAccessNotSupported:EXN"></span>**`exception`**` RandomAccessNotSupported`  
+```repl
+(raise IO.NonblockingNotSupported) handle IO.NonblockingNotSupported => true;; (* true *)
+```
+
+<span id="SIG:IO.RandomAccessNotSupported:EXN"></span>
+
+### `RandomAccessNotSupported`
+
+```sml
+exception RandomAccessNotSupported
+```
 The exception used by the [`STREAM_IO`](stream-io.md#STREAM_IO:SIG:SPEC) position operations to indicate that random access operations are not supported by the underlying device. It should never be raised within the I/O system; it should only be used in the `cause` field of an [`Io`](io.md#SIG:IO.Io:EXN:SPEC) exception.
 
-<span id="SIG:IO.ClosedStream:EXN"></span>**`exception`**` ClosedStream`  
+```repl
+(raise IO.RandomAccessNotSupported) handle IO.RandomAccessNotSupported => true;; (* true *)
+```
+
+<span id="SIG:IO.ClosedStream:EXN"></span>
+
+### `ClosedStream`
+
+```sml
+exception ClosedStream
+```
 This exception is used by the output I/O operations if the underlying object is closed or terminated. It should never be raised within the I/O system; it should only be used in the `cause` field of an [`Io`](io.md#SIG:IO.Io:EXN:SPEC) exception.
 
-<span id="SIG:IO.buffer_mode:TY"></span>**`datatype`**` buffer_mode = NO_BUF | LINE_BUF | BLOCK_BUF`  
+```repl
+(raise IO.ClosedStream) handle IO.ClosedStream => true;; (* true *)
+```
+
+<span id="SIG:IO.buffer_mode:TY"></span>
+
+### `buffer_mode`
+
+```sml
+datatype buffer_mode = NO_BUF | LINE_BUF | BLOCK_BUF
+```
 These values specify the type of buffering used on output streams. If an output stream has mode [`BLOCK_BUF`](io.md#SIG:IO.buffer_mode:TY:SPEC), the implementation should store output in a buffer, actually writing the buffer's content to the device only when the buffer is full. If an output stream has mode [`NO_BUF`](io.md#SIG:IO.buffer_mode:TY:SPEC), the implementation should write the argument bytes of any output function directly to the corresponding device. If an output stream has mode [`LINE_BUF`](io.md#SIG:IO.buffer_mode:TY:SPEC), output bytes should be buffered until a newline character (`#"\n"`) is seen, at which point the buffer should be flushed, including the newline character. For binary streams, [`LINE_BUF`](io.md#SIG:IO.buffer_mode:TY:SPEC) mode should be treated as a synonym for [`BLOCK_BUF`](io.md#SIG:IO.buffer_mode:TY:SPEC).
+
+```repl
+(IO.NO_BUF, IO.LINE_BUF, IO.BLOCK_BUF);; (* (NO_BUF, LINE_BUF, BLOCK_BUF) *)
+```
 
 > **Implementation note:**
 >
@@ -92,12 +148,6 @@ These values specify the type of buffering used on output streams. If an output 
 >
 > where `iod` is the I/O descriptor associated with the open stream.
 
-
-#### Examples
-
-```repl
-IO.Io {name="read", function="input", cause=Fail "example"};;
-```
 
 #### See Also
 

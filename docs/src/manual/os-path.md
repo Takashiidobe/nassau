@@ -116,13 +116,41 @@ val toUnixPath : string -> string
 
 #### Description
 
-<span id="SIG:OS_PATH.parentArc:VAL"></span>**`val`**` parentArc `**`:`**` string`  
+<span id="SIG:OS_PATH.parentArc:VAL"></span>
+
+### `parentArc`
+
+```sml
+val parentArc : string
+```
 The string denoting the parent directory (_e.g._, `".."` on Microsoft Windows and Unix).
 
-<span id="SIG:OS_PATH.currentArc:VAL"></span>**`val`**` currentArc `**`:`**` string`  
+```repl
+OS.Path.parentArc;; (* ".." *)
+```
+<span id="SIG:OS_PATH.currentArc:VAL"></span>
+
+### `currentArc`
+
+```sml
+val currentArc : string
+```
 The string denoting the current directory (_e.g._, `"."` on Microsoft Windows and Unix).
 
+```repl
+OS.Path.currentArc;; (* "." *)
+```
 <span id="SIG:OS_PATH.fromString:VAL"></span>
+
+### `fromString`
+
+```sml
+val fromString : string -> {
+isAbs : bool,
+vol : string,
+arcs : string list
+}
+```
 `fromString ``path`` `  
 returns the decomposition `{``isAbs``, ``vol``, ``arcs``}` of the path specified by `path`. `vol` is the volume name and `arcs` is the list of (possibly empty) arcs of the path. `isAbs` is `true` if the path is absolute. Under Unix, the volume name is always the empty string; under Microsoft Windows, in addition it can have the form `"A:"`, `"C:"`, etc.
 
@@ -172,22 +200,62 @@ Here are some examples for Unix paths:
 
 ---
 
-
+```repl
+OS.Path.fromString "src/main.sml";; (* {isAbs=false, vol="", arcs=["src", "main.sml"]} *)
+OS.Path.fromString "";; (* {isAbs=false, vol="", arcs=[]} *)
+```
 <span id="SIG:OS_PATH.toString:VAL"></span>
+
+### `toString`
+
+```sml
+val toString : {
+isAbs : bool,
+vol : string,
+arcs : string list
+} -> string
+```
 `toString {``isAbs``, ``vol``, ``arcs``} `  
 makes a string out of a path represented as a list of arcs. `isAbs` specifies whether or not the path is absolute, and `vol` provides a corresponding volume. It returns `""` when applied to `{isAbs=false, vol="", arcs=[]}`. The exception [`Path`](os-path.md#SIG:OS_PATH.Path:EXN:SPEC) is raised if [`validVolume`](os-path.md#SIG:OS_PATH.validVolume:VAL:SPEC)`{``isAbs``, ``vol``}` is `false`, or if `isAbs` is `false` and `arcs` has an initial empty arc. The exception [`InvalidArc`](os-path.md#SIG:OS_PATH.InvalidArc:EXN:SPEC) is raised if any component in `arcs` is not a valid representation of an arc. The exception [`Size`](general.md#SIG:GENERAL.Size:EXN:SPEC) is raised if the resulting string would have size greater than [`String.maxSize`](string.md#SIG:STRING.maxSize:VAL:SPEC).
 
 [`toString`](os-path.md#SIG:OS_PATH.toString:VAL:SPEC)`o`[`fromString`](os-path.md#SIG:OS_PATH.fromString:VAL:SPEC) is the identity. [`fromString`](os-path.md#SIG:OS_PATH.fromString:VAL:SPEC)`o`[`toString`](os-path.md#SIG:OS_PATH.toString:VAL:SPEC) is also the identity, provided no exception is raised and none of the strings in `arcs` contains an embedded arc separator character. In addition, [`isRelative`](os-path.md#SIG:OS_PATH.isRelative:VAL:SPEC)`(`[`toString`](os-path.md#SIG:OS_PATH.toString:VAL:SPEC)` {isAbs=false, vol, arcs})` evaluates to `true` when defined.
 
+```repl
+OS.Path.toString {isAbs = false, vol = "", arcs = ["src", "main.sml"]};; (* "src/main.sml" *)
+```
 <span id="SIG:OS_PATH.validVolume:VAL"></span>
+
+### `validVolume`
+
+```sml
+val validVolume : {isAbs : bool, vol : string} -> bool
+```
 `validVolume {``isAbs``, ``vol``} `  
 returns `true` if `vol` is a valid volume name for an absolute or relative path, respectively as `isAbs` is `true` or `false`. Under Unix, the only valid volume name is `""`. Under Microsoft Windows, the valid volume names have the form `"a:"`, `"A:"`, `"b:"`, `"B:"`, etc. and, if `isAbs`` = false`, also `""`. Under MacOS, `isAbs` can be `true` if and only if `vol` is `""`.
 
+```repl
+OS.Path.validVolume {isAbs = false, vol = ""};; (* true *)
+```
 <span id="SIG:OS_PATH.getVolume:VAL"></span>
+
+### `getVolume`
+
+```sml
+val getVolume : string -> string
+```
 `getVolume ``path`` `  
 returns the volume portion of the path `path`.
 
+```repl
+OS.Path.getVolume "src/main.sml";; (* "" on Unix *)
+```
 <span id="SIG:OS_PATH.getParent:VAL"></span>
+
+### `getParent`
+
+```sml
+val getParent : string -> string
+```
 `getParent ``path`` `  
 returns a string denoting the parent directory of `path`. It holds that [`getParent`](os-path.md#SIG:OS_PATH.getParent:VAL:SPEC)` ``path`` = ``path` if and only if `path` is a root. If the last arc is empty or the parent arc, then [`getParent`](os-path.md#SIG:OS_PATH.getParent:VAL:SPEC) appends a parent arc. If the last arc is the current arc, then it is replaced with the parent arc. Note that if `path` is canonical, then the result of [`getParent`](os-path.md#SIG:OS_PATH.getParent:VAL:SPEC) will also be canonical.
 
@@ -237,8 +305,16 @@ Here are some examples for Unix paths:
 
 ---
 
-
+```repl
+OS.Path.getParent "src/main.sml";; (* "src" *)
+```
 <span id="SIG:OS_PATH.splitDirFile:VAL"></span>
+
+### `splitDirFile`
+
+```sml
+val splitDirFile : string -> {dir : string, file : string}
+```
 `splitDirFile ``path`` `  
 splits the string path `path` into its directory and file parts, where the file part is defined to be the last arc. The file will be `""`, if the last arc is `""`.
 
@@ -276,17 +352,56 @@ Here are some examples for Unix paths:
 
 ---
 
-
+```repl
+OS.Path.splitDirFile "src/main.sml";; (* {dir="src", file="main.sml"} *)
+```
 <span id="SIG:OS_PATH.joinDirFile:VAL"></span>
+
+### `joinDirFile`
+
+```sml
+val joinDirFile : {dir : string, file : string} -> string
+```
 `joinDirFile {``dir``, ``file``} `  
 creates a whole path out of a directory and a file by extending the path `dir` with the arc `file`. If the string `file` does not correspond to an arc, raises [`InvalidArc`](os-path.md#SIG:OS_PATH.InvalidArc:EXN:SPEC). The exception [`Size`](general.md#SIG:GENERAL.Size:EXN:SPEC) is raised if the resulting string would have size greater than [`String.maxSize`](string.md#SIG:STRING.maxSize:VAL:SPEC).
 
+```repl
+OS.Path.joinDirFile {dir = "src", file = "main.sml"};; (* "src/main.sml" *)
+```
 <span id="SIG:OS_PATH.dir:VAL"></span>
-`dir ``path`` `
-` file ``path`` `  
-return the directory and file parts of a path, respectively. They are equivalent to `#dir o `[`splitDirFile`](os-path.md#SIG:OS_PATH.splitDirFile:VAL:SPEC) and `#file o `[`splitDirFile`](os-path.md#SIG:OS_PATH.splitDirFile:VAL:SPEC), respectively, although they are probably more efficient.
+
+### `dir`
+
+```sml
+val dir : string -> string
+```
+Returns the directory part of a path.
+
+```repl
+OS.Path.dir "src/main.sml";; (* "src" *)
+```
+
+<span id="SIG:OS_PATH.file:VAL"></span>
+
+### `file`
+
+```sml
+val file : string -> string
+```
+Returns the file part of a path.
+
+```repl
+OS.Path.file "src/main.sml";; (* "main.sml" *)
+```
 
 <span id="SIG:OS_PATH.splitBaseExt:VAL"></span>
+
+### `splitBaseExt`
+
+```sml
+val splitBaseExt : string -> {base : string, ext : string option
+}
+```
 `splitBaseExt ``path`` `  
 splits the path `path` into its base and extension parts. The extension is a non-empty sequence of characters following the right-most, non-initial, occurrence of `"."` in the last arc; [`NONE`](option.md#SIG:OPTION.option:TY:SPEC) is returned if the extension is not defined. The base part is everything to the left of the extension except the final `"."`. Note that if there is no extension, a terminating `"."` is included with the base part.
 
@@ -332,31 +447,97 @@ Here are some examples for Unix paths:
 
 ---
 
-
+```repl
+OS.Path.splitBaseExt "main.sml";; (* {base="main", ext=SOME "sml"} *)
+```
 <span id="SIG:OS_PATH.joinBaseExt:VAL"></span>
+
+### `joinBaseExt`
+
+```sml
+val joinBaseExt : {base : string, ext : string option} -> string
+```
 `joinBaseExt {``base``, ``ext``} `  
 returns an arc composed of the base name and the extension (if different from [`NONE`](option.md#SIG:OPTION.option:TY:SPEC)). It is a left inverse of [`splitBaseExt`](os-path.md#SIG:OS_PATH.splitBaseExt:VAL:SPEC), _i.e._, [`joinBaseExt`](os-path.md#SIG:OS_PATH.joinBaseExt:VAL:SPEC)`o`[`splitBaseExt`](os-path.md#SIG:OS_PATH.splitBaseExt:VAL:SPEC) is the identity. The opposite does not hold, since the extension may be empty, or may contain extension separators. Note that although [`splitBaseExt`](os-path.md#SIG:OS_PATH.splitBaseExt:VAL:SPEC) will never return the extension [`SOME`](option.md#SIG:OPTION.option:TY:SPEC)`("")`, [`joinBaseExt`](os-path.md#SIG:OS_PATH.joinBaseExt:VAL:SPEC) treats this as equivalent to [`NONE`](option.md#SIG:OPTION.option:TY:SPEC). The exception [`Size`](general.md#SIG:GENERAL.Size:EXN:SPEC) is raised if the resulting string would have size greater than [`String.maxSize`](string.md#SIG:STRING.maxSize:VAL:SPEC).
 
+```repl
+OS.Path.joinBaseExt {base = "main", ext = SOME "sml"};; (* "main.sml" *)
+```
 <span id="SIG:OS_PATH.base:VAL"></span>
-`base ``path`` `
-` ext ``path`` `  
-These return the base and extension parts of a path, respectively. They are equivalent to `#base o `[`splitBaseExt`](os-path.md#SIG:OS_PATH.splitBaseExt:VAL:SPEC) and `#ext o `[`splitBaseExt`](os-path.md#SIG:OS_PATH.splitBaseExt:VAL:SPEC), respectively, although they are probably more efficient.
+
+### `base`
+
+```sml
+val base : string -> string
+```
+Returns the base part of a path.
+
+```repl
+OS.Path.base "main.sml";; (* "main" *)
+```
+
+<span id="SIG:OS_PATH.ext:VAL"></span>
+
+### `ext`
+
+```sml
+val ext : string -> string option
+```
+Returns the extension of a path, if present.
+
+```repl
+OS.Path.ext "main.sml";; (* SOME "sml" *)
+```
 
 <span id="SIG:OS_PATH.mkCanonical:VAL"></span>
+
+### `mkCanonical`
+
+```sml
+val mkCanonical : string -> string
+```
 `mkCanonical ``path`` `  
 returns the canonical path equivalent to `path`. Redundant occurrences of the parent arc, the current arc, and the empty arc are removed. The canonical path will never be the empty string; the empty path is converted to the current directory path (`"."` under Unix and Microsoft Windows).
 
 Note that the syntactic canonicalization provided by [`mkCanonical`](os-path.md#SIG:OS_PATH.mkCanonical:VAL:SPEC) may not preserve file system meaning in the presence of symbolic links (see [`concat`](os-path.md#SIG:OS_PATH.concat:VAL:SPEC)).
 
+```repl
+OS.Path.mkCanonical "src/./lib/../main.sml";; (* "src/main.sml" *)
+```
 <span id="SIG:OS_PATH.isCanonical:VAL"></span>
+
+### `isCanonical`
+
+```sml
+val isCanonical : string -> bool
+```
 `isCanonical ``path`` `  
 returns `true` if `path` is a canonical path. It is equivalent to `(``path`` = `[`mkCanonical`](os-path.md#SIG:OS_PATH.mkCanonical:VAL:SPEC)` ``path``)`.
 
+```repl
+OS.Path.isCanonical "src/main.sml";; (* true *)
+OS.Path.isCanonical "src/../main.sml";; (* false *)
+```
 <span id="SIG:OS_PATH.mkAbsolute:VAL"></span>
+
+### `mkAbsolute`
+
+```sml
+val mkAbsolute : {path : string, relativeTo : string} -> string
+```
 `mkAbsolute {``path``, ``relativeTo``} `  
 returns an absolute path that is equivalent to the path `path` relative to the absolute path `relativeTo`. If `path` is already absolute, it is returned unchanged. Otherwise, the function returns the canonical concatenation of `relativeTo` with `path`, _i.e._, [`mkCanonical`](os-path.md#SIG:OS_PATH.mkCanonical:VAL:SPEC)` (`[`concat`](os-path.md#SIG:OS_PATH.concat:VAL:SPEC)` (``abs``, ``p``))`. Thus, if `path` and `relativeTo` are canonical, the result will be canonical. If `relativeTo` is not absolute, or if the two paths refer to different volumes, then the [`Path`](os-path.md#SIG:OS_PATH.Path:EXN:SPEC) exception is raised. The exception [`Size`](general.md#SIG:GENERAL.Size:EXN:SPEC) is raised if the resulting string would have size greater than [`String.maxSize`](string.md#SIG:STRING.maxSize:VAL:SPEC).
 
+```repl
+OS.Path.mkAbsolute {path = "src/main.sml", relativeTo = "/tmp"};; (* absolute path *)
+```
 <span id="SIG:OS_PATH.mkRelative:VAL"></span>
+
+### `mkRelative`
+
+```sml
+val mkRelative : {path : string, relativeTo : string} -> string
+```
 `mkRelative {``path``, ``relativeTo``} `  
 returns a relative path `p` that, when taken relative to the canonical form of the absolute path `relativeTo`, is equivalent to the path `path`. If `path` is relative, it is returned unchanged. If `path` is absolute, the procedure for computing the relative path is to first compute the canonical form `abs` of `relativeTo`. If `path` and `abs` are equal, then the current arc is the result. Otherwise, the common prefix is stripped from `path` and `abs` giving `p'` and `abs'`. The resulting path is then formed by appending `p'` to a path consisting of one parent arc for each arc in `abs'`. Note that if both paths are canonical, then the result will be canonical.
 
@@ -452,17 +633,55 @@ Here are some examples for Unix paths:
 
 ---
 
-
+```repl
+OS.Path.mkRelative {path = "/tmp/src/main.sml", relativeTo = "/tmp"};; (* relative path *)
+```
 <span id="SIG:OS_PATH.isAbsolute:VAL"></span>
-`isAbsolute ``path`` `
-` isRelative ``path`` `  
-These return `true` if `path` is, respectively, absolute or relative.
+
+### `isAbsolute`
+
+```sml
+val isAbsolute : string -> bool
+```
+Returns `true` when `path` is absolute.
+
+```repl
+OS.Path.isAbsolute "/tmp/main.sml";; (* true *)
+```
+
+<span id="SIG:OS_PATH.isRelative:VAL"></span>
+
+### `isRelative`
+
+```sml
+val isRelative : string -> bool
+```
+Returns `true` when `path` is relative.
+
+```repl
+OS.Path.isRelative "src/main.sml";; (* true *)
+```
 
 <span id="SIG:OS_PATH.isRoot:VAL"></span>
+
+### `isRoot`
+
+```sml
+val isRoot : string -> bool
+```
 `isRoot ``path`` `  
 returns `true` if `path` is a canonical specification of a root directory.
 
+```repl
+OS.Path.isRoot "/";; (* true *)
+```
 <span id="SIG:OS_PATH.concat:VAL"></span>
+
+### `concat`
+
+```sml
+val concat : string * string -> string
+```
 `concat (``path``, ``t``) `  
 returns the path consisting of `path` followed by `t`. It raises the exception [`Path`](os-path.md#SIG:OS_PATH.Path:EXN:SPEC) if `t` is not a relative path or if `path` and `t` refer to different volumes. The exception [`Size`](general.md#SIG:GENERAL.Size:EXN:SPEC) is raised if the resulting string would have size greater than [`String.maxSize`](string.md#SIG:STRING.maxSize:VAL:SPEC).
 
@@ -484,21 +703,33 @@ where `concatArcs` is like [`List.@`](list.md#SIG:LIST.@:VAL:SPEC), except that 
 
 [`concat`](os-path.md#SIG:OS_PATH.concat:VAL:SPEC) does not preserve canonical paths. For example, [`concat`](os-path.md#SIG:OS_PATH.concat:VAL:SPEC)`("a/b", "../c")` returns `"a/b/../c"`. The parent arc is not removed because `"a/b/../c"` and `"a/c"` may not be equivalent in the presence of symbolic links.
 
+```repl
+OS.Path.concat ("src", "main.sml");; (* "src/main.sml" *)
+```
 <span id="SIG:OS_PATH.fromUnixPath:VAL"></span>
+
+### `fromUnixPath`
+
+```sml
+val fromUnixPath : string -> string
+```
 `fromUnixPath ``s`` `  
 converts the Unix-style path `s` to the path syntax of the host operating system. Slash characters are translated to the directory separators of the local system, as are parent arcs and current arcs. This function raises the [`InvalidArc`](os-path.md#SIG:OS_PATH.InvalidArc:EXN:SPEC) exception if any arc in the Unix path is invalid in the host system's path syntax (_e.g._, an arc that has a backslash character in it when the host system is Microsoft Windows).
 
 Note that the syntax of Unix pathnames necessarily limits this function. It is not possible to specify paths that have a non-empty volume name or paths that have a slash in one of their arcs using this function.
 
+```repl
+OS.Path.fromUnixPath "src/main.sml";; (* platform path *)
+```
 <span id="SIG:OS_PATH.toUnixPath:VAL"></span>
+
+### `toUnixPath`
+
+```sml
+val toUnixPath : string -> string
+```
 `toUnixPath ``s`` `  
 converts the path `s`, which is in the host operating system's syntax, to a Unix-style path. If the path `s` has a non-empty volume name, then the [`Path`](os-path.md#SIG:OS_PATH.Path:EXN:SPEC) exception is raised. Also, if any arc in the pathname contains the slash character, then the [`InvalidArc`](os-path.md#SIG:OS_PATH.InvalidArc:EXN:SPEC) exception is raised.
-
-#### Examples
-
-```repl
-OS.Path.concat ("src", "main.sml");;
-```
 
 #### See Also
 
@@ -507,3 +738,7 @@ OS.Path.concat ("src", "main.sml");;
 #### Discussion
 
 Syntactically, two paths can be checked for equality by applying string equality to canonical versions of the paths. Since volumes and individual arcs are just special classes of paths, an identical test for equality can be applied to these classes.
+
+```repl
+OS.Path.toUnixPath "src/main.sml";; (* "src/main.sml" *)
+```

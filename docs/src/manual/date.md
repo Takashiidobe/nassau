@@ -114,15 +114,13 @@ val fromString : string -> date option
 <span id="SIG:DATE.date:TY"></span>**`type`**` date`  
 An abstract type whose values represents an instant in a specific time zone.
 
-<span id="SIG:DATE.date:VAL"></span>**`val`**` date `**`:`**` {`
-`               year `**`:`**` int,`
-`               month `**`:`**` month,`
-`               day `**`:`**` int,`
-`               hour `**`:`**` int,`
-`               minute `**`:`**` int,`
-`               second `**`:`**` int,`
-`               offset `**`:`**` Time.time option`
-`             } `**`->`**` date`  
+<span id="SIG:DATE.date:VAL"></span>
+
+### `date`
+
+```sml
+val date : {year : int, month : month, day : int, hour : int, minute : int, second : int, offset : Time.time option} -> date
+```
 creates a canonical date from the given date information. If the resulting date is outside the range supported by the implementation, the [`Date`](date.md#SIG:DATE.Date:EXN:SPEC) exception is raised.
 
 Seconds outside the range \[0,59\] are converted to the equivalent minutes and added to the minutes argument. Similar conversions are performed for minutes to hours, hours to days, days to months, and months to years. Negative values are similarly translated into a canonical range, with the extra borrowed from the next larger unit. Thus, `minute = 10, second = ~140` becomes `minute = 7, second = 40`.
@@ -131,41 +129,172 @@ The `offset` argument provides time zone information. A value of [`NONE`](option
 
 Leap years follow the Gregorian calendar. Leap seconds may or may not be ignored. In an implementation that takes account of leap seconds, the `second` function may return 60 or 61 in the rare cases that this is appropriate.
 
-<span id="SIG:DATE.year:VAL"></span>**`val`**` year `**`:`**` date `**`->`**` int`
-**`val`**` month `**`:`**` date `**`->`**` month`
-**`val`**` day `**`:`**` date `**`->`**` int`
-**`val`**` hour `**`:`**` date `**`->`**` int`
-**`val`**` minute `**`:`**` date `**`->`**` int`
-**`val`**` second `**`:`**` date `**`->`**` int`
-**`val`**` weekDay `**`:`**` date `**`->`**` weekday`
-**`val`**` yearDay `**`:`**` date `**`->`**` int`
-**`val`**` offset `**`:`**` date `**`->`**` Time.time option`
-**`val`**` isDst `**`:`**` date `**`->`**` bool option`  
+
+```repl
+val d = Date.date {year = 2024, month = Date.Jan, day = 1, hour = 0, minute = 0, second = 0, offset = SOME Time.zeroTime};
+Date.year d;; (* 2024 *)
+```
+
+<span id="SIG:DATE.year:VAL"></span>
+
+### `year`
+
+```sml
+val year : date -> int
+```
+
+### `month`
+
+```sml
+val month : date -> month
+```
+
+### `day`
+
+```sml
+val day : date -> int
+```
+
+### `hour`
+
+```sml
+val hour : date -> int
+```
+
+### `minute`
+
+```sml
+val minute : date -> int
+```
+
+### `second`
+
+```sml
+val second : date -> int
+```
+
+### `weekDay`
+
+```sml
+val weekDay : date -> weekday
+```
+
+### `yearDay`
+
+```sml
+val yearDay : date -> int
+```
+
+### `offset`
+
+```sml
+val offset : date -> Time.time option
+```
+
+### `isDst`
+
+```sml
+val isDst : date -> bool option
+```
 These functions extract the attributes of a date value. The year returned by [`year`](date.md#SIG:DATE.year:VAL:SPEC) uses year 0 as its base. Thus, the date Robin Milnerreceived the Turing award would have year 1991. The function [`yearDay`](date.md#SIG:DATE.yearDay:VAL:SPEC) returns the day of the year, starting from 0, _i.e._, 1 January is day 0. The value returned by [`offset`](date.md#SIG:DATE.offset:VAL:SPEC) reports time zone information as the amount of time west of UTC. A value of [`NONE`](option.md#SIG:OPTION.option:TY:SPEC) represents the local time zone. The function [`isDst`](date.md#SIG:DATE.isDst:VAL:SPEC) returns [`NONE`](option.md#SIG:OPTION.option:TY:SPEC) if the system has no information concerning daylight savings time. Otherwise, it returns [`SOME`](option.md#SIG:OPTION.option:TY:SPEC)`(``dst``)` where `dst` is `true` if daylight savings time is in effect.
 
-<span id="SIG:DATE.localOffset:VAL"></span>**`val`**` localOffset `**`:`**` unit `**`->`**` Time.time`  
+
+```repl
+val d = Date.date {year = 2024, month = Date.Jan, day = 1, hour = 0, minute = 0, second = 0, offset = SOME Time.zeroTime};
+Date.year d;; (* 2024 *)
+Date.month d;; (* Jan *)
+Date.day d;; (* 1 *)
+Date.hour d;; (* 0 *)
+Date.minute d;; (* 0 *)
+Date.second d;; (* 0 *)
+Date.weekDay d;; (* Mon *)
+Date.yearDay d;; (* 0 *)
+Date.offset d;; (* SOME 0 *)
+Date.isDst d;; (* SOME false or NONE *)
+```
+
+<span id="SIG:DATE.localOffset:VAL"></span>
+
+### `localOffset`
+
+```sml
+val localOffset : unit -> Time.time
+```
 The offset from UTC for the local time zone.
 
+
+```repl
+Date.localOffset ();; (* local offset from UTC *)
+```
+
 <span id="SIG:DATE.fromTimeLocal:VAL"></span>
-`fromTimeLocal ``t`` `
-` fromTimeUniv ``t`` `  
+
+### `fromTimeLocal`
+
+```sml
+val fromTimeLocal : Time.time -> date
+```
+
+### `fromTimeUniv`
+
+```sml
+val fromTimeUniv : Time.time -> date
+```
 These convert the (UTC) time `t` into a corresponding date. `fromTimeLocal` represents the date in the local time zone; it is the analogue of the ISO C function `localtime`. The returned date will have `offset=`[`NONE`](option.md#SIG:OPTION.option:TY:SPEC). `fromTimeUniv` returns the date in the UTC time zone; it is the analogue of the ISO C function `gmtime`. The returned date will have `offset=`[`SOME`](option.md#SIG:OPTION.option:TY:SPEC)`(0)`.
 
 If these functions are applied to the same time value, the resulting dates will differ by the offset of the local time zone from UTC.
 
+
+```repl
+Date.fromTimeLocal Time.zeroTime;; (* local date at the epoch *)
+Date.fromTimeUniv Time.zeroTime;; (* UTC date at the epoch *)
+```
+
 <span id="SIG:DATE.toTime:VAL"></span>
-`toTime ``date`` `  
+
+### `toTime`
+
+```sml
+val toTime : date -> Time.time
+```
 returns the (UTC) time corresponding to the date `date`. It raises [`Date`](date.md#SIG:DATE.Date:EXN:SPEC) if the date `date` cannot be represented as a [`Time.time`](time.md#SIG:TIME.time:TY:SPEC) value. It is the analogue of the ISO C function `mktime`.
 
+
+```repl
+Date.toTime (Date.date {year = 1970, month = Date.Jan, day = 1, hour = 0, minute = 0, second = 0, offset = SOME Time.zeroTime});; (* 0 seconds *)
+```
+
 <span id="SIG:DATE.compare:VAL"></span>
-`compare (``date1``, ``date2``) `  
+
+### `compare`
+
+```sml
+val compare : date * date -> order
+```
 returns [`LESS`](general.md#SIG:GENERAL.order:TY:SPEC), [`EQUAL`](general.md#SIG:GENERAL.order:TY:SPEC), or [`GREATER`](general.md#SIG:GENERAL.order:TY:SPEC), according as `date1` precedes, equals, or follows `date2` in time. It lexicographically compares the dates, using the year, month, day, hour, minute, and second information, but ignoring the offset and daylight savings time information. It does not detect invalid dates.
 
 In order to compare dates in two different time zones, the user would have to handle the normalization.
 
+
+```repl
+val a = Date.date {year = 2024, month = Date.Jan, day = 1, hour = 0, minute = 0, second = 0, offset = SOME Time.zeroTime};
+val b = Date.date {year = 2024, month = Date.Jan, day = 2, hour = 0, minute = 0, second = 0, offset = SOME Time.zeroTime};
+Date.compare (a, b);; (* LESS *)
+```
+
 <span id="SIG:DATE.fmt:VAL"></span>
-`fmt ``s`` ``date`` `
-` toString ``date`` `  
+
+### `fmt`
+
+```sml
+val fmt : string -> date -> string
+```
+
+### `toString`
+
+```sml
+val toString : date -> string
+```
 These return a string representation of the date `date`. The result may be wrong if the date is outside the representable [`Time.time`](time.md#SIG:TIME.time:TY:SPEC) range. They raise [`Date`](date.md#SIG:DATE.Date:EXN:SPEC) if the given date is invalid.
 
 The former formats the date according to the format string `s`, following the semantics of the ISO C function `strftime`. In particular, [`fmt`](date.md#SIG:DATE.fmt:VAL:SPEC) is locale-dependent. The allowed formats are:
@@ -274,20 +403,38 @@ For instance, [`fmt`](date.md#SIG:DATE.fmt:VAL:SPEC)` "%A" ``date` returns the f
 
 The function is equivalent to `Date.fmt "%a %b %d %H:%M:%S %Y"`.
 
+
+```repl
+val d = Date.date {year = 2024, month = Date.Jan, day = 1, hour = 0, minute = 0, second = 0, offset = SOME Time.zeroTime};
+Date.fmt "%Y" d;; (* "2024" *)
+Date.toString d;; (* "Mon Jan 01 00:00:00 2024" *)
+```
+
 <span id="SIG:DATE.scan:VAL"></span>
-`scan ``getc`` ``strm`` `
-` fromString ``s`` `  
+
+### `scan`
+
+```sml
+val scan : (char, 'a) StringCvt.reader -> (date, 'a) StringCvt.reader
+```
+
+### `fromString`
+
+```sml
+val fromString : string -> date option
+```
 These scan a 24-character date from a character source after ignoring possible initial whitespace. The format of the string must be precisely as produced by [`toString`](date.md#SIG:DATE.toString:VAL:SPEC). In particular, the functions do not parse time zone abbreviations. No check of the consistency of the date (weekday, date in the month, ...) is performed. If the scanning fails, [`NONE`](option.md#SIG:OPTION.option:TY:SPEC) is returned.
 
 The function `scan` takes a character stream reader `getc` and a stream `strm`. In case of success, it returns [`SOME`](option.md#SIG:OPTION.option:TY:SPEC)`(``date``, ``rest``)`, where `date` is the scanned date and `rest` is the remainder of the stream.
 
 The function `fromString` takes a string `s` as its source of characters. It is equivalent to [`StringCvt.scanString`](string-cvt.md#SIG:STRING_CVT.scanString:VAL:SPEC)` scan`.
 
-#### Examples
-
 ```repl
-Date.toString (Date.date {year=2024, month=Date.Jan, day=1, hour=0, minute=0, second=0, offset=NONE});;
+Date.scan Substring.getc (Substring.full "Mon Jan 01 00:00:00 2024");; (* SOME (date, empty substring) *)
+Date.fromString "Mon Jan 01 00:00:00 2024";; (* SOME date *)
+Date.fromString "not a date";; (* NONE *)
 ```
+
 
 #### See Also
 

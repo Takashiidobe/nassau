@@ -54,36 +54,105 @@ val update : Word8Array.array * int * real -> unit
 
 #### Description
 
-<span id="SIG:PACK_REAL.bytesPerElem:VAL"></span>**`val`**` bytesPerElem `**`:`**` int`  
-The number of bytes per element, sufficient to store a value of type [`real`](pack-float.md#SIG:PACK_REAL.real:TY:SPEC).
+<span id="SIG:PACK_REAL.real:TY"></span>**`type`**` real`  
+The floating-point type packed by this structure.
 
-<span id="SIG:PACK_REAL.isBigEndian:VAL"></span>
-`isBigEndian `  
-is `true` if the structure implements a big-endian view of the data.
+<span id="SIG:PACK_REAL.bytesPerElem:VAL"></span>
 
-<span id="SIG:PACK_REAL.toBytes:VAL"></span>**`val`**` toBytes `**`:`**` real `**`->`**` Word8Vector.vector`
-**`val`**` fromBytes `**`:`**` Word8Vector.vector `**`->`**` real`  
-These functions pack and unpack floating-point values into and out of [`Word8Vector.vector`](mono-vector.md#SIG:MONO_VECTOR.vector:TY:SPEC) values. The function [`fromBytes`](pack-float.md#SIG:PACK_REAL.fromBytes:VAL:SPEC) raises the [`Subscript`](general.md#SIG:GENERAL.Subscript:EXN:SPEC) exception if the argument vector does not have length at least [`bytesPerElem`](pack-float.md#SIG:PACK_REAL.bytesPerElem:VAL:SPEC); otherwise the first [`bytesPerElem`](pack-float.md#SIG:PACK_REAL.bytesPerElem:VAL:SPEC) bytes are used.
+### `bytesPerElem`
 
-<span id="SIG:PACK_REAL.subVec:VAL"></span>
-`subVec (``seq``, ``i``) `
-`subArr (``seq``, ``i``)`  
-These functions extract the subsequence
-
-`seq`\[[bytesPerElem](pack-float.md#SIG:PACK_REAL.bytesPerElem:VAL:SPEC)\*`i`..[bytesPerElem](pack-float.md#SIG:PACK_REAL.bytesPerElem:VAL:SPEC)\*(`i`+1)-1\]
-
-of the aggregate `seq` and convert it into a [`real`](pack-float.md#SIG:PACK_REAL.real:TY:SPEC) value according to the endianness of the structure. They raise the [`Subscript`](general.md#SIG:GENERAL.Subscript:EXN:SPEC) exception if `i` \< 0 or if `Word8Array.length` `seq` \< `bytesPerElem` \* (`i` + 1).
-
-<span id="SIG:PACK_REAL.update:VAL"></span>
-`update (``arr``, ``i``, ``r``) `  
-stores `r` into the bytes [`bytesPerElem`](pack-float.md#SIG:PACK_REAL.bytesPerElem:VAL:SPEC)`*``i` through [`bytesPerElem`](pack-float.md#SIG:PACK_REAL.bytesPerElem:VAL:SPEC)`*(``i``+1)-1` of the array `arr`, according to the structure's endianness. It raises the [`Subscript`](general.md#SIG:GENERAL.Subscript:EXN:SPEC) exception if `i` \< 0 or if `Word8Array.length` `arr` \< `bytesPerElem` \* (`i` + 1).
-
-#### Examples
+```sml
+val bytesPerElem : int
+```
+The number of bytes required to store one real value.
 
 ```repl
-PackReal64.toBytes 3.14;;
+PackReal64.bytesPerElem;; (* 8 for a 64-bit real *)
+```
+
+<span id="SIG:PACK_REAL.isBigEndian:VAL"></span>
+
+### `isBigEndian`
+
+```sml
+val isBigEndian : bool
+```
+Reports whether this structure uses big-endian byte order.
+
+```repl
+PackReal64.isBigEndian;; (* byte order used by this structure *)
+```
+
+<span id="SIG:PACK_REAL.toBytes:VAL"></span>
+
+### `toBytes`
+
+```sml
+val toBytes : real -> Word8Vector.vector
+```
+Packs a real value into a byte vector.
+
+```repl
+PackReal64.toBytes 3.14;; (* packed bytes for 3.14 *)
+```
+
+<span id="SIG:PACK_REAL.fromBytes:VAL"></span>
+
+### `fromBytes`
+
+```sml
+val fromBytes : Word8Vector.vector -> real
+```
+Unpacks a real value from the first `bytesPerElem` bytes. It raises `Subscript` if the vector is too short.
+
+```repl
+PackReal64.fromBytes (PackReal64.toBytes 3.14);; (* 3.14 *)
+PackReal64.fromBytes (Word8Vector.fromList []);; (* raises Subscript *)
+```
+
+<span id="SIG:PACK_REAL.subVec:VAL"></span>
+
+### `subVec`
+
+```sml
+val subVec : Word8Vector.vector * int -> real
+```
+Unpacks the value at element index `i` of the byte vector.
+
+```repl
+PackReal64.subVec (PackReal64.toBytes 3.14, 0);; (* 3.14 *)
+```
+
+<span id="SIG:PACK_REAL.subArr:VAL"></span>
+
+### `subArr`
+
+```sml
+val subArr : Word8Array.array * int -> real
+```
+Unpacks the value at element index `i` of the byte array.
+
+```repl
+let val a = Word8Array.array (PackReal64.bytesPerElem, 0w0); val _ = PackReal64.update (a, 0, 3.14) in PackReal64.subArr (a, 0) end;; (* 3.14 *)
+```
+
+<span id="SIG:PACK_REAL.update:VAL"></span>
+
+### `update`
+
+```sml
+val update : Word8Array.array * int * real -> unit
+```
+Packs the real value into the array beginning at element index `i`.
+
+```repl
+let val a = Word8Array.array (PackReal64.bytesPerElem, 0w0) in PackReal64.update (a, 0, 3.14) end;; (* () *)
 ```
 
 #### See Also
 
 > [`PACK_WORD`](pack-word.md#PACK_WORD:SIG:SPEC), [`REAL`](real.md#REAL:SIG:SPEC)
+
+```repl
+let val a = Word8Array.array (PackReal64.bytesPerElem, 0w0); val _ = PackReal64.update (a, 0, 3.14) in PackReal64.subArr (a, 0) end;; (* 3.14 *)
+```

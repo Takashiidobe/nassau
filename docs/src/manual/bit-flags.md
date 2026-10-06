@@ -43,42 +43,117 @@ val anySet : flags * flags -> bool
 <span id="SIG:BIT_FLAGS.flags:TY"></span>**`eqtype`**` flags`  
 This type is the abstract representation of a set of system flags.
 
-<span id="SIG:BIT_FLAGS.toWord:VAL"></span>**`val`**` toWord `**`:`**` flags `**`->`**` SysWord.word`
-**`val`**` fromWord `**`:`**` SysWord.word `**`->`**` flags`  
+<span id="SIG:BIT_FLAGS.toWord:VAL"></span>
+
+### `toWord`
+
+```sml
+val toWord : flags -> SysWord.word
+```
+
+### `fromWord`
+
+```sml
+val fromWord : SysWord.word -> flags
+```
 These functions convert between the abstract [`flags`](bit-flags.md#SIG:BIT_FLAGS.flags:TY:SPEC) type and a bit-vector that is represented as a system [`word`](word.md#SIG:WORD.word:TY:SPEC). The interpretation of the bits is system-dependent, but follows the C language binding for the host operating system. Note that there is no error checking on the `fromWord` function's argument.
 
+
+```repl
+val opts = Posix.FileSys.O.flags [Posix.FileSys.O.nonblock];
+Posix.FileSys.O.toWord opts;; (* system word for nonblock *)
+Posix.FileSys.O.fromWord (Posix.FileSys.O.toWord opts) = opts;; (* true *)
+```
+
 <span id="SIG:BIT_FLAGS.all:VAL"></span>
-`all `  
+
+### `all`
+
+```sml
+val all : flags
+```
 represents the union of all flags. Note that this may well be a superset of the `flags` value defined in a matching structure. For example, [`BIT_FLAGS`](bit-flags.md#BIT_FLAGS:SIG:SPEC) is used to define the flags specified by the POSIX standard; a POSIX-conforming operating system may provide additional flags that will not be defined in the [`Posix`](posix.md#Posix:STR:SPEC) structure but could be set in the `all` value.
 
+
+```repl
+Posix.FileSys.O.toWord Posix.FileSys.O.all;; (* system word with all bits set *)
+```
+
 <span id="SIG:BIT_FLAGS.flags:VAL"></span>
-`flags ``l`` `  
+
+### `flags`
+
+```sml
+val flags : flags list -> flags
+```
 returns a value that represents the union of the flags in the list `l`. The expression `flags []` denotes the empty set.
 
+
+```repl
+Posix.FileSys.O.flags [] = Posix.FileSys.O.flags [];; (* true *)
+Posix.FileSys.O.toWord (Posix.FileSys.O.flags [Posix.FileSys.O.nonblock]);; (* system word for nonblock *)
+```
+
 <span id="SIG:BIT_FLAGS.intersect:VAL"></span>
-`intersect ``l`` `  
+
+### `intersect`
+
+```sml
+val intersect : flags list -> flags
+```
 returns a value that represents the intersection of the sets of flags in the list `l`. The expression `intersect []` denotes `all`.
 
+
+```repl
+Posix.FileSys.O.toWord (Posix.FileSys.O.intersect []);; (* same as O.all *)
+Posix.FileSys.O.toWord (Posix.FileSys.O.intersect [Posix.FileSys.O.nonblock, Posix.FileSys.O.append]);; (* intersection word *)
+```
+
 <span id="SIG:BIT_FLAGS.clear:VAL"></span>
-`clear (``fl1``, ``fl2``) `  
+
+### `clear`
+
+```sml
+val clear : flags * flags -> flags
+```
 returns the set of those flags in `fl2` that are not set in `fl1`, _i.e._, the set difference `fl2`` \ ``fl1`. It is equivalent to:
 
 fromWord(SysWord.andb(SysWord.notb (toWord fl1), toWord fl2))
 
 
-<span id="SIG:BIT_FLAGS.allSet:VAL"></span>
-`allSet (``fl1``, ``fl2``) `  
-returns `true` if all of the flags in `fl1` are also in `fl2` (_i.e._, this tests for inclusion of `fl1` in `fl2`).
-
-<span id="SIG:BIT_FLAGS.anySet:VAL"></span>
-`anySet (``fl1``, ``fl2``) `  
-returns `true` if any of the flags in `fl1` is also in `fl2` (_i.e._, this tests for non-empty intersection).
-
-#### Examples
 
 ```repl
-Word8.andb (0w7, 0w3);;
+val f = Posix.FileSys.O.flags [Posix.FileSys.O.nonblock];
+Posix.FileSys.O.clear (f, Posix.FileSys.O.flags [Posix.FileSys.O.nonblock, Posix.FileSys.O.append]) = Posix.FileSys.O.append;; (* true *)
 ```
+
+<span id="SIG:BIT_FLAGS.allSet:VAL"></span>
+
+### `allSet`
+
+```sml
+val allSet : flags * flags -> bool
+```
+returns `true` if all of the flags in `fl1` are also in `fl2` (_i.e._, this tests for inclusion of `fl1` in `fl2`).
+
+
+```repl
+Posix.FileSys.O.allSet (Posix.FileSys.O.nonblock, Posix.FileSys.O.flags [Posix.FileSys.O.nonblock, Posix.FileSys.O.append]);; (* true *)
+```
+
+<span id="SIG:BIT_FLAGS.anySet:VAL"></span>
+
+### `anySet`
+
+```sml
+val anySet : flags * flags -> bool
+```
+returns `true` if any of the flags in `fl1` is also in `fl2` (_i.e._, this tests for non-empty intersection).
+
+```repl
+Posix.FileSys.O.anySet (Posix.FileSys.O.flags [Posix.FileSys.O.nonblock, Posix.FileSys.O.append], Posix.FileSys.O.append);; (* true *)
+```
+
 
 #### See Also
 

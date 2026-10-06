@@ -57,14 +57,50 @@ val totalRealTimer : unit -> real_timer
 **`type`**` real_timer`  
 Type `real_timer` is the type of wall clock (real) timers, and `cpu_timer` is the type of CPU timers.
 
-<span id="SIG:TIMER.startCPUTimer:VAL"></span>**`val`**` startCPUTimer `**`:`**` unit `**`->`**` cpu_timer`  
+<span id="SIG:TIMER.startCPUTimer:VAL"></span>
+
+### `startCPUTimer`
+
+```sml
+val startCPUTimer : unit -> cpu_timer
+```
+**`val`**` startCPUTimer `**`:`**` unit `**`->`**` cpu_timer`  
 This returns a CPU timer that measures the time the process is computing (has control of the CPU) starting at this call.
 
+
+
+```repl
+let val t = Timer.startCPUTimer () in Timer.checkCPUTimer t end;; (* accumulated CPU time *)
+```
+
 <span id="SIG:TIMER.checkCPUTimes:VAL"></span>
+
+### `checkCPUTimes`
+
+```sml
+val checkCPUTimes : cpu_timer -> {
+nongc : {usr : Time.time, sys : Time.time},
+gc : {usr : Time.time, sys : Time.time}
+}
+```
+
 `checkCPUTimes ``timer`` `  
 returns the CPU time used by the program since the `timer` was started. The time is split into time spent in the program (`nongc`) and time spent in the garbage collector (`gc`). For each of these categories, the time is further split into time spent by code in _user space_ (`usr`) and time spent in the operating system on behalf of the program (`sys`). The total CPU time used by the program will be the sum of these four values.
 
+
+
+```repl
+let val t = Timer.startCPUTimer () in Timer.checkCPUTimes t end;; (* user/system times, split by GC *)
+```
+
 <span id="SIG:TIMER.checkCPUTimer:VAL"></span>
+
+### `checkCPUTimer`
+
+```sml
+val checkCPUTimer : cpu_timer -> {usr : Time.time, sys : Time.time}
+```
+
 `checkCPUTimer ``timer`` `  
 returns the user time (`usr`) and system time (`sys`) that have accumulated since the timer `timer` was started. This function is equivalent to
 
@@ -76,30 +112,101 @@ returns the user time (`usr`) and system time (`sys`) that have accumulated sinc
           } end
 
 
+
+
+```repl
+let val t = Timer.startCPUTimer () in Timer.checkCPUTimer t end;; (* user and system CPU time *)
+```
+
 <span id="SIG:TIMER.checkGCTime:VAL"></span>
+
+### `checkGCTime`
+
+```sml
+val checkGCTime : cpu_timer -> Time.time
+```
+
 `checkGCTime ``timer`` `  
 returns the user time spent in garbage collection since the timer `timer` was started. This function is equivalent to
 
         fun checkGCTime ct = #usr(#gc(checkCPUTimes ct))
 
 
-<span id="SIG:TIMER.totalCPUTimer:VAL"></span>**`val`**` totalCPUTimer `**`:`**` unit `**`->`**` cpu_timer`  
+
+
+```repl
+let val t = Timer.startCPUTimer () in Timer.checkGCTime t end;; (* GC user time *)
+```
+
+<span id="SIG:TIMER.totalCPUTimer:VAL"></span>
+
+### `totalCPUTimer`
+
+```sml
+val totalCPUTimer : unit -> cpu_timer
+```
+**`val`**` totalCPUTimer `**`:`**` unit `**`->`**` cpu_timer`  
 This returns a CPU timer that measures the time the process is computing (has control of the CPU) starting at some system-dependent initialization time.
 
-<span id="SIG:TIMER.startRealTimer:VAL"></span>**`val`**` startRealTimer `**`:`**` unit `**`->`**` real_timer`  
+
+
+```repl
+let val t = Timer.totalCPUTimer () in Timer.checkCPUTimer t end;; (* CPU time since implementation-defined start *)
+```
+
+<span id="SIG:TIMER.startRealTimer:VAL"></span>
+
+### `startRealTimer`
+
+```sml
+val startRealTimer : unit -> real_timer
+```
+**`val`**` startRealTimer `**`:`**` unit `**`->`**` real_timer`  
 This returns a wall clock (real) timer that measures how much time passes, starting from the time of this call.
 
+
+
+```repl
+let val t = Timer.startRealTimer () in Timer.checkRealTimer t end;; (* elapsed wall-clock time *)
+```
+
 <span id="SIG:TIMER.checkRealTimer:VAL"></span>
+
+### `checkRealTimer`
+
+```sml
+val checkRealTimer : real_timer -> Time.time
+```
+
 `checkRealTimer ``rt`` `  
 returns the amount of (real) time that has passed since the timer `rt` was started.
 
-<span id="SIG:TIMER.totalRealTimer:VAL"></span>**`val`**` totalRealTimer `**`:`**` unit `**`->`**` real_timer`  
+
+
+```repl
+let val t = Timer.startRealTimer () in Timer.checkRealTimer t end;; (* elapsed wall-clock time *)
+```
+
+<span id="SIG:TIMER.totalRealTimer:VAL"></span>
+
+### `totalRealTimer`
+
+```sml
+val totalRealTimer : unit -> real_timer
+```
+**`val`**` totalRealTimer `**`:`**` unit `**`->`**` real_timer`  
 This returns a wall clock (real) timer that measures how much time passes, starting from some system-dependent initialization time.
+
+
+
+```repl
+let val t = Timer.totalRealTimer () in Timer.checkRealTimer t end;; (* wall-clock time since implementation-defined start *)
+```
 
 #### Examples
 
 ```repl
-Timer.startRealTimer ();;
+let val t = Timer.startRealTimer () in Timer.checkRealTimer t end;; (* near-zero elapsed time *)
 ```
 
 #### See Also

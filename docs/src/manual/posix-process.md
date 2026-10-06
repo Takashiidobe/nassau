@@ -97,16 +97,79 @@ A POSIX signal, an asynchronous notification of an event.
 <span id="SIG:POSIX_PROCESS.pid:TY"></span>**`eqtype`**` pid`  
 A process ID, used as an identifier for an operating system process.
 
-<span id="SIG:POSIX_PROCESS.wordToPid:VAL"></span>**`val`**` wordToPid `**`:`**` SysWord.word `**`->`**` pid`
-**`val`**` pidToWord `**`:`**` pid `**`->`**` SysWord.word`  
+<span id="SIG:POSIX_PROCESS.wordToPid:VAL"></span>
+
+### `wordToPid`
+
+```sml
+val wordToPid : SysWord.word -> pid
+```
+
+```repl
+Posix.Process.wordToPid (Posix.Process.pidToWord (Posix.ProcEnv.getpid ()));; (* current process ID *)
+```
+<span id="SIG:POSIX_PROCESS.pidToWord:VAL"></span>
+
+### `pidToWord`
+
+```sml
+val pidToWord : pid -> SysWord.word
+```
+
 These functions convert between a process ID and the integer representation used by the operating system. Note that there is no validation that a [`pid`](posix-process.md#SIG:POSIX_PROCESS.pid:TY:SPEC) value generated using [`wordToPid`](posix-process.md#SIG:POSIX_PROCESS.wordToPid:VAL:SPEC) is legal on the given system or that it corresponds to a currently running process.
 
-<span id="SIG:POSIX_PROCESS.fork:VAL"></span>**`val`**` fork `**`:`**` unit `**`->`**` pid option`  
+```repl
+Posix.Process.pidToWord (Posix.ProcEnv.getpid ());; (* process ID as a word *)
+```
+<span id="SIG:POSIX_PROCESS.fork:VAL"></span>
+
+### `fork`
+
+```sml
+val fork : unit -> pid option
+```
 This creates a new process. The new child process is a copy of the calling parent process. After execution of [`fork`](posix-process.md#SIG:POSIX_PROCESS.fork:VAL:SPEC), both the parent and child process execute independently, but share various system resources. Upon successful completion, [`fork`](posix-process.md#SIG:POSIX_PROCESS.fork:VAL:SPEC) returns [`NONE`](option.md#SIG:OPTION.option:TY:SPEC) in the child process, and the [`pid`](posix-process.md#SIG:POSIX_PROCESS.pid:TY:SPEC) of the child in the parent process. It raises [`OS.SysErr`](os.md#SIG:OS.SysErr:EXN:SPEC) on failure.
 
+```repl
+Posix.Process.fork;; (* unit -> pid option; calling it creates a child process *)
+```
 <span id="SIG:POSIX_PROCESS.exec:VAL"></span>
+
+### `exec`
+
+```sml
+val exec : string * string list -> 'a
+```
+
+```repl
+Posix.Process.exec;; (* string * string list -> 'a; invocation replaces the current process *)
+```
 `exec (``path``, ``args``) `
+<span id="SIG:POSIX_PROCESS.exece:VAL"></span>
+
+### `exece`
+
+```sml
+val exece : string * string list * string list -> 'a
+```
+
+```repl
+Posix.Process.exece;; (* string * string list * string list -> 'a; invocation replaces the current process *)
+```
+
 `exece (``path``, ``args``, ``env``)`
+<span id="SIG:POSIX_PROCESS.execp:VAL"></span>
+
+### `execp`
+
+```sml
+val execp : string * string list -> 'a
+```
+
+```repl
+Posix.Process.execp;; (* string * string list -> 'a; invocation searches PATH and replaces the current process *)
+```
+
 `execp (``file``, ``args``)`  
 These functions replace the current process image with a new process image. There is no return from a successful call, as the calling process image is overlaid by the new process image. In the first two forms, the `path` argument specifies the pathname of the executable file. In the last form, if `file` contains a slash character, it is treated as the pathname for the executable file; otherwise, an executable file with name `file` is searched for in the directories specified by the environment variable **PATH**.
 
@@ -137,24 +200,69 @@ These values represent the ways in which a process might stop. They correspond t
 
 If an implementation provides both the [`Posix`](posix.md#Posix:STR:SPEC) and [`Unix`](unix.md#Unix:STR:SPEC) structures, then the datatypes [`Posix.Process.exit_status`](posix-process.md#SIG:POSIX_PROCESS.exit_status:TY:SPEC) and [`Unix.exit_status`](unix.md#SIG:UNIX.exit_status:TY:SPEC) must be the same.
 
+```repl
+Posix.Process.exec;; (* string * string list -> 'a; invocation replaces the current process *)
+```
 <span id="SIG:POSIX_PROCESS.fromStatus:VAL"></span>
+
+### `fromStatus`
+
+```sml
+val fromStatus : OS.Process.status -> exit_status
+```
 `fromStatus ``sts`` `  
 returns a concrete view of the given status.
 
 <span id="SIG:POSIX_PROCESS.W:STR"></span>
-**`structure`**` W`  
+**`structure`**` W`
 
-<span id="SIG:POSIX_PROCESS.W.untraced:VAL"></span>**`val`**` untraced `**`:`**` flags`  
+```repl
+Posix.Process.fromStatus OS.Process.success;; (* W_EXITED *)
+```
+<span id="SIG:POSIX_PROCESS.W.untraced:VAL"></span>
+
+### `untraced`
+
+```sml
+val untraced : flags
+```
 In systems supporting job control, this flag requests the status of child processes that are stopped.
 
-<span id="SIG:POSIX_PROCESS.wait:VAL"></span>**`val`**` wait `**`:`**` unit `**`->`**` pid `**`*`**` exit_status`  
+```repl
+Posix.Process.W.untraced;; (* wait flag *)
+```
+<span id="SIG:POSIX_PROCESS.wait:VAL"></span>
+
+### `wait`
+
+```sml
+val wait : unit -> pid * exit_status
+```
 This function allows a calling process to obtain status information on any of its child processes. Execution of [`wait`](posix-process.md#SIG:POSIX_PROCESS.wait:VAL:SPEC) suspends execution until status information on one of its child processes is available. If status information is available prior to the execution of [`wait`](posix-process.md#SIG:POSIX_PROCESS.wait:VAL:SPEC), return is immediate. [`wait`](posix-process.md#SIG:POSIX_PROCESS.wait:VAL:SPEC) returns the process ID of the child and its exit status.
 
+```repl
+Posix.Process.wait;; (* unit -> pid * exit_status; waits for a child *)
+```
 <span id="SIG:POSIX_PROCESS.waitpid:VAL"></span>
+
+### `waitpid`
+
+```sml
+val waitpid : waitpid_arg * W.flags list -> pid * exit_status
+```
 `waitpid (``procs``, ``l``) `  
 is identical to [`wait`](posix-process.md#SIG:POSIX_PROCESS.wait:VAL:SPEC) except that the status is reported only for child processes specified by `procs`. A set of flags `l` may be used to modify the behavior of [`waitpid`](posix-process.md#SIG:POSIX_PROCESS.waitpid:VAL:SPEC).
 
+```repl
+Posix.Process.waitpid;; (* waitpid_arg * W.flags list -> pid * exit_status *)
+```
 <span id="SIG:POSIX_PROCESS.waitpid_nh:VAL"></span>
+
+### `waitpid_nh`
+
+```sml
+val waitpid_nh : waitpid_arg * W.flags list -> (pid * exit_status) option
+```
 `waitpid_nh (``procs``, ``l``) `  
 is identical to [`waitpid`](posix-process.md#SIG:POSIX_PROCESS.waitpid:VAL:SPEC), except that the call does not suspend if status information for one of the children specified by `procs` is not immediately available.
 
@@ -162,8 +270,16 @@ is identical to [`waitpid`](posix-process.md#SIG:POSIX_PROCESS.waitpid:VAL:SPEC)
 >
 > In C, [`waitpid_nh`](posix-process.md#SIG:POSIX_PROCESS.waitpid_nh:VAL:SPEC) is handled by [`waitpid`](posix-process.md#SIG:POSIX_PROCESS.waitpid:VAL:SPEC), using an additional flag to indicate no hanging. In SML, the semantics of [`waitpid_nh`](posix-process.md#SIG:POSIX_PROCESS.waitpid_nh:VAL:SPEC) indicated a different return type from that of [`waitpid`](posix-process.md#SIG:POSIX_PROCESS.waitpid:VAL:SPEC), hence the split into two functions.
 
-
+```repl
+Posix.Process.waitpid_nh (Posix.Process.W_CHILD (Posix.ProcEnv.getpid ()), []);; (* NONE when no matching child has exited *)
+```
 <span id="SIG:POSIX_PROCESS.exit:VAL"></span>
+
+### `exit`
+
+```sml
+val exit : Word8.word -> 'a
+```
 `exit ``i`` `  
 terminates the calling process. If the parent process is executing a [`wait`](posix-process.md#SIG:POSIX_PROCESS.wait:VAL:SPEC) related call, the exit status `i` is made available to it. [`exit`](posix-process.md#SIG:POSIX_PROCESS.exit:VAL:SPEC) does not return to the caller.
 
@@ -180,27 +296,61 @@ All processes in the same process group as the calling process.
 `| K_GROUP `**`of`**` pid`  
 All processes in the process group specified by [`pid`](posix-process.md#SIG:POSIX_PROCESS.pid:TY:SPEC).
 
+```repl
+Posix.Process.exit;; (* Word8.word -> 'a; calling it terminates the process *)
+```
 <span id="SIG:POSIX_PROCESS.kill:VAL"></span>
+
+### `kill`
+
+```sml
+val kill : killpid_arg * signal -> unit
+```
 `kill (``procs``, ``sig``) `  
 sends the signal `sig` to the process or group of processes specified by `procs`.
 
+```repl
+Posix.Process.kill (Posix.Process.K_PROC (Posix.ProcEnv.getpid ()), Posix.Signal.cont);; (* continues the current process *)
+```
 <span id="SIG:POSIX_PROCESS.alarm:VAL"></span>
+
+### `alarm`
+
+```sml
+val alarm : Time.time -> Time.time
+```
 `alarm ``t`` `  
 causes the system to send an alarm signal ([`alrm`](posix-signal.md#SIG:POSIX_SIGNAL.alrm:VAL:SPEC)) to the calling process after `t` seconds have elapsed. If there is a previous alarm request with time remaining, the [`alarm`](posix-process.md#SIG:POSIX_PROCESS.alarm:VAL:SPEC) function returns a nonzero value corresponding to the number of seconds remaining on the previous request. Zero time is returned if there are no outstanding calls.
 
-<span id="SIG:POSIX_PROCESS.pause:VAL"></span>**`val`**` pause `**`:`**` unit `**`->`**` unit`  
+```repl
+Posix.Process.alarm Time.zeroTime;; (* previous alarm time; zero cancels an alarm *)
+```
+<span id="SIG:POSIX_PROCESS.pause:VAL"></span>
+
+### `pause`
+
+```sml
+val pause : unit -> unit
+```
 This suspends the calling process until the delivery of a signal that is either caught or that terminates the process.
 
-<span id="SIG:POSIX_PROCESS.sleep:VAL"></span>
-`sleep ``t`` `  
-causes the current process to be suspended from execution until either `t` seconds have elapsed, or until the receipt of a signal that is either caught or that terminates the process.
-
-#### Examples
-
 ```repl
-Posix.Process.pidToWord (Posix.ProcEnv.getpid ());;
+Posix.Process.pause;; (* unit -> unit; waits for a signal when called *)
 ```
+<span id="SIG:POSIX_PROCESS.sleep:VAL"></span>
+
+### `sleep`
+
+```sml
+val sleep : Time.time -> Time.time
+```
+`sleep ``t`` `\
+causes the current process to be suspended from execution until either `t` seconds have elapsed, or until the receipt of a signal that is either caught or that terminates the process.
 
 #### See Also
 
 > [`BIT_FLAGS`](bit-flags.md#BIT_FLAGS:SIG:SPEC), [`OS.Process`](os.md#SIG:OS.Process:STR:SPEC), [`Posix`](posix.md#Posix:STR:SPEC), [`Posix.Signal`](posix.md#SIG:POSIX.Signal:STR:SPEC)
+
+```repl
+Posix.Process.sleep Time.zeroTime;; (* returns immediately *)
+```

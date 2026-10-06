@@ -68,40 +68,132 @@ The type of Unix-domain datagram sockets.
 <span id="SIG:UNIX_SOCK.sock_addr:TY"></span>**`type`**` sock_addr = unix Socket.sock_addr`  
 The type of a Unix-domain socket address.
 
-<span id="SIG:UNIX_SOCK.unixAF:VAL"></span>**`val`**` unixAF `**`:`**` Socket.AF.addr_family`  
+<span id="SIG:UNIX_SOCK.unixAF:VAL"></span>
+
+### `unixAF`
+
+```sml
+val unixAF : Socket.AF.addr_family
+```
+**`val`**` unixAF `**`:`**` Socket.AF.addr_family`  
 The Unix address family value.
 
+
+
+```repl
+UnixSock.unixAF;; (* address-family value *)
+```
+
 <span id="SIG:UNIX_SOCK.toAddr:VAL"></span>
+
+### `toAddr`
+
+```sml
+val toAddr : string -> sock_addr
+```
+
 `toAddr ``s`` `  
 converts a pathname `s` into a socket address (in the Unix address family); it does not check the validity of the path `s`.
 
+
+
+```repl
+UnixSock.toAddr "/tmp/nassau.sock";; (* Unix-domain address *)
+```
+
 <span id="SIG:UNIX_SOCK.fromAddr:VAL"></span>
+
+### `fromAddr`
+
+```sml
+val fromAddr : sock_addr -> string
+```
+
 `fromAddr ``addr`` `  
 returns the Unix file system path corresponding to the Unix-domain socket address `addr`.
 
 <span id="SIG:UNIX_SOCK.Strm:STR"></span>
 **`structure`**` Strm`  
 
-<span id="SIG:UNIX_SOCK.Strm.socket:VAL"></span>**`val`**` socket `**`:`**` unit `**`->`**` `_`'mode`_` stream_sock`  
+
+
+```repl
+UnixSock.fromAddr (UnixSock.toAddr "/tmp/nassau.sock");; (* "/tmp/nassau.sock" *)
+```
+
+<span id="SIG:UNIX_SOCK.Strm.socket:VAL"></span>
+
+### `Strm.socket`
+
+```sml
+val socket : unit -> 'mode stream_sock
+```
+**`val`**` socket `**`:`**` unit `**`->`**` `_`'mode`_` stream_sock`  
 This function creates a stream socket in the Unix address family. It raises [`SysErr`](os.md#SIG:OS.SysErr:EXN:SPEC) if there are too many sockets in use.
 
-<span id="SIG:UNIX_SOCK.Strm.socketPair:VAL"></span>**`val`**` socketPair `**`:`**` unit`
+
+
+```repl
+let s = UnixSock.Strm.socket () in Socket.close s;; (* creates and closes a stream socket *)
+```
+
+<span id="SIG:UNIX_SOCK.Strm.socketPair:VAL"></span>
+
+### `Strm.socketPair`
+
+```sml
+val socketPair : unit -> 'mode stream_sock * 'mode stream_sock
+```
+**`val`**` socketPair `**`:`**` unit`
 `                   `**`->`**` `_`'mode`_` stream_sock `**`*`**` `_`'mode`_` stream_sock`  
 This function creates an unnamed pair of connected stream sockets in the Unix address family. It is similar to the [`Posix.IO.pipe`](posix-io.md#SIG:POSIX_IO.pipe:VAL:SPEC) function in that the returned sockets are connected, but unlike [`pipe`](posix-io.md#SIG:POSIX_IO.pipe:VAL:SPEC), the sockets are bidirectional. It raises [`SysErr`](os.md#SIG:OS.SysErr:EXN:SPEC) if there are too many sockets in use.
 
 <span id="SIG:UNIX_SOCK.DGrm:STR"></span>
 **`structure`**` DGrm`  
 
-<span id="SIG:UNIX_SOCK.DGrm.socket:VAL"></span>**`val`**` socket `**`:`**` unit `**`->`**` dgram_sock`  
+
+
+```repl
+let (a, b) = UnixSock.Strm.socketPair () in Socket.close a; Socket.close b;; (* creates and closes a connected pair *)
+```
+
+<span id="SIG:UNIX_SOCK.DGrm.socket:VAL"></span>
+
+### `DGrm.socket`
+
+```sml
+val socket : unit -> dgram_sock
+```
+**`val`**` socket `**`:`**` unit `**`->`**` dgram_sock`  
 This function creates a datagram socket in the Unix address family. It raises [`SysErr`](os.md#SIG:OS.SysErr:EXN:SPEC) if there are too many sockets in use.
 
-<span id="SIG:UNIX_SOCK.DGrm.socketPair:VAL"></span>**`val`**` socketPair `**`:`**` unit `**`->`**` dgram_sock `**`*`**` dgram_sock`  
+
+
+```repl
+let s = UnixSock.DGrm.socket () in Socket.close s;; (* creates and closes a datagram socket *)
+```
+
+<span id="SIG:UNIX_SOCK.DGrm.socketPair:VAL"></span>
+
+### `DGrm.socketPair`
+
+```sml
+val socketPair : unit -> dgram_sock * dgram_sock
+```
+**`val`**` socketPair `**`:`**` unit `**`->`**` dgram_sock `**`*`**` dgram_sock`  
 This function creates an unnamed pair of connected datagram sockets in the Unix address family. It raises [`SysErr`](os.md#SIG:OS.SysErr:EXN:SPEC) if there are too many sockets in use.
+
+
+
+```repl
+let (a, b) = UnixSock.DGrm.socketPair () in Socket.close a; Socket.close b;; (* creates and closes a connected pair *)
+```
 
 #### Examples
 
 ```repl
-UnixSock.Strm.socket ();;
+UnixSock.fromAddr (UnixSock.toAddr "");; (* empty pathname round-trips *)
+let (a, b) = UnixSock.Strm.socketPair () in Socket.close a; Socket.close b;; (* connected sockets *)
 ```
 
 #### See Also

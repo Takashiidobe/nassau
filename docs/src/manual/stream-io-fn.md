@@ -33,13 +33,24 @@ val someElem : PrimIO.elem
 <span id="ARG:StreamIO.PrimIO:STR"></span>**`structure`**` PrimIO `**`:`**` `[`PRIM_IO`](prim-io.md#PRIM_IO:SIG:SPEC)  
 The underlying primitive I/O structure.
 
-<span id="ARG:StreamIO.someElem:VAL"></span>**`val`**` someElem `**`:`**` PrimIO.elem`  
+<span id="ARG:StreamIO.someElem:VAL"></span>
+
+### `someElem`
+
+```sml
+val someElem : PrimIO.elem
+```
+
 Some arbitrary element used to initialize buffer arrays.
+
+```repl
+TextPrimIO.someElem;; (* representative character element *)
+```
 
 #### Examples
 
 ```repl
-TextIO.stdIn;;
+TextPrimIO.someElem;; (* representative character element *)
 ```
 
 #### See Also

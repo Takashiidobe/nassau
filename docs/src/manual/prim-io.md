@@ -118,8 +118,18 @@ One typically reads or writes a sequence of elements in one operation. The [`vec
 This is an abstraction of a position in a file, usually used for random access.
 
 <span id="SIG:PRIM_IO.compare:VAL"></span>
+
+### `compare`
+
+```sml
+val compare : pos * pos -> order
+```
 `compare (``pos``, ``pos'``) `  
 returns [`LESS`](general.md#SIG:GENERAL.order:TY:SPEC), [`EQUAL`](general.md#SIG:GENERAL.order:TY:SPEC), or [`GREATER`](general.md#SIG:GENERAL.order:TY:SPEC) when `pos` is less than, equal to, or greater than `pos'`, respectively, in some underlying linear ordering on [`pos`](prim-io.md#SIG:PRIM_IO.pos:TY:SPEC) values.
+
+```repl
+TextPrimIO.compare (0, 0);; (* EQUAL *)
+```
 
 <span id="SIG:PRIM_IO.reader:TY"></span>**`datatype`**` reader`
 `  = RD `**`of`**` {`
@@ -270,16 +280,52 @@ One of `writeVec`, `writeVecNB`, `writeArr`, or `writeArrNB` must be provided. P
 - Absence of `writeArr` or `writeArrNB` means that extra copying will be required to write from an array.
 - Absence of `setPos` prevents random access.
 
-
 <span id="SIG:PRIM_IO.openVector:VAL"></span>
+
+### `openVector`
+
+```sml
+val openVector : vector -> reader
+```
 `openVector ``v`` `  
 creates a reader whose content is `v`.
 
-<span id="SIG:PRIM_IO.nullRd:VAL"></span>**`val`**` nullRd `**`:`**` unit `**`->`**` reader`
-**`val`**` nullWr `**`:`**` unit `**`->`**` writer`  
+```repl
+TextPrimIO.openVector (CharVector.fromList [#"a", #"b"]);; (* reader over "ab" *)
+```
+<span id="SIG:PRIM_IO.nullRd:VAL"></span>
+
+### `nullRd`
+
+```sml
+val nullRd : unit -> reader
+```
+
+<span id="SIG:PRIM_IO.nullWr:VAL"></span>
+
+### `nullWr`
+
+```sml
+val nullWr : unit -> writer
+```
+
 These functions create readers and writers for a null device abstraction. The reader `nullRd` acts like a reader that is always at end-of-stream. The writer `nullWr` serves as a sink; any data written using it is thrown away. Null readers and writers can be closed; if closed, they are expected to behave the same as any other closed reader or writer.
 
+```repl
+TextPrimIO.nullRd ();; (* reader at end of stream *)
+```
+
+```repl
+TextPrimIO.nullWr ();; (* writer that discards output *)
+```
+
 <span id="SIG:PRIM_IO.augmentReader:VAL"></span>
+
+### `augmentReader`
+
+```sml
+val augmentReader : reader -> reader
+```
 `augmentReader ``rd`` `  
 produces a reader in which as many as possible of `readVec`, `readArr`, `readVecNB`, and `readArrNB` are provided, by synthesizing these from the operations of `rd`.
 
@@ -311,7 +357,16 @@ From:
 
 In each case, the synthesized operation may not be as efficient as a more direct implementation --- for example, it is faster to read data directly into an array than it is to read it into a vector and then copy it into the array. But `augmentReader` should do no harm: if a reader `rd` supplies some operation (such as `readArr`), then `augmentReader``(``rd``)` provides the same implementation of that operation, not a synthesized one.
 
+```repl
+TextPrimIO.augmentReader (TextPrimIO.nullRd ());; (* augmented empty reader *)
+```
 <span id="SIG:PRIM_IO.augmentWriter:VAL"></span>
+
+### `augmentWriter`
+
+```sml
+val augmentWriter : writer -> writer
+```
 `augmentWriter ``wr`` `  
 produces a writer in which as many as possible of `writeVec`, `writeArr`, `writeVecNB`, and `writeArrNB` are provided, by synthesizing these from the operations of `wr`.
 
@@ -343,10 +398,8 @@ From:
 
 The synthesized operation may not be as efficient as a more direct implementation, but if a writer supplies some operation, then the augmented writer provides the same implementation of that operation.
 
-#### Examples
-
 ```repl
-TextIO.getInstream TextIO.stdIn;;
+TextPrimIO.augmentWriter (TextPrimIO.nullWr ());; (* augmented null writer *)
 ```
 
 #### See Also

@@ -94,17 +94,67 @@ The type of a reader producing values of type `'a` from a stream of type `'b`. A
 The [`reader`](string-cvt.md#SIG:STRING_CVT.reader:TY:SPEC) type is designed for use with a stream or functional view of I/O. Scanning functions using the [`reader`](string-cvt.md#SIG:STRING_CVT.reader:TY:SPEC) type, such as [`skipWS`](string-cvt.md#SIG:STRING_CVT.skipWS:VAL:SPEC), [`splitl`](string-cvt.md#SIG:STRING_CVT.splitl:VAL:SPEC), and [`Int.scan`](integer.md#SIG:INTEGER.scan:VAL:SPEC), will often use lookahead characters to determine when to stop scanning. If the character source (`'b` in an `('a,'b) reader`) is imperative, the lookahead characters will be lost to any subsequent scanning of the source. One mechanism for combining imperative I/O with the standard scanning functions is provided by the [`TextIO.scanStream`](text-io.md#SIG:TEXT_IO.scanStream:VAL:SPEC) function.
 
 <span id="SIG:STRING_CVT.padLeft:VAL"></span>
+
+### `padLeft`
+
+```sml
+val padLeft : char -> int -> string -> string
+```
+
+### `padRight`
+
+```sml
+val padRight : char -> int -> string -> string
+```
+
 `padLeft ``c`` ``i`` ``s`` `
 ` padRight ``c`` ``i`` ``s`` `  
 These return `s` padded, on the left or right, respectively, with `i` - \|`s`\| copies of the character `c`. If \|`s`\| \>= `i`, they just return the string `s`. In other words, these functions right and left-justify `s` in a field `i` characters wide, never trimming off any part of `s`. Note that if `i` \<= 0, `s` is returned. These functions raise [`Size`](general.md#SIG:GENERAL.Size:EXN:SPEC) if the size of the resulting string would be greater than [`String.maxSize`](string.md#SIG:STRING.maxSize:VAL:SPEC).
 
+
+
+```repl
+StringCvt.padLeft #"0" 5 "42";; (* "00042" *)
+```
+
+```repl
+StringCvt.padRight #"." 5 "42";; (* "42..." *)
+```
+
 <span id="SIG:STRING_CVT.splitl:VAL"></span>
+
+### `splitl`
+
+```sml
+val splitl : (char -> bool) -> (char, 'a) reader -> 'a -> string * 'a
+```
+
 `splitl ``f`` ``rdr`` ``src`` `  
 returns `(``pref``, ``src'``)` where `pref` is the longest prefix (left substring) of `src`, as produced by the character reader `rdr`, all of whose characters satisfy `f`, and `src'` is the remainder of `src`. Thus, the first character retrievable from `src'` is the leftmost character not satisfying `f`.
 
 [`splitl`](string-cvt.md#SIG:STRING_CVT.splitl:VAL:SPEC) can be used with scanning functions such as [`scanString`](string-cvt.md#SIG:STRING_CVT.scanString:VAL:SPEC) by composing it with [`SOME`](option.md#SIG:OPTION.option:TY:SPEC); _e.g._, `scanString (fn rdr => SOME o (splitl f rdr))`.
 
+
+
+```repl
+val getc = fn s => if String.size s = 0 then NONE else SOME (String.sub (s, 0), String.extract (s, 1, NONE));;
+StringCvt.splitl Char.isAlpha getc "abc 123";; (* ("abc", " 123") *)
+```
+
 <span id="SIG:STRING_CVT.takel:VAL"></span>
+
+### `takel`
+
+```sml
+val takel : (char -> bool) -> (char, 'a) reader -> 'a -> string
+```
+
+### `dropl`
+
+```sml
+val dropl : (char -> bool) -> (char, 'a) reader -> 'a -> 'a
+```
+
 `takel ``f`` ``rdr`` ``src`` `
 ` dropl ``f`` ``rdr`` ``src`` `  
 These routines scan the source `src` for the first character not satisfying the predicate `f`. The function [`dropl`](string-cvt.md#SIG:STRING_CVT.dropl:VAL:SPEC) drops the maximal prefix consisting of characters satisfying the predicate, returning the rest of the source, while [`takel`](string-cvt.md#SIG:STRING_CVT.takel:VAL:SPEC) returns the maximal prefix consisting of characters satisfying the predicate. These can be defined in terms of [`splitl`](string-cvt.md#SIG:STRING_CVT.splitl:VAL:SPEC):
@@ -113,21 +163,61 @@ These routines scan the source `src` for the first character not satisfying the 
 [dropl](string-cvt.md#SIG:STRING_CVT.dropl:VAL:SPEC) `f` `rdr` `s` = #2([splitl](string-cvt.md#SIG:STRING_CVT.splitl:VAL:SPEC) `f` `rdr` `s`)
 
 
+
+
+```repl
+val getc = fn s => if String.size s = 0 then NONE else SOME (String.sub (s, 0), String.extract (s, 1, NONE));;
+StringCvt.takel Char.isAlpha getc "abc 123";; (* "abc" *)
+```
+
+```repl
+val getc = fn s => if String.size s = 0 then NONE else SOME (String.sub (s, 0), String.extract (s, 1, NONE));;
+StringCvt.dropl Char.isAlpha getc "abc 123";; (* " 123" *)
+```
+
 <span id="SIG:STRING_CVT.skipWS:VAL"></span>
+
+### `skipWS`
+
+```sml
+val skipWS : (char, 'a) reader -> 'a -> 'a
+```
+
 `skipWS ``rdr`` ``src`` `  
 strips whitespace characters from a stream `src` using the reader `rdr`. It returns the remaining stream. A whitespace character is one that satisfies the predicate [`Char.isSpace`](char.md#SIG:CHAR.isSpace:VAL:SPEC). It is equivalent to [`dropl`](string-cvt.md#SIG:STRING_CVT.dropl:VAL:SPEC)` `[`Char.isSpace`](char.md#SIG:CHAR.isSpace:VAL:SPEC).
 
 <span id="SIG:STRING_CVT.cs:TY"></span>**`type`**` cs`  
 The abstract type of the character stream used by [`scanString`](string-cvt.md#SIG:STRING_CVT.scanString:VAL:SPEC). A value of this type represents the state of a character stream. The concrete type is left unspecified to allow implementations a choice of representations. Typically, `cs` will be an integer index into a string.
 
-<span id="SIG:STRING_CVT.scanString:VAL"></span>**`val`**` scanString `**`:`**` ((char, cs) reader `**`->`**` (`_`'a`_`, cs) reader)`
+
+
+```repl
+val getc = fn s => if String.size s = 0 then NONE else SOME (String.sub (s, 0), String.extract (s, 1, NONE));;
+StringCvt.skipWS getc "  abc";; (* "abc" *)
+```
+
+<span id="SIG:STRING_CVT.scanString:VAL"></span>
+
+### `scanString`
+
+```sml
+val scanString : ((char, cs) reader -> ('a, cs) reader) -> string -> 'a option
+```
+**`val`**` scanString `**`:`**` ((char, cs) reader `**`->`**` (`_`'a`_`, cs) reader)`
 `                   `**`->`**` string `**`->`**` `_`'a`_` option`  
 The function [`scanString`](string-cvt.md#SIG:STRING_CVT.scanString:VAL:SPEC) provides a general framework for converting a string into some value. The user supplies a scanning function and a string. [`scanString`](string-cvt.md#SIG:STRING_CVT.scanString:VAL:SPEC) converts the string into a character source (type [`cs`](string-cvt.md#SIG:STRING_CVT.cs:TY:SPEC)) and applies the scanning function. A scanning function converts a reader of characters into a reader of values of the desired type. Typical scanning functions are [`Bool.scan`](bool.md#SIG:BOOL.scan:VAL:SPEC) and [`Date.scan`](date.md#SIG:DATE.scan:VAL:SPEC).
+
+
+
+```repl
+StringCvt.scanString (Int.scan StringCvt.DEC) "42";; (* SOME 42 *)
+```
 
 #### Examples
 
 ```repl
-StringCvt.scanString (Int.scan StringCvt.DEC) "42";;
+StringCvt.scanString (Int.scan StringCvt.DEC) "42";; (* SOME 42 *)
+StringCvt.scanString (Int.scan StringCvt.DEC) "";; (* NONE *)
 ```
 
 #### See Also

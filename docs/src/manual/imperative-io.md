@@ -85,25 +85,71 @@ The type of redirectable imperative input streams. Two imperative streams may sh
 The type of redirectable output streams. Two redirectable streams may share an underlying stream or writer. If this is the case, writing or positioning the file pointer on one of them, or closing it, also affects the other.
 
 <span id="SIG:IMPERATIVE_IO.input:VAL"></span>
-`input ``strm`` `  
+
+### `input`
+
+```sml
+val input : instream -> vector
+```
 attempts to read from `strm`, starting from the current input file position. When elements are available, it returns a `vector` of at least one element. When `strm` is at end-of-stream or is closed, it returns an empty vector. Otherwise, `input` blocks until one of these conditions is met, and returns accordingly. It may raise the exception [`Io`](io.md#SIG:IO.Io:EXN:SPEC).
 
+
+```repl
+TextIO.input (TextIO.openString "abc");; (* "abc" *)
+```
+
 <span id="SIG:IMPERATIVE_IO.input1:VAL"></span>
-`input1 ``strm`` `  
+
+### `input1`
+
+```sml
+val input1 : instream -> elem option
+```
 reads one element from `strm`. It returns [`SOME`](option.md#SIG:OPTION.option:TY:SPEC)`(e)` if one element was available; it returns [`NONE`](option.md#SIG:OPTION.option:TY:SPEC) if at end-of-stream. It may block, and may raise the exception [`Io`](io.md#SIG:IO.Io:EXN:SPEC).
 
 After a call to [`input1`](imperative-io.md#SIG:IMPERATIVE_IO.input1:VAL:SPEC) returning [`NONE`](option.md#SIG:OPTION.option:TY:SPEC) to indicate an end-of-stream, the input stream should be positioned after the end-of-stream.
 
+
+```repl
+TextIO.input1 (TextIO.openString "abc");; (* SOME #"a" *)
+```
+
 <span id="SIG:IMPERATIVE_IO.inputN:VAL"></span>
-`inputN (``strm``, ``n``) `  
+
+### `inputN`
+
+```sml
+val inputN : instream * int -> vector
+```
 reads at most `n` elements from `strm`. It returns a vector containing `n` elements if at least `n` elements are available before end-of-stream; it returns a shorter (and possibly empty) vector of all elements remaining before end-of-stream otherwise. It may block, and may raise the exception [`Io`](io.md#SIG:IO.Io:EXN:SPEC). It raises [`Size`](general.md#SIG:GENERAL.Size:EXN:SPEC) if `n` \< 0 or if `n` is greater than the [`maxLen`](mono-vector.md#SIG:MONO_VECTOR.maxLen:VAL:SPEC) value for the [`vector`](mono-vector.md#SIG:MONO_VECTOR.vector:TY:SPEC) type.
 
+
+```repl
+TextIO.inputN (TextIO.openString "abc", 2);; (* "ab" *)
+TextIO.inputN (TextIO.openString "", 2);; (* "" *)
+```
+
 <span id="SIG:IMPERATIVE_IO.inputAll:VAL"></span>
-`inputAll ``strm`` `  
+
+### `inputAll`
+
+```sml
+val inputAll : instream -> vector
+```
 returns all elements of `strm` up to end-of-stream. It may block, and may raise the exception [`Io`](io.md#SIG:IO.Io:EXN:SPEC). It raises [`Size`](general.md#SIG:GENERAL.Size:EXN:SPEC) if the amount of data exceeds the [`maxLen`](mono-vector.md#SIG:MONO_VECTOR.maxLen:VAL:SPEC) of the [`vector`](imperative-io.md#SIG:IMPERATIVE_IO.vector:TY:SPEC) type.
 
+
+```repl
+TextIO.inputAll (TextIO.openString "abc");; (* "abc" *)
+```
+
 <span id="SIG:IMPERATIVE_IO.canInput:VAL"></span>
-`canInput (``strm``, ``n``) `  
+
+### `canInput`
+
+```sml
+val canInput : instream * int -> int option
+```
 returns [`NONE`](option.md#SIG:OPTION.option:TY:SPEC) if any attempt at input would block. It returns [`SOME`](option.md#SIG:OPTION.option:TY:SPEC)`(``k``)`, where 0 \<= `k` \<= `n`, if a call to [`input`](imperative-io.md#SIG:IMPERATIVE_IO.input:VAL:SPEC) would return immediately with at least `k` characters. Note that `k` = 0 corresponds to the stream being at end-of-stream.
 
 Some streams may not support this operation, in which case the [`Io`](io.md#SIG:IO.Io:EXN:SPEC) exception will be raised. This function also raises the [`Io`](io.md#SIG:IO.Io:EXN:SPEC) exception if there is an error in the underlying system calls. It raises the [`Size`](general.md#SIG:GENERAL.Size:EXN:SPEC) exception if `n` \< 0.
@@ -113,75 +159,237 @@ Some streams may not support this operation, in which case the [`Io`](io.md#SIG:
 > It is suggested that implementations of [`canInput`](imperative-io.md#SIG:IMPERATIVE_IO.canInput:VAL:SPEC) should attempt to return as large a `k` as possible. For example, if the buffer contains 10 characters and the user calls `canInput (``f``, 15)`, [`canInput`](imperative-io.md#SIG:IMPERATIVE_IO.canInput:VAL:SPEC) should call `readVecNB(5)` to see if an additional 5 characters are available.
 
 
+
+```repl
+TextIO.canInput (TextIO.openString "abc", 2);; (* SOME 2 *)
+```
+
 <span id="SIG:IMPERATIVE_IO.lookahead:VAL"></span>
-`lookahead ``strm`` `  
+
+### `lookahead`
+
+```sml
+val lookahead : instream -> elem option
+```
 determines whether one element is available on `strm` before end-of-stream and returns [`SOME`](option.md#SIG:OPTION.option:TY:SPEC)`(e)` in this case; it returns [`NONE`](option.md#SIG:OPTION.option:TY:SPEC) if at end-of-stream. In the former case, `e` is not removed from `strm` but stays available for further input operations. It may block, and may raise the exception [`Io`](io.md#SIG:IO.Io:EXN:SPEC).
 
 The underlying [`STREAM_IO`](stream-io.md#STREAM_IO:SIG:SPEC) stream can be used to easily implement arbitrary lookahead.
 
+
+```repl
+TextIO.lookahead (TextIO.openString "abc");; (* SOME #"a" *)
+```
+
 <span id="SIG:IMPERATIVE_IO.closeIn:VAL"></span>
-`closeIn ``strm`` `  
+
+### `closeIn`
+
+```sml
+val closeIn : instream -> unit
+```
 closes the input stream `strm`, freeing resources of the underlying I/O layers associated with it. Closing an already closed stream will be ignored. Other operations on a closed stream will behave as if the stream is at end-of-stream. The function is implemented in terms of [`StreamIO.closeIn`](stream-io.md#SIG:STREAM_IO.closeIn:VAL:SPEC). It may also raise [`Io`](io.md#SIG:IO.Io:EXN:SPEC) when another error occurs.
 
+
+```repl
+val input = TextIO.openString "abc";
+TextIO.closeIn input;; (* () *)
+```
+
 <span id="SIG:IMPERATIVE_IO.endOfStream:VAL"></span>
-`endOfStream ``strm`` `  
+
+### `endOfStream`
+
+```sml
+val endOfStream : instream -> bool
+```
 returns `true` if `strm` is at end-of-stream, and `false` if elements are still available. It may block until one of these conditions is determined, and may raise the exception [`Io`](io.md#SIG:IO.Io:EXN:SPEC).
 
 When `endOfStream` returns `true` on an untruncated stream, this denotes the _current_ situation. After a read from `strm` to consume the end-of-stream, it is possible that the next call to `endOfStream ``strm` may return false, and input operations will deliver new elements. For further information, consult the description of [`STREAM_IO.endOfStream`](stream-io.md#SIG:STREAM_IO.endOfStream:VAL:SPEC).
 
-<span id="SIG:IMPERATIVE_IO.output:VAL"></span>
-`output (``strm``, ``vec``) `  
-attempts to write the contents of `vec` to `strm`, starting from the current output file position. It may block until the underlying layers (and eventually the operating system) can accept all of `vec`. It may raise the exception [`Io`](io.md#SIG:IO.Io:EXN:SPEC). In that case, it is unspecified how much of `vec` was actually written.
-
-<span id="SIG:IMPERATIVE_IO.output1:VAL"></span>
-`output1 (``strm``, ``el``) `  
-writes exactly one element `el` to `strm`. It may block, and may raise the exception [`Io`](io.md#SIG:IO.Io:EXN:SPEC) if an error occurs. In that case, it is unspecified how much of `el` was actually written, especially if its physical representation is larger than just one byte. At this level, more than this cannot be guaranteed. Programs that need more control over this possibility need to make use of more primitive or OS-specific I/O routines.
-
-<span id="SIG:IMPERATIVE_IO.flushOut:VAL"></span>
-`flushOut ``strm`` `  
-causes any buffers associated with `strm` to be written out. It is implemented in terms of [`StreamIO.flushOut`](stream-io.md#SIG:STREAM_IO.flushOut:VAL:SPEC). The function may block, and may raise the exception [`Io`](io.md#SIG:IO.Io:EXN:SPEC) when an error occurs.
-
-<span id="SIG:IMPERATIVE_IO.closeOut:VAL"></span>
-`closeOut ``strm`` `  
-flushes any buffers associated with `strm`, then closes `strm`, freeing resources of the underlying I/O layers associated with it. It is implemented in terms of [`StreamIO.closeOut`](stream-io.md#SIG:STREAM_IO.closeOut:VAL:SPEC). A write attempt on a closed [`outstream`](imperative-io.md#SIG:IMPERATIVE_IO.outstream:TY:SPEC) will cause the exception [`Io`](io.md#SIG:IO.Io:EXN:SPEC)`{cause=`[`ClosedStream`](io.md#SIG:IO.ClosedStream:EXN:SPEC)`,...}` to be raised. It may also raise [`Io`](io.md#SIG:IO.Io:EXN:SPEC) if another error occurs (_e.g._, buffers cannot be flushed out).
-
-<span id="SIG:IMPERATIVE_IO.mkInstream:VAL"></span>
-`mkInstream ``strm`` `  
-constructs a redirectable input stream from a functional one. The current version of `strm` returned by input operations will be kept internally and used for the next input. They can be obtained by `getInstream`.
-
-<span id="SIG:IMPERATIVE_IO.getInstream:VAL"></span>
-`getInstream ``strm`` `  
-returns the current version of the underlying functional input stream of `strm`. Using [`getInstream`](imperative-io.md#SIG:IMPERATIVE_IO.getInstream:VAL:SPEC), it is possible to get input directly from the underlying functional stream. After having done so, it may be necessary to reassign the newly obtained functional stream to `strm` using [`setInstream`](imperative-io.md#SIG:IMPERATIVE_IO.setInstream:VAL:SPEC); otherwise the previous input will be read again when reading from `strm` the next time.
-
-<span id="SIG:IMPERATIVE_IO.setInstream:VAL"></span>
-`setInstream (``strm``, ``strm'``) `  
-assigns a new functional stream `strm'` to `strm`. Future input on `strm` will be read from `strm'`. This is useful for redirecting input or interleaving input from different streams, _e.g._, when handling nested include files in a lexer.
-
-<span id="SIG:IMPERATIVE_IO.mkOutstream:VAL"></span>
-`mkOutstream ``strm`` `  
-constructs a redirectable output stream from a low-level functional one. Output to the imperative stream will be redirected to `strm`.
-
-<span id="SIG:IMPERATIVE_IO.getOutstream:VAL"></span>
-`getOutstream ``strm`` `  
-flushes `strm` and returns the underlying [`StreamIO`](imperative-io.md#SIG:IMPERATIVE_IO.StreamIO:STR:SPEC) output stream. Using [`getOutstream`](imperative-io.md#SIG:IMPERATIVE_IO.getOutstream:VAL:SPEC), it is possible to write output directly to the underlying stream, or to save it and restore it using [`setOutstream`](imperative-io.md#SIG:IMPERATIVE_IO.setOutstream:VAL:SPEC) after `strm` has been redirected.
-
-<span id="SIG:IMPERATIVE_IO.setOutstream:VAL"></span>
-`setOutstream (``strm``, ``strm'``) `  
-flushes the stream underlying `strm`, and then assigns a new low-level stream `strm'` to it. Future output on `strm` will be redirected to `strm'`.
-
-<span id="SIG:IMPERATIVE_IO.getPosOut:VAL"></span>
-`getPosOut ``strm`` `  
-returns the current position in the stream `strm`. This raises the exception [`Io`](io.md#SIG:IO.Io:EXN:SPEC) if the stream does not support the operation, among other reasons. See [`StreamIO.getPosOut`](stream-io.md#SIG:STREAM_IO.getPosOut:VAL:SPEC).
-
-<span id="SIG:IMPERATIVE_IO.setPosOut:VAL"></span>
-`setPosOut (``strm``, ``pos``) `  
-sets the current position of the stream `strm` to be `pos`. This raises the exception [`Io`](io.md#SIG:IO.Io:EXN:SPEC) if the stream does not support the operation, among other reasons. See [`StreamIO.setPosOut`](stream-io.md#SIG:STREAM_IO.setPosOut:VAL:SPEC).
-
-#### Examples
 
 ```repl
-TextIO.inputLine TextIO.stdIn;;
+TextIO.endOfStream (TextIO.openString "");; (* true *)
+TextIO.endOfStream (TextIO.openString "a");; (* false *)
 ```
+
+<span id="SIG:IMPERATIVE_IO.output:VAL"></span>
+
+### `output`
+
+```sml
+val output : outstream * vector -> unit
+```
+attempts to write the contents of `vec` to `strm`, starting from the current output file position. It may block until the underlying layers (and eventually the operating system) can accept all of `vec`. It may raise the exception [`Io`](io.md#SIG:IO.Io:EXN:SPEC). In that case, it is unspecified how much of `vec` was actually written.
+
+
+```repl
+TextIO.output (TextIO.stdOut, "hello");; (* prints "hello"; returns () *)
+```
+
+<span id="SIG:IMPERATIVE_IO.output1:VAL"></span>
+
+### `output1`
+
+```sml
+val output1 : outstream * elem -> unit
+```
+writes exactly one element `el` to `strm`. It may block, and may raise the exception [`Io`](io.md#SIG:IO.Io:EXN:SPEC) if an error occurs. In that case, it is unspecified how much of `el` was actually written, especially if its physical representation is larger than just one byte. At this level, more than this cannot be guaranteed. Programs that need more control over this possibility need to make use of more primitive or OS-specific I/O routines.
+
+
+```repl
+TextIO.output1 (TextIO.stdOut, #"!");; (* prints "!"; returns () *)
+```
+
+<span id="SIG:IMPERATIVE_IO.flushOut:VAL"></span>
+
+### `flushOut`
+
+```sml
+val flushOut : outstream -> unit
+```
+causes any buffers associated with `strm` to be written out. It is implemented in terms of [`StreamIO.flushOut`](stream-io.md#SIG:STREAM_IO.flushOut:VAL:SPEC). The function may block, and may raise the exception [`Io`](io.md#SIG:IO.Io:EXN:SPEC) when an error occurs.
+
+
+```repl
+TextIO.flushOut TextIO.stdOut;; (* () *)
+```
+
+<span id="SIG:IMPERATIVE_IO.closeOut:VAL"></span>
+
+### `closeOut`
+
+```sml
+val closeOut : outstream -> unit
+```
+flushes any buffers associated with `strm`, then closes `strm`, freeing resources of the underlying I/O layers associated with it. It is implemented in terms of [`StreamIO.closeOut`](stream-io.md#SIG:STREAM_IO.closeOut:VAL:SPEC). A write attempt on a closed [`outstream`](imperative-io.md#SIG:IMPERATIVE_IO.outstream:TY:SPEC) will cause the exception [`Io`](io.md#SIG:IO.Io:EXN:SPEC)`{cause=`[`ClosedStream`](io.md#SIG:IO.ClosedStream:EXN:SPEC)`,...}` to be raised. It may also raise [`Io`](io.md#SIG:IO.Io:EXN:SPEC) if another error occurs (_e.g._, buffers cannot be flushed out).
+
+
+```repl
+val out = TextIO.openOut "io-example.txt";
+TextIO.closeOut out;; (* () *)
+```
+
+<span id="SIG:IMPERATIVE_IO.mkInstream:VAL"></span>
+
+### `mkInstream`
+
+```sml
+val mkInstream : StreamIO.instream -> instream
+```
+constructs a redirectable input stream from a functional one. The current version of `strm` returned by input operations will be kept internally and used for the next input. They can be obtained by `getInstream`.
+
+
+```repl
+val low = TextIO.getInstream (TextIO.openString "abc");
+val input = TextIO.mkInstream low;
+TextIO.input1 input;; (* SOME #"a" *)
+```
+
+<span id="SIG:IMPERATIVE_IO.getInstream:VAL"></span>
+
+### `getInstream`
+
+```sml
+val getInstream : instream -> StreamIO.instream
+```
+returns the current version of the underlying functional input stream of `strm`. Using [`getInstream`](imperative-io.md#SIG:IMPERATIVE_IO.getInstream:VAL:SPEC), it is possible to get input directly from the underlying functional stream. After having done so, it may be necessary to reassign the newly obtained functional stream to `strm` using [`setInstream`](imperative-io.md#SIG:IMPERATIVE_IO.setInstream:VAL:SPEC); otherwise the previous input will be read again when reading from `strm` the next time.
+
+
+```repl
+TextIO.getInstream (TextIO.openString "abc");; (* underlying functional input stream *)
+```
+
+<span id="SIG:IMPERATIVE_IO.setInstream:VAL"></span>
+
+### `setInstream`
+
+```sml
+val setInstream : instream * StreamIO.instream -> unit
+```
+assigns a new functional stream `strm'` to `strm`. Future input on `strm` will be read from `strm'`. This is useful for redirecting input or interleaving input from different streams, _e.g._, when handling nested include files in a lexer.
+
+
+```repl
+val input = TextIO.openString "old";
+TextIO.setInstream (input, TextIO.getInstream (TextIO.openString "new"));; (* () *)
+TextIO.input input;; (* "new" *)
+```
+
+<span id="SIG:IMPERATIVE_IO.mkOutstream:VAL"></span>
+
+### `mkOutstream`
+
+```sml
+val mkOutstream : StreamIO.outstream -> outstream
+```
+constructs a redirectable output stream from a low-level functional one. Output to the imperative stream will be redirected to `strm`.
+
+
+```repl
+val low = TextIO.getOutstream TextIO.stdOut;
+TextIO.mkOutstream low;; (* redirectable output stream *)
+```
+
+<span id="SIG:IMPERATIVE_IO.getOutstream:VAL"></span>
+
+### `getOutstream`
+
+```sml
+val getOutstream : outstream -> StreamIO.outstream
+```
+flushes `strm` and returns the underlying [`StreamIO`](imperative-io.md#SIG:IMPERATIVE_IO.StreamIO:STR:SPEC) output stream. Using [`getOutstream`](imperative-io.md#SIG:IMPERATIVE_IO.getOutstream:VAL:SPEC), it is possible to write output directly to the underlying stream, or to save it and restore it using [`setOutstream`](imperative-io.md#SIG:IMPERATIVE_IO.setOutstream:VAL:SPEC) after `strm` has been redirected.
+
+
+```repl
+TextIO.getOutstream TextIO.stdOut;; (* underlying functional output stream *)
+```
+
+<span id="SIG:IMPERATIVE_IO.setOutstream:VAL"></span>
+
+### `setOutstream`
+
+```sml
+val setOutstream : outstream * StreamIO.outstream -> unit
+```
+flushes the stream underlying `strm`, and then assigns a new low-level stream `strm'` to it. Future output on `strm` will be redirected to `strm'`.
+
+
+```repl
+TextIO.setOutstream (TextIO.stdOut, TextIO.getOutstream TextIO.stdOut);; (* () *)
+```
+
+<span id="SIG:IMPERATIVE_IO.getPosOut:VAL"></span>
+
+### `getPosOut`
+
+```sml
+val getPosOut : outstream -> StreamIO.out_pos
+```
+returns the current position in the stream `strm`. This raises the exception [`Io`](io.md#SIG:IO.Io:EXN:SPEC) if the stream does not support the operation, among other reasons. See [`StreamIO.getPosOut`](stream-io.md#SIG:STREAM_IO.getPosOut:VAL:SPEC).
+
+
+```repl
+val out = TextIO.openOut "position-example.txt";
+TextIO.getPosOut out;; (* 0 *)
+TextIO.closeOut out;; (* () *)
+```
+
+<span id="SIG:IMPERATIVE_IO.setPosOut:VAL"></span>
+
+### `setPosOut`
+
+```sml
+val setPosOut : outstream * StreamIO.out_pos -> unit
+```
+sets the current position of the stream `strm` to be `pos`. This raises the exception [`Io`](io.md#SIG:IO.Io:EXN:SPEC) if the stream does not support the operation, among other reasons. See [`StreamIO.setPosOut`](stream-io.md#SIG:STREAM_IO.setPosOut:VAL:SPEC).
+
+```repl
+val out = TextIO.openOut "position-example.txt";
+val p = TextIO.getPosOut out;
+TextIO.setPosOut (out, p);; (* () *)
+TextIO.closeOut out;; (* () *)
+```
+
 
 #### See Also
 

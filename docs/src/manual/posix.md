@@ -55,6 +55,10 @@ Processes: fork, exec, wait, exit, kill, alarm, pause, sleep.
 <span id="SIG:POSIX.ProcEnv:STR"></span>**`structure`**` ProcEnv `**`:`**` `[`POSIX_PROC_ENV`](posix-proc-env.md#POSIX_PROC_ENV:SIG:SPEC)  
 User and group IDs, process times, environment, etc.
 
+```repl
+Posix.ProcEnv.getenv "HOME";;
+```
+
 <span id="SIG:POSIX.FileSys:STR"></span>**`structure`**` FileSys `**`:`**` `[`POSIX_FILE_SYS`](posix-file-sys.md#POSIX_FILE_SYS:SIG:SPEC)  
 File system: open, chdir, chmod, directories, etc.
 
@@ -67,11 +71,6 @@ Password database, group database, etc.
 <span id="SIG:POSIX.TTY:STR"></span>**`structure`**` TTY `**`:`**` `[`POSIX_TTY`](posix-tty.md#POSIX_TTY:SIG:SPEC)  
 Terminal (TTY) control: speed, attributes, drain, flush, etc.
 
-#### Examples
-
-```repl
-Posix.ProcEnv.getenv "HOME";;
-```
 
 #### See Also
 

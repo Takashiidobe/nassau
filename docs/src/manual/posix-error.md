@@ -125,26 +125,70 @@ val xdev : syserror
 <span id="SIG:POSIX_ERROR.syserror:TY"></span>**`eqtype`**` syserror = OS.Process.syserror`  
 POSIX error type. This is identical to the type [`OS.syserror`](os.md#SIG:OS.syserror:TY:SPEC).
 
-<span id="SIG:POSIX_ERROR.toWord:VAL"></span>**`val`**` toWord `**`:`**` syserror `**`->`**` SysWord.word`
-**`val`**` fromWord `**`:`**` SysWord.word `**`->`**` syserror`  
+<span id="SIG:POSIX_ERROR.toWord:VAL"></span>
+
+### `toWord`
+
+```sml
+val toWord : syserror -> SysWord.word
+```
+
+```repl
+Posix.Error.toWord Posix.Error.inval;; (* nonzero system word *)
+```
+<span id="SIG:POSIX_ERROR.fromWord:VAL"></span>
+
+### `fromWord`
+
+```sml
+val fromWord : SysWord.word -> syserror
+```
+Converts a nonzero word representation back to a system error. It does not validate that the word denotes a supported error.
+
+```repl
+Posix.Error.fromWord (Posix.Error.toWord Posix.Error.inval);; (* Posix.Error.inval *)
+```
+
 These functions convert between [`syserror`](posix-error.md#SIG:POSIX_ERROR.syserror:TY:SPEC) values and non-zero word representations. Note that there is no validation that a [`syserror`](posix-error.md#SIG:POSIX_ERROR.syserror:TY:SPEC) value generated using [`fromWord`](posix-error.md#SIG:POSIX_ERROR.fromWord:VAL:SPEC) corresponds to an error value supported by the underlying system.
 
 <span id="SIG:POSIX_ERROR.errorMsg:VAL"></span>
+
+### `errorMsg`
+
+```sml
+val errorMsg : syserror -> string
+```
 `errorMsg ``sy`` `  
 returns a string that describes the system error `sy`.
 
+```repl
+Posix.Error.errorMsg Posix.Error.inval;; (* system error message *)
+```
 <span id="SIG:POSIX_ERROR.errorName:VAL"></span>
+
+### `errorName`
+
+```sml
+val errorName : syserror -> string
+```
 `errorName ``err`` `  
 returns a unique name used for the [`syserror`](posix-error.md#SIG:POSIX_ERROR.syserror:TY:SPEC) value.
 
+```repl
+Posix.Error.errorName Posix.Error.inval;; (* system error name *)
+```
 <span id="SIG:POSIX_ERROR.syserror:VAL"></span>
+
+### `syserror`
+
+```sml
+val syserror : string -> syserror option
+```
 `syserror ``s`` `  
 returns the [`syserror`](posix-error.md#SIG:POSIX_ERROR.syserror:TY:SPEC) whose name is `s` if it exists. If `e` is a [`syserror`](posix-error.md#SIG:POSIX_ERROR.syserror:TY:SPEC), we have [`SOME`](option.md#SIG:OPTION.option:TY:SPEC)`(``e``) = `[`syserror`](posix-error.md#SIG:POSIX_ERROR.syserror:VAL:SPEC)`(`[`errorName`](posix-error.md#SIG:POSIX_ERROR.errorName:VAL:SPEC)` ``e``)`.
 
-#### Examples
-
 ```repl
-Posix.Error.errorMsg Posix.Error.inval;;
+Posix.Error.syserror (Posix.Error.errorName Posix.Error.inval);; (* SOME system error *)
 ```
 
 #### See Also
@@ -161,173 +205,689 @@ The values defined in this structure represent the standard POSIX errors. The fo
 
 **Description**
 
+<span id="SIG:POSIX_ERROR.acces:VAL"></span>
+
+### `acces`
+
+```sml
+val acces : syserror
+```
+
+```repl
+Posix.Error.acces;; (* POSIX error value *)
+```
+
 [`acces`](posix-error.md#SIG:POSIX_ERROR.acces:VAL:SPEC)
 
 An attempt was made to access a file in a way that is forbidden by its file access permissions.
+
+<span id="SIG:POSIX_ERROR.again:VAL"></span>
+
+### `again`
+
+```sml
+val again : syserror
+```
+
+```repl
+Posix.Error.again;; (* POSIX error value *)
+```
 
 [`again`](posix-error.md#SIG:POSIX_ERROR.again:VAL:SPEC)
 
 A resource is temporarily unavailable, and later calls to the same routine may complete normally.
 
+<span id="SIG:POSIX_ERROR.badf:VAL"></span>
+
+### `badf`
+
+```sml
+val badf : syserror
+```
+
+```repl
+Posix.Error.badf;; (* POSIX error value *)
+```
+
 [`badf`](posix-error.md#SIG:POSIX_ERROR.badf:VAL:SPEC)
 
 A bad file descriptor was out of range or referred to no open file, or a read (write) request was made to a file which was only open for writing (reading).
+
+<span id="SIG:POSIX_ERROR.badmsg:VAL"></span>
+
+### `badmsg`
+
+```sml
+val badmsg : syserror
+```
+
+```repl
+Posix.Error.badmsg;; (* POSIX error value *)
+```
 
 [`badmsg`](posix-error.md#SIG:POSIX_ERROR.badmsg:VAL:SPEC)
 
 The implementation has detected a corrupted message.
 
+<span id="SIG:POSIX_ERROR.busy:VAL"></span>
+
+### `busy`
+
+```sml
+val busy : syserror
+```
+
+```repl
+Posix.Error.busy;; (* POSIX error value *)
+```
+
 [`busy`](posix-error.md#SIG:POSIX_ERROR.busy:VAL:SPEC)
 
 An attempt was made to use a system resource that was being used in a conflicting manner by another process.
+
+<span id="SIG:POSIX_ERROR.canceled:VAL"></span>
+
+### `canceled`
+
+```sml
+val canceled : syserror
+```
+
+```repl
+Posix.Error.canceled;; (* POSIX error value *)
+```
 
 [`canceled`](posix-error.md#SIG:POSIX_ERROR.canceled:VAL:SPEC)
 
 The associated asynchronous operation was canceled before completion.
 
+<span id="SIG:POSIX_ERROR.child:VAL"></span>
+
+### `child`
+
+```sml
+val child : syserror
+```
+
+```repl
+Posix.Error.child;; (* POSIX error value *)
+```
+
 [`child`](posix-error.md#SIG:POSIX_ERROR.child:VAL:SPEC)
 
 A `wait` related function was executed by a process that had no existing or unwaited-for child process.
+
+<span id="SIG:POSIX_ERROR.deadlk:VAL"></span>
+
+### `deadlk`
+
+```sml
+val deadlk : syserror
+```
+
+```repl
+Posix.Error.deadlk;; (* POSIX error value *)
+```
 
 [`deadlk`](posix-error.md#SIG:POSIX_ERROR.deadlk:VAL:SPEC)
 
 An attempt was made to lock a system resource which would have resulted in a deadlock situation.
 
+<span id="SIG:POSIX_ERROR.dom:VAL"></span>
+
+### `dom`
+
+```sml
+val dom : syserror
+```
+
+```repl
+Posix.Error.dom;; (* POSIX error value *)
+```
+
 [`dom`](posix-error.md#SIG:POSIX_ERROR.dom:VAL:SPEC)
 
 An input argument was outside the defined domain of a mathematical function.
+
+<span id="SIG:POSIX_ERROR.exist:VAL"></span>
+
+### `exist`
+
+```sml
+val exist : syserror
+```
+
+```repl
+Posix.Error.exist;; (* POSIX error value *)
+```
 
 [`exist`](posix-error.md#SIG:POSIX_ERROR.exist:VAL:SPEC)
 
 An existing file was specified in an inappropriate context; for instance, as the new link in a `link` function.
 
+<span id="SIG:POSIX_ERROR.fault:VAL"></span>
+
+### `fault`
+
+```sml
+val fault : syserror
+```
+
+```repl
+Posix.Error.fault;; (* POSIX error value *)
+```
+
 [`fault`](posix-error.md#SIG:POSIX_ERROR.fault:VAL:SPEC)
 
 The system detected an invalid address in attempting to use an argument of a system call.
+
+<span id="SIG:POSIX_ERROR.fbig:VAL"></span>
+
+### `fbig`
+
+```sml
+val fbig : syserror
+```
+
+```repl
+Posix.Error.fbig;; (* POSIX error value *)
+```
 
 [`fbig`](posix-error.md#SIG:POSIX_ERROR.fbig:VAL:SPEC)
 
 The size of a file would exceed an implementation-defined maximum file size.
 
+<span id="SIG:POSIX_ERROR.inprogress:VAL"></span>
+
+### `inprogress`
+
+```sml
+val inprogress : syserror
+```
+
+```repl
+Posix.Error.inprogress;; (* POSIX error value *)
+```
+
 [`inprogress`](posix-error.md#SIG:POSIX_ERROR.inprogress:VAL:SPEC)
 
 An asynchronous process has not yet completed.
+
+<span id="SIG:POSIX_ERROR.intr:VAL"></span>
+
+### `intr`
+
+```sml
+val intr : syserror
+```
+
+```repl
+Posix.Error.intr;; (* POSIX error value *)
+```
 
 [`intr`](posix-error.md#SIG:POSIX_ERROR.intr:VAL:SPEC)
 
 An asynchronous signal (such as a [`quit`](posix-signal.md#SIG:POSIX_SIGNAL.quit:VAL:SPEC) or a [`term`](posix-signal.md#SIG:POSIX_SIGNAL.term:VAL:SPEC) (terminate) signal) was caught by the process during the execution of an interruptible function.
 
+<span id="SIG:POSIX_ERROR.inval:VAL"></span>
+
+### `inval`
+
+```sml
+val inval : syserror
+```
+
+```repl
+Posix.Error.inval;; (* POSIX error value *)
+```
+
 [`inval`](posix-error.md#SIG:POSIX_ERROR.inval:VAL:SPEC)
 
 An invalid argument was supplied.
+
+<span id="SIG:POSIX_ERROR.io:VAL"></span>
+
+### `io`
+
+```sml
+val io : syserror
+```
+
+```repl
+Posix.Error.io;; (* POSIX error value *)
+```
 
 [`io`](posix-error.md#SIG:POSIX_ERROR.io:VAL:SPEC)
 
 Some physical input or output error occurred.
 
+<span id="SIG:POSIX_ERROR.isdir:VAL"></span>
+
+### `isdir`
+
+```sml
+val isdir : syserror
+```
+
+```repl
+Posix.Error.isdir;; (* POSIX error value *)
+```
+
 [`isdir`](posix-error.md#SIG:POSIX_ERROR.isdir:VAL:SPEC)
 
 An illegal operation was attempted on a directory, such as opening a directory for writing.
+
+<span id="SIG:POSIX_ERROR.loop:VAL"></span>
+
+### `loop`
+
+```sml
+val loop : syserror
+```
+
+```repl
+Posix.Error.loop;; (* POSIX error value *)
+```
 
 [`loop`](posix-error.md#SIG:POSIX_ERROR.loop:VAL:SPEC)
 
 A loop was encountered during pathname resolution due to symbolic links.
 
+<span id="SIG:POSIX_ERROR.mfile:VAL"></span>
+
+### `mfile`
+
+```sml
+val mfile : syserror
+```
+
+```repl
+Posix.Error.mfile;; (* POSIX error value *)
+```
+
 [`mfile`](posix-error.md#SIG:POSIX_ERROR.mfile:VAL:SPEC)
 
 An attempt was made to open more than the maximum number of file descriptors allowed in this process.
+
+<span id="SIG:POSIX_ERROR.mlink:VAL"></span>
+
+### `mlink`
+
+```sml
+val mlink : syserror
+```
+
+```repl
+Posix.Error.mlink;; (* POSIX error value *)
+```
 
 [`mlink`](posix-error.md#SIG:POSIX_ERROR.mlink:VAL:SPEC)
 
 An attempt was made to have the link count of a single file exceed a system-dependent limit.
 
+<span id="SIG:POSIX_ERROR.msgsize:VAL"></span>
+
+### `msgsize`
+
+```sml
+val msgsize : syserror
+```
+
+```repl
+Posix.Error.msgsize;; (* POSIX error value *)
+```
+
 [`msgsize`](posix-error.md#SIG:POSIX_ERROR.msgsize:VAL:SPEC)
 
 An inappropriate message buffer length was used.
+
+<span id="SIG:POSIX_ERROR.nametoolong:VAL"></span>
+
+### `nametoolong`
+
+```sml
+val nametoolong : syserror
+```
+
+```repl
+Posix.Error.nametoolong;; (* POSIX error value *)
+```
 
 [`nametoolong`](posix-error.md#SIG:POSIX_ERROR.nametoolong:VAL:SPEC)
 
 The size of a pathname string, or a pathname component, was longer than the system-dependent limit.
 
+<span id="SIG:POSIX_ERROR.nfile:VAL"></span>
+
+### `nfile`
+
+```sml
+val nfile : syserror
+```
+
+```repl
+Posix.Error.nfile;; (* POSIX error value *)
+```
+
 [`nfile`](posix-error.md#SIG:POSIX_ERROR.nfile:VAL:SPEC)
 
 There were too many open files.
+
+<span id="SIG:POSIX_ERROR.nodev:VAL"></span>
+
+### `nodev`
+
+```sml
+val nodev : syserror
+```
+
+```repl
+Posix.Error.nodev;; (* POSIX error value *)
+```
 
 [`nodev`](posix-error.md#SIG:POSIX_ERROR.nodev:VAL:SPEC)
 
 An attempt was made to apply an inappropriate function to a device; for example, trying to read from a write-only device such as a printer.
 
+<span id="SIG:POSIX_ERROR.noent:VAL"></span>
+
+### `noent`
+
+```sml
+val noent : syserror
+```
+
+```repl
+Posix.Error.noent;; (* POSIX error value *)
+```
+
 [`noent`](posix-error.md#SIG:POSIX_ERROR.noent:VAL:SPEC)
 
 A component of a specified pathname did not exist, or the pathname was an empty string.
+
+<span id="SIG:POSIX_ERROR.noexec:VAL"></span>
+
+### `noexec`
+
+```sml
+val noexec : syserror
+```
+
+```repl
+Posix.Error.noexec;; (* POSIX error value *)
+```
 
 [`noexec`](posix-error.md#SIG:POSIX_ERROR.noexec:VAL:SPEC)
 
 A request was made to execute a file that, although it had the appropriate permissions, was not in the format required by the implementation for executable files.
 
+<span id="SIG:POSIX_ERROR.nolck:VAL"></span>
+
+### `nolck`
+
+```sml
+val nolck : syserror
+```
+
+```repl
+Posix.Error.nolck;; (* POSIX error value *)
+```
+
 [`nolck`](posix-error.md#SIG:POSIX_ERROR.nolck:VAL:SPEC)
 
 A system-imposed limit on the number of simultaneous file and record locks was reached.
+
+<span id="SIG:POSIX_ERROR.nomem:VAL"></span>
+
+### `nomem`
+
+```sml
+val nomem : syserror
+```
+
+```repl
+Posix.Error.nomem;; (* POSIX error value *)
+```
 
 [`nomem`](posix-error.md#SIG:POSIX_ERROR.nomem:VAL:SPEC)
 
 The process image required more memory than was allowed by the hardware or by system-imposed memory management constraints.
 
+<span id="SIG:POSIX_ERROR.nospc:VAL"></span>
+
+### `nospc`
+
+```sml
+val nospc : syserror
+```
+
+```repl
+Posix.Error.nospc;; (* POSIX error value *)
+```
+
 [`nospc`](posix-error.md#SIG:POSIX_ERROR.nospc:VAL:SPEC)
 
 During a `write` operation on a regular file, or when extending a directory, there was no free space left on the device.
+
+<span id="SIG:POSIX_ERROR.nosys:VAL"></span>
+
+### `nosys`
+
+```sml
+val nosys : syserror
+```
+
+```repl
+Posix.Error.nosys;; (* POSIX error value *)
+```
 
 [`nosys`](posix-error.md#SIG:POSIX_ERROR.nosys:VAL:SPEC)
 
 An attempt was made to use a function that is not available in this implementation.
 
+<span id="SIG:POSIX_ERROR.notdir:VAL"></span>
+
+### `notdir`
+
+```sml
+val notdir : syserror
+```
+
+```repl
+Posix.Error.notdir;; (* POSIX error value *)
+```
+
 [`notdir`](posix-error.md#SIG:POSIX_ERROR.notdir:VAL:SPEC)
 
 A component of the specified pathname existed, but it was not a directory, when a directory was expected.
+
+<span id="SIG:POSIX_ERROR.notempty:VAL"></span>
+
+### `notempty`
+
+```sml
+val notempty : syserror
+```
+
+```repl
+Posix.Error.notempty;; (* POSIX error value *)
+```
 
 [`notempty`](posix-error.md#SIG:POSIX_ERROR.notempty:VAL:SPEC)
 
 A directory with entries other than `"."` and `".."` was supplied when an empty directory was expected.
 
+<span id="SIG:POSIX_ERROR.notsup:VAL"></span>
+
+### `notsup`
+
+```sml
+val notsup : syserror
+```
+
+```repl
+Posix.Error.notsup;; (* POSIX error value *)
+```
+
 [`notsup`](posix-error.md#SIG:POSIX_ERROR.notsup:VAL:SPEC)
 
 The implementation does not support this feature of the standard.
+
+<span id="SIG:POSIX_ERROR.notty:VAL"></span>
+
+### `notty`
+
+```sml
+val notty : syserror
+```
+
+```repl
+Posix.Error.notty;; (* POSIX error value *)
+```
 
 [`notty`](posix-error.md#SIG:POSIX_ERROR.notty:VAL:SPEC)
 
 A control function was attempted for a file or a special file for which the operation was inappropriate.
 
+<span id="SIG:POSIX_ERROR.nxio:VAL"></span>
+
+### `nxio`
+
+```sml
+val nxio : syserror
+```
+
+```repl
+Posix.Error.nxio;; (* POSIX error value *)
+```
+
 [`nxio`](posix-error.md#SIG:POSIX_ERROR.nxio:VAL:SPEC)
 
 Input or output on a special file referred to a device which did not exist, or made a request beyond the limits of the device. This error may occur when, for example, a tape drive is not online.
+
+<span id="SIG:POSIX_ERROR.perm:VAL"></span>
+
+### `perm`
+
+```sml
+val perm : syserror
+```
+
+```repl
+Posix.Error.perm;; (* POSIX error value *)
+```
 
 [`perm`](posix-error.md#SIG:POSIX_ERROR.perm:VAL:SPEC)
 
 An attempt was made to perform an operation limited to processes with appropriate privileges or to the owner of a file or some other resource.
 
+<span id="SIG:POSIX_ERROR.pipe:VAL"></span>
+
+### `pipe`
+
+```sml
+val pipe : syserror
+```
+
+```repl
+Posix.Error.pipe;; (* POSIX error value *)
+```
+
 [`pipe`](posix-error.md#SIG:POSIX_ERROR.pipe:VAL:SPEC)
 
 A write was attempted on a pipe or FIFO for which there was no process to read the data.
+
+<span id="SIG:POSIX_ERROR.range:VAL"></span>
+
+### `range`
+
+```sml
+val range : syserror
+```
+
+```repl
+Posix.Error.range;; (* POSIX error value *)
+```
 
 [`range`](posix-error.md#SIG:POSIX_ERROR.range:VAL:SPEC)
 
 The result of a function was too large to fit in the available space.
 
+<span id="SIG:POSIX_ERROR.rofs:VAL"></span>
+
+### `rofs`
+
+```sml
+val rofs : syserror
+```
+
+```repl
+Posix.Error.rofs;; (* POSIX error value *)
+```
+
 [`rofs`](posix-error.md#SIG:POSIX_ERROR.rofs:VAL:SPEC)
 
 An attempt was made to modify a file or directory on a file system which was read-only at that time.
+
+<span id="SIG:POSIX_ERROR.spipe:VAL"></span>
+
+### `spipe`
+
+```sml
+val spipe : syserror
+```
+
+```repl
+Posix.Error.spipe;; (* POSIX error value *)
+```
 
 [`spipe`](posix-error.md#SIG:POSIX_ERROR.spipe:VAL:SPEC)
 
 An invalid seek operation was issued on a pipe or FIFO.
 
+<span id="SIG:POSIX_ERROR.srch:VAL"></span>
+
+### `srch`
+
+```sml
+val srch : syserror
+```
+
+```repl
+Posix.Error.srch;; (* POSIX error value *)
+```
+
 [`srch`](posix-error.md#SIG:POSIX_ERROR.srch:VAL:SPEC)
 
 No such process could be found corresponding to that specified by a given process ID.
 
+<span id="SIG:POSIX_ERROR.toobig:VAL"></span>
+
+### `toobig`
+
+```sml
+val toobig : syserror
+```
+
+```repl
+Posix.Error.toobig;; (* POSIX error value *)
+```
+
 [`toobig`](posix-error.md#SIG:POSIX_ERROR.toobig:VAL:SPEC)
 
 The sum of bytes used by the argument list and environment list was greater than the system-imposed limit.
+
+<span id="SIG:POSIX_ERROR.xdev:VAL"></span>
+
+### `xdev`
+
+```sml
+val xdev : syserror
+```
+
+```repl
+Posix.Error.xdev;; (* POSIX error value *)
+```
 
 [`xdev`](posix-error.md#SIG:POSIX_ERROR.xdev:VAL:SPEC)
 

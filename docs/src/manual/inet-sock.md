@@ -68,49 +68,153 @@ The type of Internet-domain datagram sockets.
 <span id="SIG:INET_SOCK.sock_addr:TY"></span>**`type`**` sock_addr = inet Socket.sock_addr`  
 The type of Internet-domain socket addresses.
 
-<span id="SIG:INET_SOCK.inetAF:VAL"></span>**`val`**` inetAF `**`:`**` Socket.AF.addr_family`  
+<span id="SIG:INET_SOCK.inetAF:VAL"></span>
+
+### `inetAF`
+
+```sml
+val inetAF : Socket.AF.addr_family
+```
 The address family value that represents the Internet domain.
 
+
+```repl
+INetSock.inetAF;; (* Socket.AF_INET *)
+```
+
 <span id="SIG:INET_SOCK.toAddr:VAL"></span>
-`toAddr (``ia``, ``i``) `  
+
+### `toAddr`
+
+```sml
+val toAddr : NetHostDB.in_addr * int -> sock_addr
+```
 converts an Internet address `ia` and a port number `i` into a socket address (in the INet address family).
 
-<span id="SIG:INET_SOCK.fromAddr:VAL"></span>**`val`**` fromAddr `**`:`**` sock_addr `**`->`**` NetHostDB.in_addr `**`*`**` int`  
+
+```repl
+val ip = valOf (NetHostDB.fromString "127.0.0.1");
+INetSock.toAddr (ip, 8080);; (* address 127.0.0.1, port 8080 *)
+```
+
+<span id="SIG:INET_SOCK.fromAddr:VAL"></span>
+
+### `fromAddr`
+
+```sml
+val fromAddr : sock_addr -> NetHostDB.in_addr * int
+```
 This function converts a socket address (in the INet address family) into a pair `(ia,i)` of an Internet address `ia` and a port number `i`.
 
+
+```repl
+val ip = valOf (NetHostDB.fromString "127.0.0.1");
+INetSock.fromAddr (INetSock.toAddr (ip, 8080));; (* (127.0.0.1, 8080) *)
+```
+
 <span id="SIG:INET_SOCK.any:VAL"></span>
-`any ``port`` `  
+
+### `any`
+
+```sml
+val any : int -> sock_addr
+```
 creates a socket address that fixes the port to `port`, but leaves the Internet address unspecified. This function corresponds to the `INADDR_ANY` constant in the C Sockets API. The values created by this function are used to [`bind`](socket.md#SIG:SOCKET.bind:VAL:SPEC) a socket to a specific port.
+
+
+```repl
+INetSock.fromAddr (INetSock.any 8080);; (* unspecified address, port 8080 *)
+```
 
 <span id="SIG:INET_SOCK.UDP:STR"></span>
 **`structure`**` UDP`  
 
-<span id="SIG:INET_SOCK.UDP.socket:VAL"></span>**`val`**` socket `**`:`**` unit `**`->`**` dgram_sock`  
+<span id="SIG:INET_SOCK.UDP.socket:VAL"></span>
+
+### `UDP.socket`
+
+```sml
+val socket : unit -> dgram_sock
+```
 This creates a datagram socket in the INet address family with the default protocol. It raises [`SysErr`](os.md#SIG:OS.SysErr:EXN:SPEC) if there are too many sockets in use.
 
+
+```repl
+val s = INetSock.UDP.socket ();
+Socket.close s;; (* () *)
+```
+
 <span id="SIG:INET_SOCK.UDP.socket':VAL"></span>
-`socket' ``prot`` `  
+
+### `UDP.socket'`
+
+```sml
+val socket' : int -> dgram_sock
+```
 creates a datagram socket in the INet address family with the protocol number `prot`. The interpretation of `prot` is system dependent, but a value of `0` is equivalent to [`socket`](inet-sock.md#SIG:INET_SOCK.UDP.socket:VAL:SPEC)`()`. It raises [`SysErr`](os.md#SIG:OS.SysErr:EXN:SPEC) if there are too many sockets in use.
+
+
+```repl
+val s = INetSock.UDP.socket' 0;
+Socket.close s;; (* () *)
+```
 
 <span id="SIG:INET_SOCK.TCP:STR"></span>
 **`structure`**` TCP`  
 
-<span id="SIG:INET_SOCK.TCP.socket:VAL"></span>**`val`**` socket `**`:`**` unit `**`->`**` `_`'mode`_` stream_sock`  
+<span id="SIG:INET_SOCK.TCP.socket:VAL"></span>
+
+### `TCP.socket`
+
+```sml
+val socket : unit -> 'mode stream_sock
+```
 This creates a stream socket in the INet address family with the default protocol. It raises [`SysErr`](os.md#SIG:OS.SysErr:EXN:SPEC) if there are too many sockets in use.
 
-<span id="SIG:INET_SOCK.TCP.socket':VAL"></span>
-`socket' ``prot`` `  
-creates a stream socket in the INet address family with the protocol number `prot`. The interpretation of `prot` is system dependent, but a value of `0` is equivalent to [`socket`](inet-sock.md#SIG:INET_SOCK.TCP.socket:VAL:SPEC)`()`.
-
-<span id="SIG:INET_SOCK.TCP.getNODELAY:VAL"></span>**`val`**` getNODELAY `**`:`**` `_`'mode`_` stream_sock `**`->`**` bool`
-**`val`**` setNODELAY `**`:`**` `_`'mode`_` stream_sock `**`*`**` bool `**`->`**` unit`  
-These functions query and set the `TCP_NODELAY` flag on the socket. When set to `false` (the default), there is only a single small packet allowed to be outstanding on a given TCP connection at any time, thereby reducing small packet traffic on slower WANs. When set to `true`, packets are sent as fast as possible. \[\[Refer to Stevens, p.316.\]\]
-
-#### Examples
 
 ```repl
-INetSock.TCP.socket ();;
+val s = INetSock.TCP.socket ();
+Socket.close s;; (* () *)
 ```
+
+<span id="SIG:INET_SOCK.TCP.socket':VAL"></span>
+
+### `TCP.socket'`
+
+```sml
+val socket' : int -> 'mode stream_sock
+```
+creates a stream socket in the INet address family with the protocol number `prot`. The interpretation of `prot` is system dependent, but a value of `0` is equivalent to [`socket`](inet-sock.md#SIG:INET_SOCK.TCP.socket:VAL:SPEC)`()`.
+
+
+```repl
+val s = INetSock.TCP.socket' 0;
+Socket.close s;; (* () *)
+```
+
+<span id="SIG:INET_SOCK.TCP.getNODELAY:VAL"></span>
+
+### `TCP.getNODELAY`
+
+```sml
+val getNODELAY : 'mode stream_sock -> bool
+```
+
+### `TCP.setNODELAY`
+
+```sml
+val setNODELAY : 'mode stream_sock * bool -> unit
+```
+These functions query and set the `TCP_NODELAY` flag on the socket. When set to `false` (the default), there is only a single small packet allowed to be outstanding on a given TCP connection at any time, thereby reducing small packet traffic on slower WANs. When set to `true`, packets are sent as fast as possible. \[\[Refer to Stevens, p.316.\]\]
+
+```repl
+val s = INetSock.TCP.socket ();
+INetSock.TCP.getNODELAY s;; (* false *)
+INetSock.TCP.setNODELAY (s, true);; (* () *)
+INetSock.TCP.getNODELAY s;; (* true *)
+Socket.close s;; (* () *)
+```
+
 
 #### See Also
 

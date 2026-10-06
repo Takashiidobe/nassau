@@ -73,57 +73,223 @@ val collate : ('a * 'a -> order) -> 'a slice * 'a slice -> order
 #### Description
 
 <span id="SIG:VECTOR_SLICE.length:VAL"></span>
+
+### `length`
+
+```sml
+val length : 'a slice -> int
+```
+
 `length ``sl`` `  
 returns \|`sl`\|, the length (_i.e._, number of elements) of the slice.
 
+
+
+```repl
+VectorSlice.length (VectorSlice.full (Vector.fromList [1, 2, 3]));; (* 3 *)
+```
+
 <span id="SIG:VECTOR_SLICE.sub:VAL"></span>
+
+### `sub`
+
+```sml
+val sub : 'a slice * int -> 'a
+```
+
 `sub (``sl``, ``i``) `  
 returns the `i`<sup>(th)</sup> element of the slice `sl`. If `i` \< 0 or \|`sl`\| \<= `i`, then the [`Subscript`](general.md#SIG:GENERAL.Subscript:EXN:SPEC) exception is raised.
 
+
+
+```repl
+VectorSlice.sub (VectorSlice.full (Vector.fromList [1, 2, 3]), 1);; (* 2 *)
+```
+
 <span id="SIG:VECTOR_SLICE.full:VAL"></span>
+
+### `full`
+
+```sml
+val full : 'a Vector.vector -> 'a slice
+```
+
 `full ``vec`` `  
 creates a slice representing the entire vector `vec`. It is equivalent to
 
 [slice](vector-slice.md#SIG:VECTOR_SLICE.slice:VAL:SPEC)(`vec`, 0, [NONE](option.md#SIG:OPTION.option:TY:SPEC))
 
 
+
+
+```repl
+VectorSlice.vector (VectorSlice.full (Vector.fromList [1, 2, 3]));; (* #[1, 2, 3] *)
+```
+
 <span id="SIG:VECTOR_SLICE.slice:VAL"></span>
+
+### `slice`
+
+```sml
+val slice : 'a Vector.vector * int * int option -> 'a slice
+```
+
 `slice (``vec``, ``i``, ``sz``) `  
 creates a slice based on the vector `vec` starting at index `i` of the vector `vec`. If `sz` is [`NONE`](option.md#SIG:OPTION.option:TY:SPEC), the slice includes all of the elements to the end of the vector, _i.e._, `vec`\[`i`..\|`vec`\|-1\]. This raises [`Subscript`](general.md#SIG:GENERAL.Subscript:EXN:SPEC) if `i`` < 0` or \|`vec`\| \< `i`. If `sz` is [`SOME`](option.md#SIG:OPTION.option:TY:SPEC)`(``j``)`, the slice has length `j`, that is, it corresponds to `vec``[``i``..``i``+``j``-1]`. It raises [`Subscript`](general.md#SIG:GENERAL.Subscript:EXN:SPEC) if `i` \< 0 or `j` \< 0 or \|`arr`\| \< `i` + `j`. Note that, if defined, [`slice`](vector-slice.md#SIG:VECTOR_SLICE.slice:VAL:SPEC) returns an empty slice when `i` = \|`vec`\|.
 
+
+
+```repl
+VectorSlice.vector (VectorSlice.slice (Vector.fromList [1, 2, 3], 1, SOME 2));; (* #[2, 3] *)
+```
+
 <span id="SIG:VECTOR_SLICE.subslice:VAL"></span>
+
+### `subslice`
+
+```sml
+val subslice : 'a slice * int * int option -> 'a slice
+```
+
 `subslice (``sl``, ``i``, ``sz``) `  
 creates a slice based on the given slice `sl` starting at index `i` of `sl`. If `sz` is [`NONE`](option.md#SIG:OPTION.option:TY:SPEC), the slice includes all of the elements to the end of the slice, _i.e._, `sl`\[`i`..\|`sl`\|-1\]. This raises [`Subscript`](general.md#SIG:GENERAL.Subscript:EXN:SPEC) if `i`` < 0` or \|`sl`\| \< `i`. If `sz` is [`SOME`](option.md#SIG:OPTION.option:TY:SPEC)`(``j``)`, the slice has length `j`, that is, it corresponds to `sl``[``i``..``i``+``j``-1]`. It raises [`Subscript`](general.md#SIG:GENERAL.Subscript:EXN:SPEC) if `i` \< 0 or `j` \< 0 or \|`sl`\| \< `i` + `j`. Note that, if defined, [`slice`](vector-slice.md#SIG:VECTOR_SLICE.slice:VAL:SPEC) returns an empty slice when `i` = \|`sl`\|.
 
+
+
+```repl
+VectorSlice.vector (VectorSlice.subslice (VectorSlice.full (Vector.fromList [1, 2, 3]), 1, SOME 2));; (* #[2, 3] *)
+```
+
 <span id="SIG:VECTOR_SLICE.base:VAL"></span>
+
+### `base`
+
+```sml
+val base : 'a slice -> 'a Vector.vector * int * int
+```
+
 `base ``sl`` `  
 returns a triple `(``vec``, ``i``, ``n``)` representing the concrete representation of the slice. `vec` is the underlying vector, `i` is the starting index, and `n` is the length of the slice.
 
+
+
+```repl
+VectorSlice.base (VectorSlice.full (Vector.fromList [1, 2, 3]));; (* (#[1, 2, 3], 0, 3) *)
+```
+
 <span id="SIG:VECTOR_SLICE.vector:VAL"></span>
+
+### `vector`
+
+```sml
+val vector : 'a slice -> 'a Vector.vector
+```
+
 `vector ``sl`` `  
 generates a vector from the slice `sl`. Specifically, the result is equivalent to
 
           Vector.tabulate (length `sl`, fn i =\> sub (`sl`, i))
 
 
+
+
+```repl
+VectorSlice.vector (VectorSlice.full (Vector.fromList [1, 2, 3]));; (* #[1, 2, 3] *)
+```
+
 <span id="SIG:VECTOR_SLICE.concat:VAL"></span>
+
+### `concat`
+
+```sml
+val concat : 'a slice list -> 'a Vector.vector
+```
+
 `concat ``l`` `  
 is the concatenation of all the slices in `l`. This raises [`Size`](general.md#SIG:GENERAL.Size:EXN:SPEC) if the sum of all the lengths is greater than [`Vector.maxLen`](vector.md#SIG:VECTOR.maxLen:VAL:SPEC).
 
+
+
+```repl
+VectorSlice.concat [VectorSlice.full (Vector.fromList [1, 2, 3]), VectorSlice.full (Vector.fromList [4])];; (* #[1, 2, 3, 4] *)
+```
+
 <span id="SIG:VECTOR_SLICE.isEmpty:VAL"></span>
+
+### `isEmpty`
+
+```sml
+val isEmpty : 'a slice -> bool
+```
+
 `isEmpty ``sl`` `  
 returns `true` if `sl` has length 0.
 
+
+
+```repl
+VectorSlice.isEmpty (VectorSlice.full (Vector.fromList []));; (* true *)
+```
+
 <span id="SIG:VECTOR_SLICE.getItem:VAL"></span>
+
+### `getItem`
+
+```sml
+val getItem : 'a slice -> ('a * 'a slice) option
+```
+
 `getItem ``sl`` `  
 returns the first item in `sl` and the rest of the slice, or [`NONE`](option.md#SIG:OPTION.option:TY:SPEC) if `sl` is empty.
 
+
+
+```repl
+Option.isSome (VectorSlice.getItem (VectorSlice.full (Vector.fromList [1, 2, 3])));; (* true *)
+```
+
 <span id="SIG:VECTOR_SLICE.appi:VAL"></span>
+
+### `appi`
+
+```sml
+val appi : (int * 'a -> unit) -> 'a slice -> unit
+```
+
+### `app`
+
+```sml
+val app : ('a -> unit) -> 'a slice -> unit
+```
+
 `appi ``f`` ``sl`` `
 ` app ``f`` ``sl`` `  
 These apply the function `f` to the elements of a slice in left to right order (_i.e._, increasing indices). The more general [`appi`](vector-slice.md#SIG:VECTOR_SLICE.appi:VAL:SPEC) function supplies `f` with the index of the corresponding element in the slice. The expression `app ``f`` ``sl` is equivalent to `appi (``f`` o #2) ``sl`.
 
+
+
+```repl
+VectorSlice.foldli (fn (i, x, acc) => (i, x) :: acc) [] (VectorSlice.full (Vector.fromList [1, 2, 3]));; (* [(2, 3), (1, 2), (0, 1)] *)
+```
+
+```repl
+VectorSlice.foldr op:: [] (VectorSlice.full (Vector.fromList [1, 2, 3]));; (* [1, 2, 3] *)
+```
+
 <span id="SIG:VECTOR_SLICE.mapi:VAL"></span>
+
+### `mapi`
+
+```sml
+val mapi : (int * 'a -> 'b) -> 'a slice -> 'b Vector.vector
+```
+
+### `map`
+
+```sml
+val map : ('a -> 'b) -> 'a slice -> 'b Vector.vector
+```
+
 `mapi ``f`` ``sl`` `
 ` map ``f`` ``sl`` `  
 These functions generate new vectors by mapping the function `f` from left to right over the argument slice. The more general [`mapi`](vector-slice.md#SIG:VECTOR_SLICE.mapi:VAL:SPEC) function supplies both the element and the element's index in the slice to the function `f`. The first expression is equivalent to:
@@ -139,7 +305,42 @@ The latter expression is equivalent to:
       [mapi](vector-slice.md#SIG:VECTOR_SLICE.mapi:VAL:SPEC) (`f` o #2) `sl`
 
 
+
+
+```repl
+VectorSlice.mapi (fn (i, x) => i + x) (VectorSlice.full (Vector.fromList [1, 2, 3]));; (* #[1, 3, 5] *)
+```
+
+```repl
+VectorSlice.map (fn x => x * 2) (VectorSlice.full (Vector.fromList [1, 2, 3]));; (* #[2, 4, 6] *)
+```
+
 <span id="SIG:VECTOR_SLICE.foldli:VAL"></span>
+
+### `foldli`
+
+```sml
+val foldli : (int * 'a * 'b -> 'b) -> 'b -> 'a slice -> 'b
+```
+
+### `foldri`
+
+```sml
+val foldri : (int * 'a * 'b -> 'b) -> 'b -> 'a slice -> 'b
+```
+
+### `foldl`
+
+```sml
+val foldl : ('a * 'b -> 'b) -> 'b -> 'a slice -> 'b
+```
+
+### `foldr`
+
+```sml
+val foldr : ('a * 'b -> 'b) -> 'b -> 'a slice -> 'b
+```
+
 `foldli ``f`` ``init`` ``sl`` `
 ` foldri ``f`` ``init`` ``sl`` `
 ` foldl ``f`` ``init`` ``sl`` `
@@ -154,27 +355,108 @@ foldli (fn (\_, `a`, `x`) =\> `f`(`a`, `x`)) `init` `sl`
 
 The analogous equivalence holds for [`foldri`](vector-slice.md#SIG:VECTOR_SLICE.foldri:VAL:SPEC) and [`foldr`](vector-slice.md#SIG:VECTOR_SLICE.foldr:VAL:SPEC).
 
+
+
+```repl
+VectorSlice.foldli (fn (i, x, n) => n + i + x) 0 (VectorSlice.full (Vector.fromList [1, 2, 3]));; (* 9 *)
+```
+
+```repl
+VectorSlice.foldri (fn (i, x, n) => n + i + x) 0 (VectorSlice.full (Vector.fromList [1, 2, 3]));; (* 9 *)
+```
+
+```repl
+VectorSlice.foldl op+ 0 (VectorSlice.full (Vector.fromList [1, 2, 3]));; (* 6 *)
+```
+
+```repl
+VectorSlice.foldr op+ 0 (VectorSlice.full (Vector.fromList [1, 2, 3]));; (* 6 *)
+```
+
 <span id="SIG:VECTOR_SLICE.findi:VAL"></span>
+
+### `findi`
+
+```sml
+val findi : (int * 'a -> bool) -> 'a slice -> (int * 'a) option
+```
+
+### `find`
+
+```sml
+val find : ('a -> bool) -> 'a slice -> 'a option
+```
+
 `findi ``f`` ``sl`` `
 ` find ``f`` ``sl`` `  
 These apply `f` to each element of the slice `sl`, from left to right (_i.e._, increasing indices), until a `true` value is returned. If this occurs, the functions return the element; otherwise, they return [`NONE`](option.md#SIG:OPTION.option:TY:SPEC). The more general version [`findi`](vector-slice.md#SIG:VECTOR_SLICE.findi:VAL:SPEC) also supplies `f` with the index of the element in the slice and, upon finding an entry satisfying the predicate, returns that index with the element.
 
+
+
+```repl
+VectorSlice.findi (fn (_, x) => x > 1) (VectorSlice.full (Vector.fromList [1, 2, 3]));; (* SOME (1, 2) *)
+```
+
+```repl
+VectorSlice.find (fn x => x > 2) (VectorSlice.full (Vector.fromList [1, 2, 3]));; (* SOME 3 *)
+```
+
 <span id="SIG:VECTOR_SLICE.exists:VAL"></span>
+
+### `exists`
+
+```sml
+val exists : ('a -> bool) -> 'a slice -> bool
+```
+
 `exists ``f`` ``sl`` `  
 applies `f` to each element `x` of the slice `sl`, from left to right (_i.e._, increasing indices), until `f``(``x``)` evaluates to `true`; it returns `true` if such an `x` exists and `false` otherwise.
 
+
+
+```repl
+VectorSlice.exists (fn x => x = 2) (VectorSlice.full (Vector.fromList [1, 2, 3]));; (* true *)
+```
+
 <span id="SIG:VECTOR_SLICE.all:VAL"></span>
+
+### `all`
+
+```sml
+val all : ('a -> bool) -> 'a slice -> bool
+```
+
 `all ``f`` ``sl`` `  
 applies `f` to each element `x` of the slice `sl`, from left to right (_i.e._, increasing indices), until `f``(``x``)` evaluates to `false`; it returns `false` if such an `x` exists and `true` otherwise. It is equivalent to [`not`](bool.md#SIG:BOOL.not:VAL:SPEC)`(`[`exists`](vector-slice.md#SIG:VECTOR_SLICE.exists:VAL:SPEC)` (`[`not`](bool.md#SIG:BOOL.not:VAL:SPEC)` o ``f`` ) ``sl``))`.
 
+
+
+```repl
+VectorSlice.all (fn x => x > 0) (VectorSlice.full (Vector.fromList [1, 2, 3]));; (* true *)
+```
+
 <span id="SIG:VECTOR_SLICE.collate:VAL"></span>
+
+### `collate`
+
+```sml
+val collate : ('a * 'a -> order) -> 'a slice * 'a slice -> order
+```
+
 `collate ``f`` (``sl``, ``sl2``) `  
 performs lexicographic comparison of the two slices using the given ordering `f` on elements.
+
+
+
+```repl
+VectorSlice.collate Int.compare (VectorSlice.full (Vector.fromList [1, 2, 3]), VectorSlice.full (Vector.fromList [1, 4]));; (* LESS *)
+```
 
 #### Examples
 
 ```repl
-VectorSlice.slice (Vector.fromList [1, 2, 3], 1, SOME 2);;
+VectorSlice.isEmpty (VectorSlice.full (Vector.fromList []));; (* true *)
+VectorSlice.vector (VectorSlice.full (Vector.fromList [1, 2, 3]));; (* #[1, 2, 3] *)
 ```
 
 #### See Also

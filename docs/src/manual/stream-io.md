@@ -115,24 +115,83 @@ The types of the readers and writers that underlie the input and output streams.
 This is the type of positions in the underlying readers and writers. In some instantiations of this signature (_e.g._, [`TextIO.StreamIO`](text-io.md#SIG:TEXT_IO.StreamIO:STR:SPEC)), [`pos`](stream-io.md#SIG:STREAM_IO.pos:TY:SPEC) is abstract; in others it may be concrete (_e.g._, [`Position.int`](integer.md#SIG:INTEGER.int:TY:SPEC) in [`BinIO.StreamIO`](imperative-io.md#SIG:IMPERATIVE_IO.StreamIO:STR:SPEC)).
 
 <span id="SIG:STREAM_IO.input:VAL"></span>
+
+### `input`
+
+```sml
+val input : instream -> vector * instream
+```
+
 `input ``f`` `  
 returns a vector of one or more elements from `f` and the remainder of the stream, if any elements are available. If an end-of-stream has been reached, then the empty vector is returned. The function may block until one of these conditions is satisfied. This function raises the [`Io`](io.md#SIG:IO.Io:EXN:SPEC) exception if there is an error in the underlying reader.
 
+
+
+```repl
+TextIO.StreamIO.input (TextIO.getInstream (TextIO.openString "abc"));; (* ("abc", end-of-stream) *)
+```
+
 <span id="SIG:STREAM_IO.input1:VAL"></span>
+
+### `input1`
+
+```sml
+val input1 : instream -> (elem * instream) option
+```
+
 `input1 ``f`` `  
 returns the next element in the stream `f` and the remainder of the stream. If the stream is at the end, then [`NONE`](option.md#SIG:OPTION.option:TY:SPEC) is returned. It may block until one of these conditions is satisfied. This function raises the [`Io`](io.md#SIG:IO.Io:EXN:SPEC) exception if there is an error in the underlying reader.
 
+
+
+```repl
+TextIO.StreamIO.input1 (TextIO.getInstream (TextIO.openString "abc"));; (* SOME (#"a", rest) *)
+```
+
 <span id="SIG:STREAM_IO.inputN:VAL"></span>
+
+### `inputN`
+
+```sml
+val inputN : instream * int -> vector * instream
+```
+
 `inputN (``f``, ``n``) `  
 returns a vector of the next `n` elements from `f` and the rest of the stream. If fewer than `n` elements are available before the next end-of-stream, it returns all of the elements up to that end-of-stream. It may block until it can determine if additional characters are available or an end-of-stream condition holds. This function raises the [`Io`](io.md#SIG:IO.Io:EXN:SPEC) exception if there is an error in the underlying reader. It raises [`Size`](general.md#SIG:GENERAL.Size:EXN:SPEC) if `n` \< 0 or the number of elements to be returned is greater than [`maxLen`](mono-vector.md#SIG:MONO_VECTOR.maxLen:VAL:SPEC). Also, [`inputN`](stream-io.md#SIG:STREAM_IO.inputN:VAL:SPEC)`(f,0)` returns immediately with an empty vector and `f`, so this cannot be used as an indication of end-of-stream.
 
 Using [`instream`](stream-io.md#SIG:STREAM_IO.instream:TY:SPEC)s, one can synthesize a non-blocking version of [`inputN`](stream-io.md#SIG:STREAM_IO.inputN:VAL:SPEC) from [`inputN`](stream-io.md#SIG:STREAM_IO.inputN:VAL:SPEC) and [`canInput`](stream-io.md#SIG:STREAM_IO.canInput:VAL:SPEC), as [`inputN`](stream-io.md#SIG:STREAM_IO.inputN:VAL:SPEC) is guaranteed not to block if a previous call to [`canInput`](stream-io.md#SIG:STREAM_IO.canInput:VAL:SPEC) returned [`SOME`](option.md#SIG:OPTION.option:TY:SPEC)`(_)`.
 
+
+
+```repl
+TextIO.StreamIO.inputN (TextIO.getInstream (TextIO.openString "abc"), 2);; (* ("ab", rest) *)
+```
+
 <span id="SIG:STREAM_IO.inputAll:VAL"></span>
+
+### `inputAll`
+
+```sml
+val inputAll : instream -> vector * instream
+```
+
 `inputAll ``f`` `  
 returns the vector of the rest of the elements in the stream `f` (_i.e._, up to an end-of-stream), and a new stream `f'`. Care should be taken when using this function, since it can block indefinitely on interactive streams. This function raises the [`Io`](io.md#SIG:IO.Io:EXN:SPEC) exception if there is an error in the underlying reader. The stream `f'` is immediately past the next end-of-stream of `f`. For ordinary files in which only one end-of stream is expected, `f'` can be ignored. If a file has multiple end-of-stream conditions (which can happen under some operating systems), [`inputAll`](stream-io.md#SIG:STREAM_IO.inputAll:VAL:SPEC) returns all the elements up to the next end-of-stream. It raises [`Size`](general.md#SIG:GENERAL.Size:EXN:SPEC) if the number of elements to be returned is greater than [`maxLen`](mono-vector.md#SIG:MONO_VECTOR.maxLen:VAL:SPEC) for the relevant [`vector`](stream-io.md#SIG:STREAM_IO.vector:TY:SPEC) type.
 
+
+
+```repl
+TextIO.StreamIO.inputAll (TextIO.getInstream (TextIO.openString "abc"));; (* ("abc", end-of-stream) *)
+```
+
 <span id="SIG:STREAM_IO.canInput:VAL"></span>
+
+### `canInput`
+
+```sml
+val canInput : instream * int -> int option
+```
+
 `canInput (``f``, ``n``) `  
 returns [`NONE`](option.md#SIG:OPTION.option:TY:SPEC) if any attempt at input would block. It returns [`SOME`](option.md#SIG:OPTION.option:TY:SPEC)`(``k``)`, where 0 \<= `k` \<= `n`, if a call to [`input`](stream-io.md#SIG:STREAM_IO.input:VAL:SPEC) would return immediately with at least `k` characters. Note that `k` = 0 corresponds to the stream being at end-of-stream.
 
@@ -145,11 +204,37 @@ Some streams may not support this operation, in which case the [`Io`](io.md#SIG:
 > Such a lookahead commits the stream to the characters read by `readVecNB` but it does not commit the stream to return those characters on the next call to [`input`](stream-io.md#SIG:STREAM_IO.input:VAL:SPEC). Indeed, a typical implementation will simply return the remainder of the current buffer, in this case, consisting of 10 characters, if [`input`](stream-io.md#SIG:STREAM_IO.input:VAL:SPEC) is called. On the other hand, an implementation can decide to always respond to [`input`](stream-io.md#SIG:STREAM_IO.input:VAL:SPEC) with all the elements currently available, provided an earlier call to [`input`](stream-io.md#SIG:STREAM_IO.input:VAL:SPEC) has not committed the stream to a particular response. The only requirement is that any future call of [`input`](stream-io.md#SIG:STREAM_IO.input:VAL:SPEC) on the same input stream must return the same vector of elements.
 
 
+
+
+```repl
+TextIO.StreamIO.canInput (TextIO.getInstream (TextIO.openString "abc"), 3);; (* SOME 3 *)
+```
+
 <span id="SIG:STREAM_IO.closeIn:VAL"></span>
+
+### `closeIn`
+
+```sml
+val closeIn : instream -> unit
+```
+
 `closeIn ``f`` `  
 marks the stream closed, and closes the underlying reader. Applying [`closeIn`](stream-io.md#SIG:STREAM_IO.closeIn:VAL:SPEC) on a closed stream has no effect. This function raises the [`Io`](io.md#SIG:IO.Io:EXN:SPEC) exception if there is an error in the underlying reader.
 
+
+
+```repl
+TextIO.StreamIO.closeIn (TextIO.getInstream (TextIO.openString "abc"));; (* closes the stream *)
+```
+
 <span id="SIG:STREAM_IO.endOfStream:VAL"></span>
+
+### `endOfStream`
+
+```sml
+val endOfStream : instream -> bool
+```
+
 `endOfStream ``f`` `  
 tests if `f` satisfies the end-of-stream condition. If there is no further input in the stream, then this returns `true`; otherwise it returns `false`. This function raises the [`Io`](io.md#SIG:IO.Io:EXN:SPEC) exception if there is an error in the underlying reader.
 
@@ -167,23 +252,88 @@ Multiple end-of-streams is a property of the underlying reader. Thus, `readVec` 
 
 In addition, if [`endOfStream`](stream-io.md#SIG:STREAM_IO.endOfStream:VAL:SPEC)` ``f` returns `true`, then [`input`](stream-io.md#SIG:STREAM_IO.input:VAL:SPEC)` ``f` returns `("",``f'``)` and [`endOfStream`](stream-io.md#SIG:STREAM_IO.endOfStream:VAL:SPEC)` ``f'` may or may not be true.
 
+
+
+```repl
+TextIO.StreamIO.endOfStream (TextIO.getInstream (TextIO.openString ""));; (* true *)
+```
+
 <span id="SIG:STREAM_IO.output:VAL"></span>
+
+### `output`
+
+```sml
+val output : outstream * vector -> unit
+```
+
 `output (``f``, ``vec``) `  
 writes the vector of elements `vec` to the stream `f`. This raises the exception [`Io`](io.md#SIG:IO.Io:EXN:SPEC) if `f` is terminated. This function also raises the [`Io`](io.md#SIG:IO.Io:EXN:SPEC) exception if there is an error in the underlying writer.
 
+
+
+```repl
+TextIO.StreamIO.output (TextIO.StreamIO.mkOutstream (TextPrimIO.nullWr (), IO.NO_BUF), "hello");; (* writes to the null writer *)
+```
+
 <span id="SIG:STREAM_IO.output1:VAL"></span>
+
+### `output1`
+
+```sml
+val output1 : outstream * elem -> unit
+```
+
 `output1 (``f``, ``el``) `  
 writes the element `el` to the stream `f`. This raises the exception [`Io`](io.md#SIG:IO.Io:EXN:SPEC) if `f` is terminated. This function also raises the [`Io`](io.md#SIG:IO.Io:EXN:SPEC) exception if there is an error in the underlying writer.
 
+
+
+```repl
+TextIO.StreamIO.output1 (TextIO.StreamIO.mkOutstream (TextPrimIO.nullWr (), IO.NO_BUF), #"x");; (* writes to the null writer *)
+```
+
 <span id="SIG:STREAM_IO.flushOut:VAL"></span>
+
+### `flushOut`
+
+```sml
+val flushOut : outstream -> unit
+```
+
 `flushOut ``f`` `  
 flushes any output in `f`'s buffer to the underlying writer; it is a no-op on terminated streams. This function raises the [`Io`](io.md#SIG:IO.Io:EXN:SPEC) exception if there is an error in the underlying writer.
 
+
+
+```repl
+TextIO.StreamIO.flushOut (TextIO.StreamIO.mkOutstream (TextPrimIO.nullWr (), IO.NO_BUF));; (* flushes the null writer *)
+```
+
 <span id="SIG:STREAM_IO.closeOut:VAL"></span>
+
+### `closeOut`
+
+```sml
+val closeOut : outstream -> unit
+```
+
 `closeOut ``f`` `  
 flushes `f`'s buffers, marks the stream closed, and closes the underlying writer. This operation has no effect if `f` is already closed. Note that if `f` is terminated, no flushing will occur. This function raises the [`Io`](io.md#SIG:IO.Io:EXN:SPEC) exception if there is an error in the underlying writer or if flushing fails. In the latter case, the stream is left open.
 
+
+
+```repl
+TextIO.StreamIO.closeOut (TextIO.StreamIO.mkOutstream (TextPrimIO.nullWr (), IO.NO_BUF));; (* closes the null writer *)
+```
+
 <span id="SIG:STREAM_IO.mkInstream:VAL"></span>
+
+### `mkInstream`
+
+```sml
+val mkInstream : reader * vector -> instream
+```
+
 `mkInstream (``rd``, ``v``) `  
 returns a new [`instream`](stream-io.md#SIG:STREAM_IO.instream:TY:SPEC) built on top of the reader `rd` with the initial buffer contents `v`.
 
@@ -219,11 +369,37 @@ If the reader provides more operations, the resulting stream may use them.
 
 Building more than one input stream on top of a single reader has unpredictable effects, since readers are imperative objects. In general, there should be a 1-1 correspondence between a reader and a sequence of input streams. Also note that creating an input stream this way means that the stream could be unaware that the reader has been closed until the stream actually attempts to read from it.
 
+
+
+```repl
+TextIO.StreamIO.mkInstream (TextPrimIO.openVector "abc", "");; (* creates a functional input stream *)
+```
+
 <span id="SIG:STREAM_IO.getReader:VAL"></span>
+
+### `getReader`
+
+```sml
+val getReader : instream -> reader * vector
+```
+
 `getReader ``f`` `  
 marks the input stream `f` as truncated and returns the underlying reader along with any unconsumed data from its buffer. The data returned will have the value `(closeIn f; inputAll f)`. The function raises the exception [`Io`](io.md#SIG:IO.Io:EXN:SPEC) if `f` is closed or truncated.
 
+
+
+```repl
+TextIO.StreamIO.getReader (TextIO.getInstream (TextIO.openString "abc"));; (* reader and buffered vector *)
+```
+
 <span id="SIG:STREAM_IO.filePosIn:VAL"></span>
+
+### `filePosIn`
+
+```sml
+val filePosIn : instream -> pos
+```
+
 `filePosIn ``f`` `  
 returns the primitive-level reader position that corresponds to the next element to be read from the buffered stream `f`. This raises the exception [`Io`](io.md#SIG:IO.Io:EXN:SPEC) if the stream does not support the operation, or if `f` has been truncated.
 
@@ -251,12 +427,50 @@ should also return `v`, assuming all operations are defined and terminate.
 > where `bufp` is the file position corresponding to the beginning of the current buffer, `n` is the number of elements already read from the current buffer, and `r` is the stream's underlying reader.
 
 
+
+
+```repl
+TextIO.StreamIO.filePosIn (TextIO.getInstream (TextIO.openString "abc"));; (* initial input position *)
+```
+
 <span id="SIG:STREAM_IO.setBufferMode:VAL"></span>
+
+### `setBufferMode`
+
+```sml
+val setBufferMode : outstream * IO.buffer_mode -> unit
+```
+
 `setBufferMode (``f``, ``mode``) `
 ` getBufferMode ``f`` `  
 These functions set and get the buffering mode of the output stream `f`. Setting the buffer mode to [`IO.NO_BUF`](io.md#SIG:IO.buffer_mode:TY:SPEC) causes any buffered output to be flushed. If the flushing fails, the [`Io`](io.md#SIG:IO.Io:EXN:SPEC) exception is raised. Switching the mode between [`IO.LINE_BUF`](io.md#SIG:IO.buffer_mode:TY:SPEC) and [`IO.BLOCK_BUF`](io.md#SIG:IO.buffer_mode:TY:SPEC) should not cause flushing. If, in going from [`IO.BLOCK_BUF`](io.md#SIG:IO.buffer_mode:TY:SPEC) to [`IO.LINE_BUF`](io.md#SIG:IO.buffer_mode:TY:SPEC), the user desires that the buffer contain no newline characters, the user should call [`flushOut`](stream-io.md#SIG:STREAM_IO.flushOut:VAL:SPEC) explicitly.
 
+
+
+```repl
+TextIO.StreamIO.setBufferMode (TextIO.StreamIO.mkOutstream (TextPrimIO.nullWr (), IO.NO_BUF), IO.NO_BUF);; (* disables buffering *)
+```
+
+<span id="SIG:STREAM_IO.getBufferMode:VAL"></span>
+
+### `getBufferMode`
+
+```sml
+val getBufferMode : outstream -> IO.buffer_mode
+```
+
+```repl
+TextIO.StreamIO.getBufferMode (TextIO.StreamIO.mkOutstream (TextPrimIO.nullWr (), IO.NO_BUF));; (* NO_BUF *)
+```
+
 <span id="SIG:STREAM_IO.mkOutstream:VAL"></span>
+
+### `mkOutstream`
+
+```sml
+val mkOutstream : writer * IO.buffer_mode -> outstream
+```
+
 `mkOutstream (``wr``, ``mode``) `  
 returns a new output stream built on top of the writer `wr` with the indicated buffer mode.
 
@@ -296,11 +510,37 @@ If the writer provides more operations, the resulting stream may use them.
 
 Building more than one [`outstream`](stream-io.md#SIG:STREAM_IO.outstream:TY:SPEC) on top of a single writer has unpredictable effects, since buffering may change the order of output. In general, there should be a 1-1 correspondence between a writer and an output stream. Also note that creating an output stream this way means that the stream could be unaware that the writer has been closed until the stream actually attempts to write to it.
 
+
+
+```repl
+TextIO.StreamIO.mkOutstream (TextPrimIO.nullWr (), IO.NO_BUF);; (* creates an output stream *)
+```
+
 <span id="SIG:STREAM_IO.getWriter:VAL"></span>
+
+### `getWriter`
+
+```sml
+val getWriter : outstream -> writer * IO.buffer_mode
+```
+
 `getWriter ``f`` `  
 flushes the stream `f`, marks it as being terminated and returns the underlying writer and the stream's buffer mode. This raises the exception [`Io`](io.md#SIG:IO.Io:EXN:SPEC) if `f` is closed, or if the flushing fails.
 
+
+
+```repl
+TextIO.StreamIO.getWriter (TextIO.StreamIO.mkOutstream (TextPrimIO.nullWr (), IO.NO_BUF));; (* writer and buffer mode *)
+```
+
 <span id="SIG:STREAM_IO.getPosOut:VAL"></span>
+
+### `getPosOut`
+
+```sml
+val getPosOut : outstream -> out_pos
+```
+
 `getPosOut ``f`` `  
 returns the current position of the stream `f`. This raises the exception [`Io`](io.md#SIG:IO.Io:EXN:SPEC) if the stream does not support the operation, if any implicit flushing fails, or if `f` is terminated.
 
@@ -318,11 +558,37 @@ returns the current position of the stream `f`. This raises the exception [`Io`]
 > where `f` is the output stream and `w` is the stream's underlying writer.
 
 
+
+
+```repl
+TextIO.StreamIO.getPosOut;; (* obtains output positions for positionable streams *)
+```
+
 <span id="SIG:STREAM_IO.setPosOut:VAL"></span>
+
+### `setPosOut`
+
+```sml
+val setPosOut : out_pos -> outstream
+```
+
 `setPosOut ``opos`` `  
 flushes the output buffer of the stream underlying `opos`, sets the current position of the stream to the position recorded in `opos`, and returns the stream. This can raise an [`Io`](io.md#SIG:IO.Io:EXN:SPEC) exception if the flushing fails, if the stream does not support the operation, or if the stream underlying `opos` is terminated.
 
+
+
+```repl
+TextIO.StreamIO.setPosOut;; (* restores an output stream position *)
+```
+
 <span id="SIG:STREAM_IO.filePosOut:VAL"></span>
+
+### `filePosOut`
+
+```sml
+val filePosOut : out_pos -> pos
+```
+
 `filePosOut ``opos`` `  
 returns the primitive-level writer position that corresponds to the abstract output stream position `opos`.
 
@@ -337,10 +603,17 @@ fun put (outs,x) = (flushOut outs;
 
 when called with `(f,v)` assuming all operations are defined and terminate, and that the call to `writeVec` returns `length v`.
 
+
+
+```repl
+TextIO.StreamIO.filePosOut;; (* returns a file position for an output position *)
+```
+
 #### Examples
 
 ```repl
-TextIO.stdIn;;
+TextIO.StreamIO.inputAll (TextIO.getInstream (TextIO.openString ""));; (* ("", end-of-stream) *)
+TextIO.StreamIO.inputAll (TextIO.getInstream (TextIO.openString "abc"));; (* ("abc", end-of-stream) *)
 ```
 
 #### See Also

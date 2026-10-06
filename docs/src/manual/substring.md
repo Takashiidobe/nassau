@@ -119,18 +119,70 @@ val foldr : (char * 'a -> 'a) -> 'a -> substring -> 'a
 #### Description
 
 <span id="SIG:SUBSTRING.sub:VAL"></span>
+
+### `sub`
+
+```sml
+val sub : substring * int -> char
+```
+
 `sub (``s``, ``i``) `  
 returns the `i`<sup>(th)</sup> character in the substring, counting from the beginning of `s`. It is equivalent to [`String.sub`](string.md#SIG:STRING.sub:VAL:SPEC)`(`[`string`](substring.md#SIG:SUBSTRING.string:VAL:SPEC)` ``s``, ``i``)`. The exception [`Subscript`](general.md#SIG:GENERAL.Subscript:EXN:SPEC) is raised unless 0 \<= `i` \< \|`s`\|.
 
+
+
+```repl
+Substring.sub (Substring.full "abc", 1);; (* #"b" *)
+```
+
 <span id="SIG:SUBSTRING.size:VAL"></span>
+
+### `size`
+
+```sml
+val size : substring -> int
+```
+
 `size ``s`` `  
 returns the size of `s`. This is equivalent to `#3 o `[`base`](substring.md#SIG:SUBSTRING.base:VAL:SPEC) and [`String.size`](string.md#SIG:STRING.size:VAL:SPEC)`o`[`string`](substring.md#SIG:SUBSTRING.string:VAL:SPEC).
 
+
+
+```repl
+Substring.size (Substring.full "abc");; (* 3 *)
+```
+
 <span id="SIG:SUBSTRING.base:VAL"></span>
+
+### `base`
+
+```sml
+val base : substring -> string * int * int
+```
+
 `base ``ss`` `  
 returns a triple `(``s``, ``i``, ``n``)` giving a concrete representation of the substring. `s` is the underlying string, `i` is the starting index, and `n` is the size of the substring. It will always be the case that 0 \<= `i` \<= `i` + `n` \<= \|`s`\| .
 
+
+
+```repl
+Substring.base (Substring.full "abc");; (* ("abc", 0, 3) *)
+```
+
 <span id="SIG:SUBSTRING.extract:VAL"></span>
+
+### `extract`
+
+```sml
+val extract : string * int * int option -> substring
+```
+
+### `substring`
+
+```sml
+val substring : string * int * int -> substring
+```
+
 `extract (``s``, ``i``, `[`NONE`](option.md#SIG:OPTION.option:TY:SPEC)`) `
 `extract (``s``, ``i``,`[`SOME`](option.md#SIG:OPTION.option:TY:SPEC)` ``j``) `
 `substring (``s``, ``i``, ``j``)`  
@@ -145,27 +197,115 @@ We require that [`base`](substring.md#SIG:SUBSTRING.base:VAL:SPEC)`o`[`substring
 > Implementations of these functions must perform bounds checking in such a way that the [`Overflow`](general.md#SIG:GENERAL.Overflow:EXN:SPEC) exception is not raised.
 
 
+
+
+```repl
+Substring.string (Substring.extract ("abc", 1, NONE));; (* "bc" *)
+```
+
+```repl
+Substring.string (Substring.substring ("abc", 1, 2));; (* "bc" *)
+```
+
 <span id="SIG:SUBSTRING.full:VAL"></span>
+
+### `full`
+
+```sml
+val full : string -> substring
+```
+
 `full ``s`` `  
 creates a substring representing the entire string `s`. It is equivalent to the expression [`substring`](substring.md#SIG:SUBSTRING.substring:VAL:SPEC)`(``s``, 0, `[`String.size`](string.md#SIG:STRING.size:VAL:SPEC)` ``s``)`.
 
+
+
+```repl
+Substring.string (Substring.full "abc");; (* "abc" *)
+```
+
 <span id="SIG:SUBSTRING.string:VAL"></span>
+
+### `string`
+
+```sml
+val string : substring -> string
+```
+
 `string ``s`` `  
 creates a string value corresponding to the substring. It is equivalent to [`String.substring`](string.md#SIG:STRING.substring:VAL:SPEC)`o`[`base`](substring.md#SIG:SUBSTRING.base:VAL:SPEC) for the corresponding `String` structure.
 
+
+
+```repl
+Substring.string (Substring.full "abc");; (* "abc" *)
+```
+
 <span id="SIG:SUBSTRING.isEmpty:VAL"></span>
+
+### `isEmpty`
+
+```sml
+val isEmpty : substring -> bool
+```
+
 `isEmpty ``s`` `  
 returns `true` if `s` has size 0.
 
+
+
+```repl
+Substring.isEmpty (Substring.full "");; (* true *)
+```
+
 <span id="SIG:SUBSTRING.getc:VAL"></span>
+
+### `getc`
+
+```sml
+val getc : substring -> (char * substring) option
+```
+
 `getc ``s`` `  
 returns the first character in `s` and the rest of the substring, or [`NONE`](option.md#SIG:OPTION.option:TY:SPEC) if `s` is empty.
 
+
+
+```repl
+Option.isSome (Substring.getc (Substring.full "abc"));; (* true *)
+```
+
 <span id="SIG:SUBSTRING.first:VAL"></span>
+
+### `first`
+
+```sml
+val first : substring -> char option
+```
+
 `first ``s`` `  
 returns the first character in `s`, or [`NONE`](option.md#SIG:OPTION.option:TY:SPEC) if `s` is empty.
 
+
+
+```repl
+Substring.first (Substring.full "abc");; (* SOME #"a" *)
+```
+
 <span id="SIG:SUBSTRING.triml:VAL"></span>
+
+### `triml`
+
+```sml
+val triml : int -> substring -> substring
+```
+
+### `trimr`
+
+```sml
+val trimr : int -> substring -> substring
+```
+
 `triml ``k`` ``s`` `
 ` trimr ``k`` ``s`` `  
 These functions remove `k` characters from the left (respectively, right) of the substring `s`. If `k` is greater than the size of the substring, an empty substring is returned. Specifically, for substring `ss`` = `[`substring`](substring.md#SIG:SUBSTRING.substring:VAL:SPEC)`(``s``, ``i``, ``j``)` and `k` \<= `j`, we have:
@@ -175,44 +315,178 @@ These functions remove `k` characters from the left (respectively, right) of the
 
 The exception [`Subscript`](general.md#SIG:GENERAL.Subscript:EXN:SPEC) is raised if `k`` < 0`. This exception is raised when `triml ``k` or `trimr ``k` is evaluated.
 
+
+
+```repl
+Substring.string (Substring.triml 1 (Substring.full "abc"));; (* "bc" *)
+```
+
+```repl
+Substring.string (Substring.trimr 1 (Substring.full "abc"));; (* "ab" *)
+```
+
 <span id="SIG:SUBSTRING.slice:VAL"></span>
+
+### `slice`
+
+```sml
+val slice : substring * int * int option -> substring
+```
+
 `slice (``s``, ``i``, `[`SOME`](option.md#SIG:OPTION.option:TY:SPEC)` ``m``) `
 `slice (``s``, ``i``,`[`NONE`](option.md#SIG:OPTION.option:TY:SPEC)`) `  
 These return a substring of `s` starting at the `i`<sup>(th)</sup> character. In the former case, the size of the resulting substring is `m`. Otherwise, the size is \|`s`\| - `i`. To be valid, the arguments in the first case must satisfy 0 \<= `i`, 0 \<= `m` and `i` + `m` \<= \|`s`\|. In the second case, the arguments must satisfy 0 \<= `i` \<= \|`s`\|. If the arguments are not valid, the exception [`Subscript`](general.md#SIG:GENERAL.Subscript:EXN:SPEC) is raised.
 
+
+
+```repl
+Substring.string (Substring.slice ("abc", 1, SOME 2));; (* "bc" *)
+```
+
 <span id="SIG:SUBSTRING.concat:VAL"></span>
+
+### `concat`
+
+```sml
+val concat : substring list -> string
+```
+
 `concat ``l`` `  
 generates a string that is the concatenation of the substrings in `l`. This is equivalent to [`String.concat`](string.md#SIG:STRING.concat:VAL:SPEC)` o (`[`List.map`](list.md#SIG:LIST.map:VAL:SPEC)` `[`string`](substring.md#SIG:SUBSTRING.string:VAL:SPEC)`)`. This raises [`Size`](general.md#SIG:GENERAL.Size:EXN:SPEC) if the sum of all the sizes is greater than the corresponding [`maxSize`](string.md#SIG:STRING.maxSize:VAL:SPEC) for the [`string`](substring.md#SIG:SUBSTRING.string:TY:SPEC) type.
 
+
+
+```repl
+Substring.concat [Substring.full "ab", Substring.full "cd"];; (* "abcd" *)
+```
+
 <span id="SIG:SUBSTRING.concatWith:VAL"></span>
+
+### `concatWith`
+
+```sml
+val concatWith : string -> substring list -> string
+```
+
 `concatWith ``s`` ``l`` `  
 returns the concatenation of the substrings in the list `l` using the string `s` as a separator. This raises [`Size`](general.md#SIG:GENERAL.Size:EXN:SPEC) if the size of the resulting string would be greater than [`maxSize`](string.md#SIG:STRING.maxSize:VAL:SPEC) for the [`string`](substring.md#SIG:SUBSTRING.string:TY:SPEC) type.
 
+
+
+```repl
+Substring.concatWith "," [Substring.full "a", Substring.full "b"];; (* "a,b" *)
+```
+
 <span id="SIG:SUBSTRING.explode:VAL"></span>
+
+### `explode`
+
+```sml
+val explode : substring -> char list
+```
+
 `explode ``s`` `  
 returns the list of characters composing the substring. This is equivalent to [`String.explode`](string.md#SIG:STRING.explode:VAL:SPEC)` (`[`string`](substring.md#SIG:SUBSTRING.string:VAL:SPEC)` ``s``)`.
 
+
+
+```repl
+Substring.explode (Substring.full "ab");; (* [#"a", #"b"] *)
+```
+
 <span id="SIG:SUBSTRING.isPrefix:VAL"></span>
+
+### `isPrefix`
+
+```sml
+val isPrefix : string -> substring -> bool
+```
+
+### `isSubstring`
+
+```sml
+val isSubstring : string -> substring -> bool
+```
+
+### `isSuffix`
+
+```sml
+val isSuffix : string -> substring -> bool
+```
+
 `isPrefix ``s`` ``ss`` `
 ` isSubstring ``s`` ``ss`` `
 ` isSuffix ``s`` ``ss`` `  
 These functions return `true` if the string `s` is a prefix, substring, or suffix (respectively) of the substring `ss`. The functions are equivalent to their versions from [`STRING`](string.md#STRING:SIG:SPEC). For example, `isPrefix ``s`` ``ss` is the same as `String.isPrefix ``s`` (`[`string`](substring.md#SIG:SUBSTRING.string:VAL:SPEC)` ``ss``)`.
 
+
+
+```repl
+Substring.isPrefix "ab" (Substring.full "abc");; (* true *)
+```
+
+```repl
+Substring.isSubstring "bc" (Substring.full "abc");; (* true *)
+```
+
+```repl
+Substring.isSuffix "bc" (Substring.full "abc");; (* true *)
+```
+
 <span id="SIG:SUBSTRING.compare:VAL"></span>
+
+### `compare`
+
+```sml
+val compare : substring * substring -> order
+```
+
 `compare (``s``, ``t``) `  
 compares the two substrings lexicographically using the default character comparison function. This is equivalent to
 
 [String.compare](string.md#SIG:STRING.compare:VAL:SPEC) ([string](substring.md#SIG:SUBSTRING.string:VAL:SPEC) `s`, [string](substring.md#SIG:SUBSTRING.string:VAL:SPEC) `t`)
 
 
+
+
+```repl
+Substring.compare (Substring.full "a", Substring.full "b");; (* LESS *)
+```
+
 <span id="SIG:SUBSTRING.collate:VAL"></span>
+
+### `collate`
+
+```sml
+val collate : (char * char -> order) -> substring * substring -> order
+```
+
 `collate ``f`` (``s``, ``t``) `  
 compares the two substrings lexicographically using the character comparison function `f`. This is equivalent to
 
 [String.collate](string.md#SIG:STRING.collate:VAL:SPEC) `f` ([string](substring.md#SIG:SUBSTRING.string:VAL:SPEC) `s`, [string](substring.md#SIG:SUBSTRING.string:VAL:SPEC) `t`)
 
 
+
+
+```repl
+Substring.collate Char.compare (Substring.full "a", Substring.full "b");; (* LESS *)
+```
+
 <span id="SIG:SUBSTRING.splitl:VAL"></span>
+
+### `splitl`
+
+```sml
+val splitl : (char -> bool) -> substring -> substring * substring
+```
+
+### `splitr`
+
+```sml
+val splitr : (char -> bool) -> substring -> substring * substring
+```
+
 `splitl ``f`` ``s`` `
 ` splitr ``f`` ``s`` `  
 These functions scan `s` from left to right (respectively, right to left) looking for the first character that does not satisfy the predicate `f`. They return the pair `(``ls``, ``rs``)` giving the split of the substring into the span up to that character and the rest. `ls` is the left side of the split, and `rs` is the right side. For example, if the characters `a` and `c` satisfy the predicate, but character `X` does not, then these functions work as follows on the substring `aaaXbbbbXccc`:
@@ -221,11 +495,59 @@ These functions scan `s` from left to right (respectively, right to left) lookin
 [splitr](substring.md#SIG:SUBSTRING.splitr:VAL:SPEC)   :           aaaXbbbbX   ccc
 
 
+
+
+```repl
+let val (a, b) = Substring.splitl Char.isAlpha (Substring.full "abc 123") in (Substring.string a, Substring.string b) end;; (* ("abc", " 123") *)
+```
+
+```repl
+let val (a, b) = Substring.splitr Char.isAlpha (Substring.full "123 abc") in (Substring.string a, Substring.string b) end;; (* ("123 ", "abc") *)
+```
+
 <span id="SIG:SUBSTRING.splitAt:VAL"></span>
+
+### `splitAt`
+
+```sml
+val splitAt : substring * int -> substring * substring
+```
+
 `splitAt (``s``, ``i``) `  
 returns the pair of substring `(``ss``, ``ss'``)`, where `ss` contains the first `i` characters of `s` and `ss'` contains the rest, assuming 0 \<= `i` \<= `size` `s`. Otherwise, it raises [`Subscript`](general.md#SIG:GENERAL.Subscript:EXN:SPEC).
 
+
+
+```repl
+let val (a, b) = Substring.splitAt (Substring.full "abc", 1) in (Substring.string a, Substring.string b) end;; (* ("a", "bc") *)
+```
+
 <span id="SIG:SUBSTRING.dropl:VAL"></span>
+
+### `dropl`
+
+```sml
+val dropl : (char -> bool) -> substring -> substring
+```
+
+### `dropr`
+
+```sml
+val dropr : (char -> bool) -> substring -> substring
+```
+
+### `takel`
+
+```sml
+val takel : (char -> bool) -> substring -> substring
+```
+
+### `taker`
+
+```sml
+val taker : (char -> bool) -> substring -> substring
+```
+
 `dropl ``f`` ``s`` `
 ` dropr ``f`` ``s`` `
 ` takel ``f`` ``s`` `
@@ -238,11 +560,49 @@ These routines scan the substring `s` for the first character not satisfying the
 [dropr](substring.md#SIG:SUBSTRING.dropr:VAL:SPEC) `p` `s` = #1([splitr](substring.md#SIG:SUBSTRING.splitr:VAL:SPEC) `p` `s`)
 
 
+
+
+```repl
+Substring.string (Substring.dropl Char.isAlpha (Substring.full "abc 123"));; (* " 123" *)
+```
+
+```repl
+Substring.string (Substring.dropr Char.isAlpha (Substring.full "123 abc"));; (* "123 " *)
+```
+
+```repl
+Substring.string (Substring.takel Char.isAlpha (Substring.full "abc 123"));; (* "abc" *)
+```
+
+```repl
+Substring.string (Substring.taker Char.isAlpha (Substring.full "123 abc"));; (* "abc" *)
+```
+
 <span id="SIG:SUBSTRING.position:VAL"></span>
+
+### `position`
+
+```sml
+val position : string -> substring -> substring * substring
+```
+
 `position ``s`` ``ss`` `  
 splits the substring `ss` into a pair `(``pref``, ``suff``)` of substrings, where `suff` is the longest suffix of `ss` that has `s` as a prefix and `pref` is the prefix of `ss` preceding `suff`. More precisely, let `m` be the size of `s` and let `ss` correspond to the substring `(``s'``, ``i``, ``n``)`. If there is a least index `k` \>= `i` such that `s`` = ``s'``[``k``..``k``+``m``-1]`, then `suff` corresponds to `(``s'``, ``k``, ``n``+``i``-``k``)` and `pref` corresponds to `(``s'``, ``i``, ``k``-``i``)`. If there is no such `k`, then `suff` is the empty substring corresponding to `(``s'``, ``i``+``n``, 0)` and `pref` corresponds to `(``s'``, ``i``, ``n``)`, _i.e._, all of `ss`.
 
+
+
+```repl
+let val (a, b) = Substring.position "bc" (Substring.full "abcd") in (Substring.string a, Substring.string b) end;; (* ("a", "bcd") *)
+```
+
 <span id="SIG:SUBSTRING.span:VAL"></span>
+
+### `span`
+
+```sml
+val span : substring * substring -> substring
+```
+
 `span (``ss``, ``ss'``) `  
 produces a substring composed of a prefix `ss`, suffix `ss'`, plus all intermediate characters in the underlying string. It raises [`Span`](general.md#SIG:GENERAL.Span:EXN:SPEC) if `ss` and `ss'` are not substrings of the same underlying string or if the start of `ss` is to the right of the end of `ss'`. More precisely, if we have
 
@@ -274,22 +634,90 @@ end
 > When applied to substrings derived from the identical base string, the string equality test should be constant time. This can be achieved by first doing a pointer test and, only if that fails, then checking the strings character by character.
 
 
+
+
+```repl
+let val s = "abc" in Substring.string (Substring.span (Substring.substring (s, 0, 1), Substring.substring (s, 2, 1))) end;; (* "abc" *)
+```
+
 <span id="SIG:SUBSTRING.translate:VAL"></span>
+
+### `translate`
+
+```sml
+val translate : (char -> string) -> substring -> string
+```
+
 `translate ``f`` ``s`` `  
 applies `f` to every character of `s`, from left to right, and returns the concatenation of the results. This is equivalent to [`String.concat`](string.md#SIG:STRING.concat:VAL:SPEC)`(`[`List.map`](list.md#SIG:LIST.map:VAL:SPEC)` ``f`` (`[`explode`](substring.md#SIG:SUBSTRING.explode:VAL:SPEC)` ``s``))`.
 
+
+
+```repl
+Substring.translate (String.str o Char.toUpper) (Substring.full "abc");; (* "ABC" *)
+```
+
 <span id="SIG:SUBSTRING.tokens:VAL"></span>
+
+### `tokens`
+
+```sml
+val tokens : (char -> bool) -> substring -> substring list
+```
+
+### `fields`
+
+```sml
+val fields : (char -> bool) -> substring -> substring list
+```
+
 `tokens ``f`` ``s`` `
 ` fields ``f`` ``s`` `  
 These functions decompose a substring into a list of tokens or fields from left to right. A token is a non-empty maximal substring not containing any delimiter. A field is a (possibly empty) maximal substring of `s` not containing any delimiter. In both cases, a delimiter is a character satisfying predicate `f`.
 
 Two tokens may be separated by more than one delimiter, whereas two fields are separated by exactly one delimiter. For example, if the only delimiter is the character `#"|"`, then the substring `"|abc||def"` contains two tokens `"abc"` and `"def"`, whereas it contains the four fields `""`, `"abc"`, `""` and `"def"`.
 
+
+
+```repl
+List.map Substring.string (Substring.tokens (fn c => c = #"|") (Substring.full "|a||b"));; (* ["a", "b"] *)
+```
+
+```repl
+List.map Substring.string (Substring.fields (fn c => c = #"|") (Substring.full "|a||b"));; (* ["", "a", "", "b"] *)
+```
+
 <span id="SIG:SUBSTRING.app:VAL"></span>
+
+### `app`
+
+```sml
+val app : (char -> unit) -> substring -> unit
+```
+
 `app ``f`` ``s`` `  
 applies `f` to each character of `s` from left to right. It is equivalent to [`List.app`](list.md#SIG:LIST.app:VAL:SPEC)` ``f`` (`[`explode`](substring.md#SIG:SUBSTRING.explode:VAL:SPEC)` ``s``)`.
 
+
+
+```repl
+Substring.app print (Substring.full "ok");; (* prints ok *)
+```
+
 <span id="SIG:SUBSTRING.foldl:VAL"></span>
+
+### `foldl`
+
+```sml
+val foldl : (char * 'a -> 'a) -> 'a -> substring -> 'a
+```
+
+### `foldr`
+
+```sml
+val foldr : (char * 'a -> 'a) -> 'a -> substring -> 'a
+```
+
 `foldl ``f`` ``a`` ``s`` `
 ` foldr ``f`` ``a`` ``s`` `  
 These fold the function `f` over the substring `s`, starting with the value `a`, from left to right and from right to left, respectively. They are the analogues of the identically named functions in [`List`](list.md#List:STR:SPEC). In particular, they are respectively equivalent to:
@@ -298,10 +726,21 @@ These fold the function `f` over the substring `s`, starting with the value `a`,
 [List.foldr](list.md#SIG:LIST.foldr:VAL:SPEC) `f` `a` ([explode](substring.md#SIG:SUBSTRING.explode:VAL:SPEC) `s`)
 
 
+
+
+```repl
+Substring.foldl (fn (c, n) => n + 1) 0 (Substring.full "abc");; (* 3 *)
+```
+
+```repl
+Substring.foldr (fn (c, n) => n + 1) 0 (Substring.full "abc");; (* 3 *)
+```
+
 #### Examples
 
 ```repl
-Substring.substring ("Nassau", 1, 3);;
+Substring.string (Substring.full "");; (* ""; empty substring *)
+Substring.string (Substring.substring ("abc", 1, 2));; (* "bc" *)
 ```
 
 #### See Also

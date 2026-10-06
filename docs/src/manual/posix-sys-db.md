@@ -59,45 +59,177 @@ val getpwnam : string -> Passwd.passwd
 #### Description
 
 <span id="SIG:POSIX_SYS_DB.uid:TY"></span>**`eqtype`**` uid`  
-User identifier; identical to [`Posix.ProcEnv.uid`](posix-proc-env.md#SIG:POSIX_PROC_ENV.uid:TY:SPEC).
+A user identifier, identical to [`Posix.ProcEnv.uid`](posix-proc-env.md#SIG:POSIX_PROC_ENV.uid:TY:SPEC).
 
 <span id="SIG:POSIX_SYS_DB.gid:TY"></span>**`eqtype`**` gid`  
-Group identifier; identical to [`Posix.ProcEnv.gid`](posix-proc-env.md#SIG:POSIX_PROC_ENV.gid:TY:SPEC).
+A group identifier, identical to [`Posix.ProcEnv.gid`](posix-proc-env.md#SIG:POSIX_PROC_ENV.gid:TY:SPEC).
 
 <span id="SIG:POSIX_SYS_DB.Passwd:STR"></span>
-**`structure`**` Passwd`  
+**`structure`**` Passwd`
 
 <span id="SIG:POSIX_SYS_DB.Passwd.passwd:TY"></span>**`type`**` passwd`  
-Information related to a user.
+Information about a user account.
 
-<span id="SIG:POSIX_SYS_DB.Passwd.name:VAL"></span>**`val`**` name `**`:`**` passwd `**`->`**` string`
-**`val`**` uid `**`:`**` passwd `**`->`**` uid`
-**`val`**` gid `**`:`**` passwd `**`->`**` gid`
-**`val`**` home `**`:`**` passwd `**`->`**` string`
-**`val`**` shell `**`:`**` passwd `**`->`**` string`  
-These extract the name, the user ID, the group ID, the path of the initial working, or home, directory, and the initial command shell, respectively, of the user corresponding to the [`passwd`](posix-sys-db.md#SIG:POSIX_SYS_DB.Passwd.passwd:TY:SPEC) value. The names of the corresponding fields in C are the same, but prefixed with `"pw_"`. The one exception is that C uses `pw_dir` for the home directory.
+<span id="SIG:POSIX_SYS_DB.Passwd.name:VAL"></span>
 
-<span id="SIG:POSIX_SYS_DB.Group:STR"></span>
-**`structure`**` Group`  
+### `Passwd.name`
 
-<span id="SIG:POSIX_SYS_DB.Group.group:TY"></span>**`type`**` group`  
-Information related to a group.
-
-<span id="SIG:POSIX_SYS_DB.Group.name:VAL"></span>**`val`**` name `**`:`**` group `**`->`**` string`
-**`val`**` gid `**`:`**` group `**`->`**` gid`
-**`val`**` members `**`:`**` group `**`->`**` string list`  
-These extract the name, the group ID, and the names of users belonging to the group, respectively, of the group corresponding to the [`group`](posix-sys-db.md#SIG:POSIX_SYS_DB.Group.group:TY:SPEC) value. In C, these fields are named `gr_name`, `gr_gid`, and `gr_mem`, respectively.
-
-<span id="SIG:POSIX_SYS_DB.getgrgid:VAL"></span>**`val`**` getgrgid `**`:`**` gid `**`->`**` Group.group`
-**`val`**` getgrnam `**`:`**` string `**`->`**` Group.group`
-**`val`**` getpwuid `**`:`**` uid `**`->`**` Passwd.passwd`
-**`val`**` getpwnam `**`:`**` string `**`->`**` Passwd.passwd`  
-These return the group or user database entry associated with the given group ID or name, or user ID or name. It raises [`OS.SysErr`](os.md#SIG:OS.SysErr:EXN:SPEC) if there is no group or user with the given ID or name.
-
-#### Examples
+```sml
+val name : passwd -> string
+```
+Returns the login name for a password database entry.
 
 ```repl
-Posix.SysDB.getgrnam "wheel";;
+Posix.SysDB.Passwd.name (Posix.SysDB.getpwuid (Posix.ProcEnv.getuid ()));; (* current login name *)
+```
+
+<span id="SIG:POSIX_SYS_DB.Passwd.uid:VAL"></span>
+
+### `Passwd.uid`
+
+```sml
+val uid : passwd -> uid
+```
+Returns the user ID in a password database entry.
+
+```repl
+Posix.SysDB.Passwd.uid (Posix.SysDB.getpwuid (Posix.ProcEnv.getuid ()));; (* current user ID *)
+```
+
+<span id="SIG:POSIX_SYS_DB.Passwd.gid:VAL"></span>
+
+### `Passwd.gid`
+
+```sml
+val gid : passwd -> gid
+```
+Returns the primary group ID in a password database entry.
+
+```repl
+Posix.SysDB.Passwd.gid (Posix.SysDB.getpwuid (Posix.ProcEnv.getuid ()));; (* primary group ID *)
+```
+
+<span id="SIG:POSIX_SYS_DB.Passwd.home:VAL"></span>
+
+### `Passwd.home`
+
+```sml
+val home : passwd -> string
+```
+Returns the user's home directory.
+
+```repl
+Posix.SysDB.Passwd.home (Posix.SysDB.getpwuid (Posix.ProcEnv.getuid ()));; (* home directory *)
+```
+
+<span id="SIG:POSIX_SYS_DB.Passwd.shell:VAL"></span>
+
+### `Passwd.shell`
+
+```sml
+val shell : passwd -> string
+```
+Returns the user's initial command shell.
+
+```repl
+Posix.SysDB.Passwd.shell (Posix.SysDB.getpwuid (Posix.ProcEnv.getuid ()));; (* login shell *)
+```
+
+<span id="SIG:POSIX_SYS_DB.Group:STR"></span>
+**`structure`**` Group`
+
+<span id="SIG:POSIX_SYS_DB.Group.group:TY"></span>**`type`**` group`  
+Information about a group database entry.
+
+<span id="SIG:POSIX_SYS_DB.Group.name:VAL"></span>
+
+### `Group.name`
+
+```sml
+val name : group -> string
+```
+Returns the name of a group database entry.
+
+```repl
+Posix.SysDB.Group.name (Posix.SysDB.getgrgid (Posix.ProcEnv.getgid ()));; (* current group name *)
+```
+
+<span id="SIG:POSIX_SYS_DB.Group.gid:VAL"></span>
+
+### `Group.gid`
+
+```sml
+val gid : group -> gid
+```
+Returns the group ID in a group database entry.
+
+```repl
+Posix.SysDB.Group.gid (Posix.SysDB.getgrgid (Posix.ProcEnv.getgid ()));; (* current group ID *)
+```
+
+<span id="SIG:POSIX_SYS_DB.Group.members:VAL"></span>
+
+### `Group.members`
+
+```sml
+val members : group -> string list
+```
+Returns the member names in a group database entry.
+
+```repl
+Posix.SysDB.Group.members (Posix.SysDB.getgrgid (Posix.ProcEnv.getgid ()));; (* group members *)
+```
+
+<span id="SIG:POSIX_SYS_DB.getgrgid:VAL"></span>
+
+### `getgrgid`
+
+```sml
+val getgrgid : gid -> Group.group
+```
+Looks up the group associated with a group ID.
+
+```repl
+Posix.SysDB.getgrgid (Posix.ProcEnv.getgid ());; (* current group entry *)
+```
+
+<span id="SIG:POSIX_SYS_DB.getgrnam:VAL"></span>
+
+### `getgrnam`
+
+```sml
+val getgrnam : string -> Group.group
+```
+Looks up a group by name.
+
+```repl
+Posix.SysDB.getgrnam (Posix.SysDB.Group.name (Posix.SysDB.getgrgid (Posix.ProcEnv.getgid ())));; (* current group entry *)
+```
+
+<span id="SIG:POSIX_SYS_DB.getpwuid:VAL"></span>
+
+### `getpwuid`
+
+```sml
+val getpwuid : uid -> Passwd.passwd
+```
+Looks up a user by user ID.
+
+```repl
+Posix.SysDB.getpwuid (Posix.ProcEnv.getuid ());; (* current user entry *)
+```
+
+<span id="SIG:POSIX_SYS_DB.getpwnam:VAL"></span>
+
+### `getpwnam`
+
+```sml
+val getpwnam : string -> Passwd.passwd
+```
+Looks up a user by login name.
+
+```repl
+Posix.SysDB.getpwnam (Posix.SysDB.Passwd.name (Posix.SysDB.getpwuid (Posix.ProcEnv.getuid ())));; (* current user entry *)
 ```
 
 #### See Also

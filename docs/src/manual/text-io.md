@@ -60,37 +60,153 @@ StringCvt.reader) -> instream -> 'a option
 #### Description
 
 <span id="SIG:TEXT_IO.inputLine:VAL"></span>
+
+### `inputLine`
+
+```sml
+val inputLine : instream -> string option
+```
+
 `inputLine ``strm`` `  
 returns [`SOME`](option.md#SIG:OPTION.option:TY:SPEC)`(``ln``)`, where `ln` is the next line of input in the stream `strm`. Specifically, `ln` returns all characters from the current position up to and including the next newline (`#"\n"`) character. If it detects an end-of-stream before the next newline, it returns the characters read appended with a newline. Thus, `ln` is guaranteed to always be new-line terminated (and thus nonempty). If the current stream position is the end-of-stream, then it returns [`NONE`](option.md#SIG:OPTION.option:TY:SPEC). It raises [`Size`](general.md#SIG:GENERAL.Size:EXN:SPEC) if the length of the line exceeds the length of the longest string.
 
+
+
+```repl
+val input = TextIO.openString "hello\n";;
+TextIO.inputLine input;; (* SOME "hello\n" *)
+```
+
 <span id="SIG:TEXT_IO.outputSubstr:VAL"></span>
+
+### `outputSubstr`
+
+```sml
+val outputSubstr : outstream * substring -> unit
+```
+
 `outputSubstr (``strm``, ``ss``) `  
 outputs the substring `ss` to the text stream `strm`. This is equivalent to:
 
 output (`strm`, [Substring.string](substring.md#SIG:SUBSTRING.string:VAL:SPEC) `ss`)
 
 
+
+
+```repl
+TextIO.outputSubstr (TextIO.stdOut, Substring.full "hello");; (* writes hello *)
+```
+
 <span id="SIG:TEXT_IO.openIn:VAL"></span>
+
+### `openIn`
+
+```sml
+val openIn : string -> instream
+```
+
+### `openOut`
+
+```sml
+val openOut : string -> outstream
+```
+
 `openIn ``name`` `
 ` openOut ``name`` `  
 These open the file named `name` for input and output, respectively. If `name` is a relative pathname, the file opened depends on the current working directory. On [`openOut`](text-io.md#SIG:TEXT_IO.openOut:VAL:SPEC), the file is created if it does not already exist and truncated to length zero otherwise. It raises [`Io`](io.md#SIG:IO.Io:EXN:SPEC) if a stream cannot be opened on the given file, or in the case of [`openIn`](text-io.md#SIG:TEXT_IO.openIn:VAL:SPEC), the file `name` does not exist.
 
+
+
+```repl
+TextIO.openIn "Cargo.toml";; (* an input stream *)
+```
+
+```repl
+TextIO.openOut "nassau-example.txt";; (* creates an output stream *)
+```
+
 <span id="SIG:TEXT_IO.openAppend:VAL"></span>
+
+### `openAppend`
+
+```sml
+val openAppend : string -> outstream
+```
+
 `openAppend ``name`  
 opens the file named `name` for output in append mode, creating it if it does not already exist. If the file already exists, the file pointer is positioned at the end of the file. It raises [`Io`](io.md#SIG:IO.Io:EXN:SPEC) if a stream cannot be opened on the given file.
 
 Beyond having the initial file position be at the end of the file, any additional properties are system and implementation dependent. On operating systems (_e.g._, Unix) that support \`\`atomic append mode,'' each (flushed) output operation to the file will be appended to the end, even if there are other processes writing to the file simultaneously. Due to buffering, however, these writes need not be atomic, _i.e._, output from a different process may interleave the output of a single write using the stream library. On certain other operating systems, having the file open for writing prevents any other process from opening the file for writing.
 
+
+
+```repl
+TextIO.openAppend "nassau-example.txt";; (* opens an append stream *)
+```
+
 <span id="SIG:TEXT_IO.openString:VAL"></span>
+
+### `openString`
+
+```sml
+val openString : string -> instream
+```
+
 `openString ``s`` `  
 creates an input stream whose content is `s`.
 
-<span id="SIG:TEXT_IO.stdIn:VAL"></span>**`val`**` stdIn `**`:`**` instream`
+
+
+```repl
+TextIO.inputLine (TextIO.openString "hello\n");; (* SOME "hello\n" *)
+```
+
+<span id="SIG:TEXT_IO.stdIn:VAL"></span>
+
+### `stdIn`
+
+```sml
+val stdIn : instream
+```
+
+### `stdOut`
+
+```sml
+val stdOut : outstream
+```
+
+### `stdErr`
+
+```sml
+val stdErr : outstream
+```
+**`val`**` stdIn `**`:`**` instream`
 **`val`**` stdOut `**`:`**` outstream`
 **`val`**` stdErr `**`:`**` outstream`  
 These correspond to the standard input, output, and error streams, respectively.
 
+
+
+```repl
+TextIO.stdIn;; (* standard input stream *)
+```
+
+```repl
+TextIO.stdOut;; (* standard output stream *)
+```
+
+```repl
+TextIO.stdErr;; (* standard error stream *)
+```
+
 <span id="SIG:TEXT_IO.print:VAL"></span>
+
+### `print`
+
+```sml
+val print : string -> unit
+```
+
 `print ``s`` `  
 prints the string `s` to the standard output stream and flushes the stream. No newline character is appended.
 
@@ -99,7 +215,20 @@ This is available in the top-level environment as `print`. This is equivalent to
 (output ([stdOut](text-io.md#SIG:TEXT_IO.stdOut:VAL:SPEC), `s`); flushOut [stdOut](text-io.md#SIG:TEXT_IO.stdOut:VAL:SPEC))
 
 
+
+
+```repl
+TextIO.print "hello\n";; (* writes hello and flushes *)
+```
+
 <span id="SIG:TEXT_IO.scanStream:VAL"></span>
+
+### `scanStream`
+
+```sml
+val scanStream : ((Char.char, StreamIO.instream) StringCvt.reader -> ('a, StreamIO.instream) StringCvt.reader) -> instream -> 'a option
+```
+
 `scanStream ``scanFn`` ``strm`` `  
 converts a stream-based scan function into one that works on Imperative I/O streams. For example, to attempt to scan a decimal integer from `stdIn`, one could use
 
@@ -119,10 +248,17 @@ fun scanStream scanFn strm = let
 
 In addition to providing a convenient way to use Stream I/O scanning functions with Imperative I/O, the [`scanStream`](text-io.md#SIG:TEXT_IO.scanStream:VAL:SPEC) assures that input is not inadvertently lost due to lookahead during scanning.
 
+
+
+```repl
+TextIO.scanStream (Int.scan StringCvt.DEC) (TextIO.openString "42");; (* SOME 42 *)
+```
+
 #### Examples
 
 ```repl
-TextIO.print "Hello from Nassau\n";;
+TextIO.inputLine (TextIO.openString "");; (* NONE at end of the empty stream *)
+TextIO.inputLine (TextIO.openString "last line");; (* SOME "last line\n" *)
 ```
 
 #### See Also

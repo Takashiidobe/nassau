@@ -71,14 +71,31 @@ val fromString : string -> decimal_approx option
 
 #### Description
 
-<span id="SIG:IEEE_REAL.setRoundingMode:VAL"></span>**`val`**` setRoundingMode `**`:`**` rounding_mode `**`->`**` unit`
-**`val`**` getRoundingMode `**`:`**` unit `**`->`**` rounding_mode`  
+<span id="SIG:IEEE_REAL.setRoundingMode:VAL"></span>
+
+### `setRoundingMode`
+
+```sml
+val setRoundingMode : rounding_mode -> unit
+```
+
+### `getRoundingMode`
+
+```sml
+val getRoundingMode : unit -> rounding_mode
+```
 These set and get the rounding mode of the underlying hardware. The IEEE standard requires [`TO_NEAREST`](ieee-float.md#SIG:IEEE_REAL.rounding_mode:TY:SPEC) as the default rounding mode.
 
 > **Implementation note:**
 >
 > Some platforms do not support all of the rounding modes. An SML implementation built on these platforms will necessarily be non-conforming with, presumably, [`setRoundingMode`](ieee-float.md#SIG:IEEE_REAL.setRoundingMode:VAL:SPEC) raising an exception for the unsupported modes.
 
+
+
+```repl
+IEEEReal.getRoundingMode ();; (* TO_NEAREST *)
+IEEEReal.setRoundingMode IEEEReal.TO_NEAREST;; (* () *)
+```
 
 <span id="SIG:IEEE_REAL.decimal_approx:TY"></span>**`type`**` decimal_approx = {`
 `                        class `**`:`**` float_class,`
@@ -91,7 +108,12 @@ This type provides a structured decimal representation of a real. The `class` fi
 When `class` is `NORMAL` or `SUBNORMAL`, a value of type `decimal_approx` with `digits` = \[d<sub>(1)</sub>, d<sub>(2)</sub>, ..., d<sub>(n)</sub>\] corresponds to the real number s \* 0.d<sub>(1)</sub>d<sub>(2)</sub>...d<sub>(n)</sub> 10<sup>(exp)</sup>, where s is -1 if `sign` is `true` and 1 otherwise. When `class` is `ZERO` or `INF`, the value corresponds to zero or infinity, respectively, with its sign determined by `sign`. When `class` is `NAN`, the value corresponds to an unspecified NaN value.
 
 <span id="SIG:IEEE_REAL.toString:VAL"></span>
-`toString ``d`` `  
+
+### `toString`
+
+```sml
+val toString : decimal_approx -> string
+```
 returns a string representation of `d`. Assuming `digits` = \[d<sub>(1)</sub>, d<sub>(2)</sub>, ..., d<sub>(n)</sub>\] and ignoring the `sign` and `exp` fields, `toString` generates the following strings depending on the `class` field:
 
 ---
@@ -122,9 +144,24 @@ If the `sign` field is `true`, a `#"~"` is prepended. If the `exp` field is non-
 
 The composition [`toString`](ieee-float.md#SIG:IEEE_REAL.toString:VAL:SPEC)`o`[`REAL.toDecimal`](real.md#SIG:REAL.toDecimal:VAL:SPEC) is equivalent to [`REAL.fmt`](real.md#SIG:REAL.fmt:VAL:SPEC)` `[`StringCvt.EXACT`](string-cvt.md#SIG:STRING_CVT.realfmt:TY:SPEC).
 
+
+```repl
+IEEEReal.toString {class = IEEEReal.NORMAL, sign = false, digits = [1, 2, 5], exp = 0};; (* "0.125" *)
+```
+
 <span id="SIG:IEEE_REAL.scan:VAL"></span>
-`scan ``getc`` ``strm`` `
-` fromString ``s`` `  
+
+### `scan`
+
+```sml
+val scan : (char, 'a) StringCvt.reader -> (decimal_approx, 'a) StringCvt.reader
+```
+
+### `fromString`
+
+```sml
+val fromString : string -> decimal_approx option
+```
 These functions scan a decimal approximation from a prefix of a character source. Initial whitespace is ignored. The first reads from the character stream `src` using the character input function `getc`. It returns [`SOME`](option.md#SIG:OPTION.option:TY:SPEC)`(``d``, ``rest``)` if the decimal approximation `d` can be parsed; `rest` is the remainder of the character stream. [`NONE`](option.md#SIG:OPTION.option:TY:SPEC) is returned otherwise.
 
 The second form uses the string `s` as input. It returns the decimal approximation on success and [`NONE`](option.md#SIG:OPTION.option:TY:SPEC) otherwise. The [`fromString`](ieee-float.md#SIG:IEEE_REAL.fromString:VAL:SPEC) function is equivalent to `StringCvt.scanString scan`.
@@ -141,11 +178,12 @@ They also accept the following string representations of non-finite values:
 
 where the alphabetic characters are case-insensitive. The optional sign determines the value of the `sign` field, with a default of `false`. In the first and second cases, `d` will have `class` set to [`INF`](ieee-float.md#SIG:IEEE_REAL.float_class:TY:SPEC). In the third case, `class` is set to [`NAN`](ieee-float.md#SIG:IEEE_REAL.float_class:TY:SPEC). In all these cases, `d` will have `digits = []` and `exp = 0`.
 
-#### Examples
-
 ```repl
-IEEEReal.getRoundingMode ();;
+StringCvt.scanString IEEEReal.scan "1.25";; (* SOME decimal approximation *)
+IEEEReal.fromString "1.25";; (* SOME decimal approximation *)
+IEEEReal.fromString "not a number";; (* NONE *)
 ```
+
 
 #### See Also
 

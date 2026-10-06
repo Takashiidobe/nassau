@@ -288,12 +288,32 @@ The witness type for stream sockets. The type parameter `'mode` describes the mo
 **`structure`**` AF`  
 The [`AF`](socket.md#SIG:SOCKET.AF:STR:SPEC) substructure defines an abstract type that represents the different network-address families.
 
-<span id="SIG:SOCKET.AF.list:VAL"></span>**`val`**` list `**`:`**` unit `**`->`**` (string `**`*`**` addr_family) list`  
+<span id="SIG:SOCKET.AF.list:VAL"></span>
+
+### `AF.list`
+
+```sml
+val list : unit -> (string * addr_family) list
+```
+**`val`**` list `**`:`**` unit `**`->`**` (string `**`*`**` addr_family) list`  
 This returns a list of all the available address families. Every element of the list is a pair `(``name``,``af``)` where `name` is the name of the address family, and `af` is the actual address family value.
 
 The names of the address families are taken from the symbolic constants used in the C Socket API and stripping the leading \`\``AF_`.'' For example, the Unix-domain address family is named `"UNIX"`, the Internet-domain address family is named `"INET"`, and the _Apple Talk_ address family is named `"APPLETALK"`.
 
-<span id="SIG:SOCKET.AF.toString:VAL"></span>**`val`**` toString `**`:`**` addr_family `**`->`**` string`
+
+
+```repl
+Socket.AF.list ();; (* available address families *)
+```
+
+<span id="SIG:SOCKET.AF.toString:VAL"></span>
+
+### `AF.toString`
+
+```sml
+val toString : addr_family -> string
+```
+**`val`**` toString `**`:`**` addr_family `**`->`**` string`
 **`val`**` fromString `**`:`**` string `**`->`**` addr_family option`  
 These convert between address family values and their names. For example, the expression `toString (INetSock.inetAF)` returns the string `"INET"`. [`fromString`](socket.md#SIG:SOCKET.AF.fromString:VAL:SPEC) returns [`NONE`](option.md#SIG:OPTION.option:TY:SPEC) if no family value corresponds to the given name.
 
@@ -306,18 +326,70 @@ The [`SOCK`](socket.md#SIG:SOCKET.SOCK:STR:SPEC) substructure provides an abstra
 <span id="SIG:SOCKET.SOCK.sock_type:TY"></span>**`eqtype`**` sock_type`  
 The type of socket types.
 
-<span id="SIG:SOCKET.SOCK.stream:VAL"></span>**`val`**` stream `**`:`**` sock_type`  
+
+
+```repl
+Socket.AF.toString INetSock.inetAF;; (* "INET" *)
+```
+
+<span id="SIG:SOCKET.SOCK.stream:VAL"></span>
+
+### `SOCK.stream`
+
+```sml
+val stream : sock_type
+```
+**`val`**` stream `**`:`**` sock_type`  
 The stream socket type value.
 
-<span id="SIG:SOCKET.SOCK.dgram:VAL"></span>**`val`**` dgram `**`:`**` sock_type`  
+
+
+```repl
+Socket.SOCK.stream;; (* stream socket type *)
+```
+
+<span id="SIG:SOCKET.SOCK.dgram:VAL"></span>
+
+### `SOCK.dgram`
+
+```sml
+val dgram : sock_type
+```
+**`val`**` dgram `**`:`**` sock_type`  
 The datagram socket type value.
 
-<span id="SIG:SOCKET.SOCK.list:VAL"></span>**`val`**` list `**`:`**` unit `**`->`**` (string `**`*`**` sock_type) list`  
+
+
+```repl
+Socket.SOCK.dgram;; (* datagram socket type *)
+```
+
+<span id="SIG:SOCKET.SOCK.list:VAL"></span>
+
+### `SOCK.list`
+
+```sml
+val list : unit -> (string * sock_type) list
+```
+**`val`**` list `**`:`**` unit `**`->`**` (string `**`*`**` sock_type) list`  
 A list of the available socket types. Every element of the list is of the form `(``name``,``sty``)` where `name` is the name of the socket type, and `sty` is the actual socket type value.
 
 The list of possible socket type names includes `"STREAM"` for stream sockets, `"DGRAM"` for datagram sockets, and `"RAW"` for raw sockets. These names are formed by taking the symbolic constants from the C API and removing the leading \`\``SOCK_`.''
 
-<span id="SIG:SOCKET.SOCK.toString:VAL"></span>**`val`**` toString `**`:`**` sock_type `**`->`**` string`
+
+
+```repl
+Socket.SOCK.list ();; (* available socket types *)
+```
+
+<span id="SIG:SOCKET.SOCK.toString:VAL"></span>
+
+### `SOCK.toString`
+
+```sml
+val toString : sock_type -> string
+```
+**`val`**` toString `**`:`**` sock_type `**`->`**` string`
 **`val`**` fromString `**`:`**` string `**`->`**` sock_type option`  
 These convert between a socket type value and its name (_e.g._, "STREAM"). [`fromString`](socket.md#SIG:SOCKET.SOCK.fromString:VAL:SPEC) returns [`NONE`](option.md#SIG:OPTION.option:TY:SPEC) if no socket type value corresponds to the name.
 
@@ -327,121 +399,495 @@ If a pair `(``name``,``sty``)` is in the list returned by [`list`](socket.md#SIG
 **`structure`**` Ctl`  
 The [`Ctl`](socket.md#SIG:SOCKET.Ctl:STR:SPEC) substructure provides support for manipulating the options associated with a socket. These functions raise the [`SysErr`](os.md#SIG:OS.SysErr:EXN:SPEC) exception when the argument socket has been closed.
 
-<span id="SIG:SOCKET.Ctl.getDEBUG:VAL"></span>**`val`**` getDEBUG `**`:`**` (`_`'af`_`, `_`'sock_type`_`) sock `**`->`**` bool`
+
+
+```repl
+Socket.SOCK.toString Socket.SOCK.stream;; (* "STREAM" *)
+```
+
+<span id="SIG:SOCKET.Ctl.getDEBUG:VAL"></span>
+
+### `Ctl.getDEBUG`
+
+```sml
+val getDEBUG : ('af, 'sock_type) sock -> bool
+```
+**`val`**` getDEBUG `**`:`**` (`_`'af`_`, `_`'sock_type`_`) sock `**`->`**` bool`
 **`val`**` setDEBUG `**`:`**` (`_`'af`_`, `_`'sock_type`_`) sock `**`*`**` bool `**`->`**` unit`  
 These functions query and set the `SO_DEBUG` flag for the socket. This flag enables or disables low-level debugging within the kernel. Enabled, it allows the kernel to maintain a history of the recent packets that have been received or sent.
 
-<span id="SIG:SOCKET.Ctl.getREUSEADDR:VAL"></span>**`val`**` getREUSEADDR `**`:`**` (`_`'af`_`, `_`'sock_type`_`) sock `**`->`**` bool`
+
+
+```repl
+let val (a, b) = UnixSock.Strm.socketPair () val result = Socket.Ctl.getDEBUG a in Socket.close a; Socket.close b; result end;; (* local stream socket result *)
+```
+
+<span id="SIG:SOCKET.Ctl.getREUSEADDR:VAL"></span>
+
+### `Ctl.getREUSEADDR`
+
+```sml
+val getREUSEADDR : ('af, 'sock_type) sock -> bool
+```
+**`val`**` getREUSEADDR `**`:`**` (`_`'af`_`, `_`'sock_type`_`) sock `**`->`**` bool`
 **`val`**` setREUSEADDR `**`:`**` (`_`'af`_`, `_`'sock_type`_`) sock `**`*`**` bool `**`->`**` unit`  
 These query and set the `SO_REUSEADDR` flag for the socket. When `true`, this flag instructs the system to allow reuse of local socket addresses in [`bind`](socket.md#SIG:SOCKET.bind:VAL:SPEC) calls.
 
-<span id="SIG:SOCKET.Ctl.getKEEPALIVE:VAL"></span>**`val`**` getKEEPALIVE `**`:`**` (`_`'af`_`, `_`'sock_type`_`) sock `**`->`**` bool`
+
+
+```repl
+let val (a, b) = UnixSock.Strm.socketPair () val result = Socket.Ctl.getREUSEADDR a in Socket.close a; Socket.close b; result end;; (* local stream socket result *)
+```
+
+<span id="SIG:SOCKET.Ctl.getKEEPALIVE:VAL"></span>
+
+### `Ctl.getKEEPALIVE`
+
+```sml
+val getKEEPALIVE : ('af, 'sock_type) sock -> bool
+```
+**`val`**` getKEEPALIVE `**`:`**` (`_`'af`_`, `_`'sock_type`_`) sock `**`->`**` bool`
 **`val`**` setKEEPALIVE `**`:`**` (`_`'af`_`, `_`'sock_type`_`) sock `**`*`**` bool `**`->`**` unit`  
 These query and set the `SO_KEEPALIVE` flag for the socket. When `true`, the system will generate periodic transmissions on a connected socket, when no other data is being exchanged.
 
-<span id="SIG:SOCKET.Ctl.getDONTROUTE:VAL"></span>**`val`**` getDONTROUTE `**`:`**` (`_`'af`_`, `_`'sock_type`_`) sock `**`->`**` bool`
+
+
+```repl
+let val (a, b) = UnixSock.Strm.socketPair () val result = Socket.Ctl.getKEEPALIVE a in Socket.close a; Socket.close b; result end;; (* local stream socket result *)
+```
+
+<span id="SIG:SOCKET.Ctl.getDONTROUTE:VAL"></span>
+
+### `Ctl.getDONTROUTE`
+
+```sml
+val getDONTROUTE : ('af, 'sock_type) sock -> bool
+```
+**`val`**` getDONTROUTE `**`:`**` (`_`'af`_`, `_`'sock_type`_`) sock `**`->`**` bool`
 **`val`**` setDONTROUTE `**`:`**` (`_`'af`_`, `_`'sock_type`_`) sock `**`*`**` bool `**`->`**` unit`  
 These query and set the `SO_DONTROUTE` flag for the socket. When this flag is `true`, outgoing messages bypass the normal routing mechanisms of the underlying protocol, and are instead directed to the appropriate network interface as specified by the network portion of the destination address. Note that this option can be specified on a per message basis by using one of the [`sendVec'`](socket.md#SIG:SOCKET.sendVec':VAL:SPEC), [`sendArr'`](socket.md#SIG:SOCKET.sendArr':VAL:SPEC), [`sendVecTo'`](socket.md#SIG:SOCKET.sendVecTo':VAL:SPEC), or [`sendArrTo'`](socket.md#SIG:SOCKET.sendArrTo':VAL:SPEC) functions.
 
-<span id="SIG:SOCKET.Ctl.getLINGER:VAL"></span>**`val`**` getLINGER `**`:`**` (`_`'af`_`, `_`'sock_type`_`) sock `**`->`**` Time.time option`
+
+
+```repl
+let val (a, b) = UnixSock.Strm.socketPair () val result = Socket.Ctl.getDONTROUTE a in Socket.close a; Socket.close b; result end;; (* local stream socket result *)
+```
+
+<span id="SIG:SOCKET.Ctl.getLINGER:VAL"></span>
+
+### `Ctl.getLINGER`
+
+```sml
+val getLINGER : ('af, 'sock_type) sock -> Time.time option
+```
+**`val`**` getLINGER `**`:`**` (`_`'af`_`, `_`'sock_type`_`) sock `**`->`**` Time.time option`
 **`val`**` setLINGER `**`:`**` (`_`'af`_`, `_`'sock_type`_`) sock `**`*`**` Time.time option`
 `                  `**`->`**` unit`  
 These functions query and set the `SO_LINGER` flag for the socket `sock`. This flag controls the action taken when unsent messages are queued on socket and a [`close`](socket.md#SIG:SOCKET.close:VAL:SPEC) is performed. If the flag is set to [`NONE`](option.md#SIG:OPTION.option:TY:SPEC), then the system will close the socket as quickly as possible, discarding data if necessary. If the flag is set to [`SOME`](option.md#SIG:OPTION.option:TY:SPEC)`(``t``)` and the socket promises reliable delivery, then the system will block the [`close`](socket.md#SIG:SOCKET.close:VAL:SPEC) operation until the data is delivered or the timeout `t` expires. If `t` is negative or too large, then the [`Time`](time.md#SIG:TIME.Time:EXN:SPEC) is raised.
 
-<span id="SIG:SOCKET.Ctl.getBROADCAST:VAL"></span>**`val`**` getBROADCAST `**`:`**` (`_`'af`_`, `_`'sock_type`_`) sock `**`->`**` bool`
+
+
+```repl
+let val (a, b) = UnixSock.Strm.socketPair () val result = Socket.Ctl.getLINGER a in Socket.close a; Socket.close b; result end;; (* local stream socket result *)
+```
+
+<span id="SIG:SOCKET.Ctl.getBROADCAST:VAL"></span>
+
+### `Ctl.getBROADCAST`
+
+```sml
+val getBROADCAST : ('af, 'sock_type) sock -> bool
+```
+**`val`**` getBROADCAST `**`:`**` (`_`'af`_`, `_`'sock_type`_`) sock `**`->`**` bool`
 **`val`**` setBROADCAST `**`:`**` (`_`'af`_`, `_`'sock_type`_`) sock `**`*`**` bool `**`->`**` unit`  
 These query and set the `SO_BROADCAST` flag for the socket `sock`, which enables or disables the ability of the process to send broadcast messages over the socket.
 
-<span id="SIG:SOCKET.Ctl.getOOBINLINE:VAL"></span>**`val`**` getOOBINLINE `**`:`**` (`_`'af`_`, `_`'sock_type`_`) sock `**`->`**` bool`
+
+
+```repl
+let val (a, b) = UnixSock.Strm.socketPair () val result = Socket.Ctl.getBROADCAST a in Socket.close a; Socket.close b; result end;; (* local stream socket result *)
+```
+
+<span id="SIG:SOCKET.Ctl.getOOBINLINE:VAL"></span>
+
+### `Ctl.getOOBINLINE`
+
+```sml
+val getOOBINLINE : ('af, 'sock_type) sock -> bool
+```
+**`val`**` getOOBINLINE `**`:`**` (`_`'af`_`, `_`'sock_type`_`) sock `**`->`**` bool`
 **`val`**` setOOBINLINE `**`:`**` (`_`'af`_`, `_`'sock_type`_`) sock `**`*`**` bool `**`->`**` unit`  
 These query and set the `SO_OOBINLINE` flag for the socket. When set, this indicates that out-of-band data should be placed in the normal input queue of the socket. Note that this option can be specified on a per message basis by using one of the [`sendVec'`](socket.md#SIG:SOCKET.sendVec':VAL:SPEC), [`sendArr'`](socket.md#SIG:SOCKET.sendArr':VAL:SPEC), [`sendVecTo'`](socket.md#SIG:SOCKET.sendVecTo':VAL:SPEC), or [`sendArrTo'`](socket.md#SIG:SOCKET.sendArrTo':VAL:SPEC) functions.
 
-<span id="SIG:SOCKET.Ctl.getSNDBUF:VAL"></span>**`val`**` getSNDBUF `**`:`**` (`_`'af`_`, `_`'sock_type`_`) sock `**`->`**` int`
+
+
+```repl
+let val (a, b) = UnixSock.Strm.socketPair () val result = Socket.Ctl.getOOBINLINE a in Socket.close a; Socket.close b; result end;; (* local stream socket result *)
+```
+
+<span id="SIG:SOCKET.Ctl.getSNDBUF:VAL"></span>
+
+### `Ctl.getSNDBUF`
+
+```sml
+val getSNDBUF : ('af, 'sock_type) sock -> int
+```
+**`val`**` getSNDBUF `**`:`**` (`_`'af`_`, `_`'sock_type`_`) sock `**`->`**` int`
 **`val`**` setSNDBUF `**`:`**` (`_`'af`_`, `_`'sock_type`_`) sock `**`*`**` int `**`->`**` unit`  
 These query and set the size of the send queue buffer for the socket.
 
-<span id="SIG:SOCKET.Ctl.getRCVBUF:VAL"></span>**`val`**` getRCVBUF `**`:`**` (`_`'af`_`, `_`'sock_type`_`) sock `**`->`**` int`
+
+
+```repl
+let val (a, b) = UnixSock.Strm.socketPair () val result = Socket.Ctl.getSNDBUF a in Socket.close a; Socket.close b; result end;; (* local stream socket result *)
+```
+
+<span id="SIG:SOCKET.Ctl.getRCVBUF:VAL"></span>
+
+### `Ctl.getRCVBUF`
+
+```sml
+val getRCVBUF : ('af, 'sock_type) sock -> int
+```
+**`val`**` getRCVBUF `**`:`**` (`_`'af`_`, `_`'sock_type`_`) sock `**`->`**` int`
 **`val`**` setRCVBUF `**`:`**` (`_`'af`_`, `_`'sock_type`_`) sock `**`*`**` int `**`->`**` unit`  
 These query and set the size of receive queue buffer for the socket.
 
-<span id="SIG:SOCKET.Ctl.getTYPE:VAL"></span>**`val`**` getTYPE `**`:`**` (`_`'af`_`, `_`'sock_type`_`) sock `**`->`**` SOCK.sock_type`  
+
+
+```repl
+let val (a, b) = UnixSock.Strm.socketPair () val result = Socket.Ctl.getRCVBUF a in Socket.close a; Socket.close b; result end;; (* local stream socket result *)
+```
+
+<span id="SIG:SOCKET.Ctl.getTYPE:VAL"></span>
+
+### `Ctl.getTYPE`
+
+```sml
+val getTYPE : ('af, 'sock_type) sock -> SOCK.sock_type
+```
+**`val`**` getTYPE `**`:`**` (`_`'af`_`, `_`'sock_type`_`) sock `**`->`**` SOCK.sock_type`  
 This returns the socket type of the socket.
 
-<span id="SIG:SOCKET.Ctl.getERROR:VAL"></span>**`val`**` getERROR `**`:`**` (`_`'af`_`, `_`'sock_type`_`) sock `**`->`**` bool`  
+
+
+```repl
+let val (a, b) = UnixSock.Strm.socketPair () val result = Socket.Ctl.getTYPE a in Socket.close a; Socket.close b; result end;; (* local stream socket result *)
+```
+
+<span id="SIG:SOCKET.Ctl.getERROR:VAL"></span>
+
+### `Ctl.getERROR`
+
+```sml
+val getERROR : ('af, 'sock_type) sock -> bool
+```
+**`val`**` getERROR `**`:`**` (`_`'af`_`, `_`'sock_type`_`) sock `**`->`**` bool`  
 This indicates whether or not an error has occurred.
 
-<span id="SIG:SOCKET.Ctl.getPeerName:VAL"></span>**`val`**` getPeerName `**`:`**` (`_`'af`_`, `_`'sock_type`_`) sock `**`->`**` `_`'af`_` sock_addr`  
+
+
+```repl
+let val (a, b) = UnixSock.Strm.socketPair () val result = Socket.Ctl.getERROR a in Socket.close a; Socket.close b; result end;; (* local stream socket result *)
+```
+
+<span id="SIG:SOCKET.Ctl.getPeerName:VAL"></span>
+
+### `Ctl.getPeerName`
+
+```sml
+val getPeerName : ('af, 'sock_type) sock -> 'af sock_addr
+```
+**`val`**` getPeerName `**`:`**` (`_`'af`_`, `_`'sock_type`_`) sock `**`->`**` `_`'af`_` sock_addr`  
 This returns the socket address to which the socket is connected.
 
-<span id="SIG:SOCKET.Ctl.getSockName:VAL"></span>**`val`**` getSockName `**`:`**` (`_`'af`_`, `_`'sock_type`_`) sock `**`->`**` `_`'af`_` sock_addr`  
+
+
+```repl
+let val (a, b) = UnixSock.Strm.socketPair () val result = Socket.Ctl.getPeerName a in Socket.close a; Socket.close b; result end;; (* local stream socket result *)
+```
+
+<span id="SIG:SOCKET.Ctl.getSockName:VAL"></span>
+
+### `Ctl.getSockName`
+
+```sml
+val getSockName : ('af, 'sock_type) sock -> 'af sock_addr
+```
+**`val`**` getSockName `**`:`**` (`_`'af`_`, `_`'sock_type`_`) sock `**`->`**` `_`'af`_` sock_addr`  
 This returns the socket address to which the socket is bound.
 
-<span id="SIG:SOCKET.Ctl.getNREAD:VAL"></span>**`val`**` getNREAD `**`:`**` (`_`'af`_`, `_`'sock_type`_`) sock `**`->`**` int`  
+
+
+```repl
+let val (a, b) = UnixSock.Strm.socketPair () val result = Socket.Ctl.getSockName a in Socket.close a; Socket.close b; result end;; (* local stream socket result *)
+```
+
+<span id="SIG:SOCKET.Ctl.getNREAD:VAL"></span>
+
+### `Ctl.getNREAD`
+
+```sml
+val getNREAD : ('af, 'sock_type) sock -> int
+```
+**`val`**` getNREAD `**`:`**` (`_`'af`_`, `_`'sock_type`_`) sock `**`->`**` int`  
 This returns the number of bytes available for reading on the socket.
 
-<span id="SIG:SOCKET.Ctl.getATMARK:VAL"></span>**`val`**` getATMARK `**`:`**` (`_`'af`_`, active stream) sock `**`->`**` bool`  
+
+
+```repl
+let val (a, b) = UnixSock.Strm.socketPair () val result = Socket.Ctl.getNREAD a in Socket.close a; Socket.close b; result end;; (* local stream socket result *)
+```
+
+<span id="SIG:SOCKET.Ctl.getATMARK:VAL"></span>
+
+### `Ctl.getATMARK`
+
+```sml
+val getATMARK : ('af, active stream) sock -> bool
+```
+**`val`**` getATMARK `**`:`**` (`_`'af`_`, active stream) sock `**`->`**` bool`  
 This indicates whether or not the read pointer on the socket is currently at the out-of-band mark.
 
-<span id="SIG:SOCKET.sameAddr:VAL"></span>**`val`**` sameAddr `**`:`**` `_`'af`_` sock_addr `**`*`**` `_`'af`_` sock_addr `**`->`**` bool`  
+
+
+```repl
+let val (a, b) = UnixSock.Strm.socketPair () val result = Socket.Ctl.getATMARK a in Socket.close a; Socket.close b; result end;; (* local stream socket result *)
+```
+
+<span id="SIG:SOCKET.sameAddr:VAL"></span>
+
+### `sameAddr`
+
+```sml
+val sameAddr : 'af sock_addr * 'af sock_addr -> bool
+```
+**`val`**` sameAddr `**`:`**` `_`'af`_` sock_addr `**`*`**` `_`'af`_` sock_addr `**`->`**` bool`  
 This tests whether two socket addresses are the same address.
 
+
+
+```repl
+Socket.sameAddr (UnixSock.toAddr "/tmp/a", UnixSock.toAddr "/tmp/a");; (* true *)
+```
+
 <span id="SIG:SOCKET.familyOfAddr:VAL"></span>
+
+### `familyOfAddr`
+
+```sml
+val familyOfAddr : 'af sock_addr -> AF.addr_family
+```
+
 `familyOfAddr ``addr`` `  
 returns the address family of the socket address `addr`.
 
+
+
+```repl
+Socket.familyOfAddr (UnixSock.toAddr "/tmp/a");; (* Unix address family *)
+```
+
 <span id="SIG:SOCKET.bind:VAL"></span>
+
+### `bind`
+
+```sml
+val bind : ('af, 'sock_type) sock * 'af sock_addr -> unit
+```
+
 `bind (``sock``, ``sa``) `  
 binds the address `sa` to the passive socket `sock`. This function raises [`SysErr`](os.md#SIG:OS.SysErr:EXN:SPEC) when the address `sa` is already in use, when `sock` is already bound to an address, or when `sock` has been closed.
 
+
+
+```repl
+Socket.bind;; (* socket operation requiring a listening endpoint *)
+```
+
 <span id="SIG:SOCKET.listen:VAL"></span>
+
+### `listen`
+
+```sml
+val listen : ('af, passive stream) sock * int -> unit
+```
+
 `listen (``sock``, ``n``) `  
 creates a queue (of size `n`) for pending questions associated to the socket `sock`. The size of queue is limited by the underlying system, but requesting a queue size larger than the limit does not cause an error (a typical limit is 128, but older systems use a limit of 5).
 
 This function raises the [`SysErr`](os.md#SIG:OS.SysErr:EXN:SPEC) exception if `sock` has been closed.
 
+
+
+```repl
+Socket.listen;; (* socket operation requiring a listening endpoint *)
+```
+
 <span id="SIG:SOCKET.accept:VAL"></span>
+
+### `accept`
+
+```sml
+val accept : ('af, passive stream) sock -> ('af, active stream) sock * 'af sock_addr
+```
+
 `accept ``sock`` `  
 extracts the first connection request from the queue of pending connections for the socket `sock`. The socket must have been bound to an address via [`bind`](socket.md#SIG:SOCKET.bind:VAL:SPEC) and enabled for listening via [`listen`](socket.md#SIG:SOCKET.listen:VAL:SPEC). If a connection is present, `accept` returns a pair `(``s``,``sa``)` consisting of a new active socket `s` with the same properties as `sock` and the address `sa` of the connecting entity. If no pending connections are present on the queue then `accept` blocks until a connection is requested. One can test for pending connection requests by using the [`select`](socket.md#SIG:SOCKET.select:VAL:SPEC) function to test the socket for reading.
 
 This function raises the [`SysErr`](os.md#SIG:OS.SysErr:EXN:SPEC) exception if `sock` has not been properly bound and enabled, or it `sock` has been closed.
 
-<span id="SIG:SOCKET.acceptNB:VAL"></span>**`val`**` acceptNB `**`:`**` (`_`'af`_`, passive stream) sock`
+
+
+```repl
+Socket.accept;; (* socket operation requiring a listening endpoint *)
+```
+
+<span id="SIG:SOCKET.acceptNB:VAL"></span>
+
+### `acceptNB`
+
+```sml
+val acceptNB : ('af, passive stream) sock -> (('af, active stream) sock
+* 'af sock_addr) option
+```
+**`val`**` acceptNB `**`:`**` (`_`'af`_`, passive stream) sock`
 `                 `**`->`**` ((`_`'af`_`, active stream) sock`
 `                 `**`*`**` `_`'af`_` sock_addr) option`  
 This function is the nonblocking form of the [`accept`](socket.md#SIG:SOCKET.accept:VAL:SPEC) operation. If the operation can complete without blocking (_i.e._, there is a pending connection), then this function returns [`SOME`](option.md#SIG:OPTION.option:TY:SPEC)`(``s``,``sa``)`, where `s` is a new active socket with the same properties as `sock` and `sa` is the the address of the connecting entity. If there are no pending connections, then this function returns [`NONE`](option.md#SIG:OPTION.option:TY:SPEC).
 
 This function raises the [`SysErr`](os.md#SIG:OS.SysErr:EXN:SPEC) exception if `sock` has not been properly bound and enabled, or it `sock` has been closed.
 
+
+
+```repl
+Socket.acceptNB;; (* socket operation requiring a listening endpoint *)
+```
+
 <span id="SIG:SOCKET.connect:VAL"></span>
+
+### `connect`
+
+```sml
+val connect : ('af, 'sock_type) sock * 'af sock_addr -> unit
+```
+
 `connect (``sock``, ``sa``) `  
 attempts to connect the socket `sock` to the address `sa`. If `sock` is a datagram socket, the address specifies the peer with which the socket is to be associated; `sa` is the address to which datagrams are to be sent, and the only address from which datagrams are to be received. If `sock` is a stream socket, the address specifies another socket to which to connect.
 
 This function raises the [`SysErr`](os.md#SIG:OS.SysErr:EXN:SPEC) exception when the address specified by `sa` is unreachable, when the connection is refused or times out, when `sock` is already connected, or when `sock` has been closed.
 
-<span id="SIG:SOCKET.connectNB:VAL"></span>**`val`**` connectNB `**`:`**` (`_`'af`_`, `_`'sock_type`_`) sock `**`*`**` `_`'af`_` sock_addr`
+
+
+```repl
+Socket.connect;; (* socket operation requiring a listening endpoint *)
+```
+
+<span id="SIG:SOCKET.connectNB:VAL"></span>
+
+### `connectNB`
+
+```sml
+val connectNB : ('af, 'sock_type) sock * 'af sock_addr -> bool
+```
+**`val`**` connectNB `**`:`**` (`_`'af`_`, `_`'sock_type`_`) sock `**`*`**` `_`'af`_` sock_addr`
 `                  `**`->`**` bool`  
 This function is the nonblocking form of [`connect`](socket.md#SIG:SOCKET.connect:VAL:SPEC). If the connection can be established without blocking the caller (which is typically true for datagram sockets, but not stream sockets), then `true` is returned. Otherwise, `false` is returned and the connection attempt is started; one can test for the completion of the connection by testing the socket for writing using the [`select`](socket.md#SIG:SOCKET.select:VAL:SPEC) function. This function will raise [`SysErr`](os.md#SIG:OS.SysErr:EXN:SPEC) if it is called on a socket for which a previous connection attempt has not yet been completed.
 
+
+
+```repl
+Socket.connectNB;; (* socket operation requiring a listening endpoint *)
+```
+
 <span id="SIG:SOCKET.close:VAL"></span>
+
+### `close`
+
+```sml
+val close : ('af, 'sock_type) sock -> unit
+```
+
 `close ``sock`` `  
 closes the connection to the socket `sock`. This function raises the [`SysErr`](os.md#SIG:OS.SysErr:EXN:SPEC) exception if the socket has already been closed.
 
+
+
+```repl
+let s = UnixSock.Strm.socket () in Socket.close s;; (* closes a socket *)
+```
+
 <span id="SIG:SOCKET.shutdown:VAL"></span>
+
+### `shutdown`
+
+```sml
+val shutdown : ('af, 'mode stream) sock * shutdown_mode -> unit
+```
+
 `shutdown (``sock``, ``mode``) `  
 shuts down all or part of a full-duplex connection on socket `sock`. If `mode` is [`NO_RECVS`](socket.md#SIG:SOCKET.shutdown_mode:TY:SPEC), further receives will be disallowed. If `mode` is [`NO_SENDS`](socket.md#SIG:SOCKET.shutdown_mode:TY:SPEC), further sends will be disallowed. If `mode` is [`NO_RECVS_OR_SENDS`](socket.md#SIG:SOCKET.shutdown_mode:TY:SPEC), further sends and receives will be disallowed. This function raises the [`SysErr`](os.md#SIG:OS.SysErr:EXN:SPEC) exception if the socket is not connected or has been closed.
 
 <span id="SIG:SOCKET.sock_desc:TY"></span>**`type`**` sock_desc`  
 This type is an abstract name for a socket, which is used to support polling on collections of sockets.
 
+
+
+```repl
+let val (a, b) = UnixSock.Strm.socketPair () val result = Socket.shutdown (a, Socket.NO_SENDS) in Socket.close a; Socket.close b; result end;; (* local stream socket result *)
+```
+
 <span id="SIG:SOCKET.sockDesc:VAL"></span>
+
+### `sockDesc`
+
+```sml
+val sockDesc : ('af, 'sock_type) sock -> sock_desc
+```
+
 `sockDesc ``sock`` `  
 returns a socket descriptor that names the socket `sock`.
 
+
+
+```repl
+let val (a, b) = UnixSock.Strm.socketPair () val result = Socket.sockDesc a in Socket.close a; Socket.close b; result end;; (* local stream socket result *)
+```
+
 <span id="SIG:SOCKET.sameDesc:VAL"></span>
+
+### `sameDesc`
+
+```sml
+val sameDesc : sock_desc * sock_desc -> bool
+```
+
 `sameDesc (``sd1``, ``sd2``) `  
 returns `true` if the two socket descriptors `sd1` and `sd2` describe the same underlying socket. Thus, the expression `sameDesc(sockDesc ``sock``, sockDesc ``sock``)` will always return `true` for any socket `sock`.
 
+
+
+```repl
+let val (a, b) = UnixSock.Strm.socketPair () val result = Socket.sameDesc (Socket.sockDesc a, Socket.sockDesc a) in Socket.close a; Socket.close b; result end;; (* local stream socket result *)
+```
+
 <span id="SIG:SOCKET.select:VAL"></span>
+
+### `select`
+
+```sml
+val select : {
+rds : sock_desc list,
+wrs : sock_desc list,
+exs : sock_desc list,
+timeout : Time.time option
+} -> {
+rds : sock_desc list,
+wrs : sock_desc list,
+exs : sock_desc list
+}
+```
+
 `select {``rds``, ``wrs``, ``exs``, ``timeout``} `  
 examines the sockets in `rds`, `wrs`, and `exs` to see if they are ready for reading, writing, or have an exceptional condition pending, respectively. The calling program is blocked until either one or more of the named sockets is \`\`_ready_ '' or the specified `timeout` expires (where a timeout of [`NONE`](option.md#SIG:OPTION.option:TY:SPEC) never expires). The result of [`select`](socket.md#SIG:SOCKET.select:VAL:SPEC) is a record of three lists of socket descriptors containing the ready sockets from the corresponding argument lists. The order in which socket descriptors appear in the argument lists is preserved in the result lists. A timeout is signified by a result of three empty lists.
 
@@ -449,7 +895,20 @@ This function raises [`SysErr`](os.md#SIG:OS.SysErr:EXN:SPEC) if any of the argu
 
 Note that one can test if a call to [`accept`](socket.md#SIG:SOCKET.accept:VAL:SPEC) will block by using [`select`](socket.md#SIG:SOCKET.select:VAL:SPEC) to see if the socket is ready to read. Similarly, one can use [`select`](socket.md#SIG:SOCKET.select:VAL:SPEC) to test if a call to [`connect`](socket.md#SIG:SOCKET.connect:VAL:SPEC) will block by seeing if the socket is ready to write.
 
+
+
+```repl
+let val (a, b) = UnixSock.Strm.socketPair () val result = Socket.select {rds = [Socket.sockDesc a], wrs = [], exs = [], timeout = SOME Time.zeroTime} in Socket.close a; Socket.close b; result end;; (* local stream socket result *)
+```
+
 <span id="SIG:SOCKET.ioDesc:VAL"></span>
+
+### `ioDesc`
+
+```sml
+val ioDesc : ('af, 'sock_type) sock -> OS.IO.iodesc
+```
+
 `ioDesc ``sock`` `  
 returns the I/O descriptor corresponding to socket `sock`. This descriptor can be used to poll the socket via [`pollDesc`](os-io.md#SIG:OS_IO.pollDesc:VAL:SPEC) and [`poll`](os-io.md#SIG:OS_IO.poll:VAL:SPEC) in the [`OS.IO`](os.md#SIG:OS.IO:STR:SPEC) structure. Using the polling mechanism from [`OS.IO`](os.md#SIG:OS.IO:STR:SPEC) has the advantage that different kinds of I/O objects can be mixed, but not all systems support polling on sockets this way. If an application is only polling sockets, then it is more portable to use the [`select`](socket.md#SIG:SOCKET.select:VAL:SPEC) function defined above.
 
@@ -459,21 +918,64 @@ Flags used in the general form of socket output operations.
 <span id="SIG:SOCKET.in_flags:TY"></span>**`type`**` in_flags = {peek `**`:`**` bool, oob `**`:`**` bool}`  
 Flags used in the general form of socket input operations.
 
+
+
+```repl
+let val (a, b) = UnixSock.Strm.socketPair () val result = Socket.ioDesc a in Socket.close a; Socket.close b; result end;; (* local stream socket result *)
+```
+
 <span id="SIG:SOCKET.sendVec:VAL"></span>
+
+### `sendVec`
+
+```sml
+val sendVec : ('af, active stream) sock
+* Word8VectorSlice.slice -> int
+```
+
 `sendVec (``sock``, ``slice``) `
 `sendArr (``sock``, ``slice``)`  
 These functions send the bytes in the slice `slice` on the active stream socket `sock`. They return the number of bytes actually sent.
 
 These functions raise [`SysErr`](os.md#SIG:OS.SysErr:EXN:SPEC) if `sock` has been closed.
 
+
+
+```repl
+let val (a, b) = UnixSock.Strm.socketPair () val result = Socket.sendVec (a, Word8VectorSlice.full (Word8Vector.fromList [0w104, 0w105])) in Socket.close a; Socket.close b; result end;; (* local stream socket result *)
+```
+
 <span id="SIG:SOCKET.sendVec':VAL"></span>
+
+### `sendVec'`
+
+```sml
+val sendVec' : ('af, active stream) sock
+* Word8VectorSlice.slice
+* out_flags -> int
+```
+
 `sendVec' (``sock``, ``slice``, {``don't_route``, ``oob``}) `
 `sendArr' (``sock``, ``slice``, {``don't_route``, ``oob``})`  
 These functions send the bytes in the slice `slice` on the active stream socket `sock`. They return the number of bytes actually sent. If the `don't_route` flag is `true`, the data is sent bypassing the normal routing mechanism of the protocol. If `oob` is `true`, the data is sent out-of-band, that is, before any other data which may have been buffered.
 
 These functions raise [`SysErr`](os.md#SIG:OS.SysErr:EXN:SPEC) if `sock` has been closed.
 
-<span id="SIG:SOCKET.sendVecNB:VAL"></span>**`val`**` sendVecNB `**`:`**` (`_`'af`_`, active stream) sock`
+
+
+```repl
+let val (a, b) = UnixSock.Strm.socketPair () val result = Socket.sendVec' (a, Word8VectorSlice.full (Word8Vector.fromList [0w104, 0w105]), {don't_route = false, oob = false}) in Socket.close a; Socket.close b; result end;; (* local stream socket result *)
+```
+
+<span id="SIG:SOCKET.sendVecNB:VAL"></span>
+
+### `sendVecNB`
+
+```sml
+val sendVecNB : ('af, active stream) sock
+* Word8VectorSlice.slice -> int option
+```
+**`val`**` sendVecNB `**`:`**` (`_`'af`_`, active stream) sock`
 `                  `**`*`**` Word8VectorSlice.slice `**`->`**` int option`
 **`val`**` sendVecNB' `**`:`**` (`_`'af`_`, active stream) sock`
 `                   `**`*`**` Word8VectorSlice.slice`
@@ -485,7 +987,20 @@ These functions raise [`SysErr`](os.md#SIG:OS.SysErr:EXN:SPEC) if `sock` has bee
 `                   `**`*`**` out_flags `**`->`**` int option`  
 These functions are the nonblocking versions of [`sendVec`](socket.md#SIG:SOCKET.sendVec:VAL:SPEC), [`sendVec'`](socket.md#SIG:SOCKET.sendVec':VAL:SPEC), [`sendArr`](socket.md#SIG:SOCKET.sendArr:VAL:SPEC), and [`sendArr'`](socket.md#SIG:SOCKET.sendArr':VAL:SPEC) (resp.). They have the same semantics as their blocking forms, with the exception that when the operation can complete without blocking, then the result is wrapped in [`SOME`](option.md#SIG:OPTION.option:TY:SPEC) and if the operation would have to wait to send the data, then [`NONE`](option.md#SIG:OPTION.option:TY:SPEC) is returned instead.
 
+
+
+```repl
+let val (a, b) = UnixSock.Strm.socketPair () val result = Socket.sendVecNB (a, Word8VectorSlice.full (Word8Vector.fromList [0w104, 0w105])) in Socket.close a; Socket.close b; result end;; (* local stream socket result *)
+```
+
 <span id="SIG:SOCKET.recvVec:VAL"></span>
+
+### `recvVec`
+
+```sml
+val recvVec : ('af, active stream) sock * int -> Word8Vector.vector
+```
+
 `recvVec (``sock``, ``n``) `
 `recvVec'(``sock``, ``n``, {``peek``,``oob``})`  
 These functions receive up to `n` bytes from the active stream socket `sock`. The size of the resulting vector is the number of bytes that were successfully received, which may be less than `n`. If the connection has been closed at the other end (or if `n` is `0`), then the empty vector will be returned.
@@ -494,7 +1009,21 @@ In the second version, if `peek` is `true`, the data is received but not discard
 
 These functions raise [`SysErr`](os.md#SIG:OS.SysErr:EXN:SPEC) if the socket `sock` has been closed and they raise [`Size`](general.md#SIG:GENERAL.Size:EXN:SPEC) if `n` \< 0 or `n` \> [`Word8Vector.maxLen`](mono-vector.md#SIG:MONO_VECTOR.maxLen:VAL:SPEC).
 
+
+
+```repl
+let val (a, b) = UnixSock.Strm.socketPair () val result = (Socket.sendVec (a, Word8VectorSlice.full (Word8Vector.fromList [0w104, 0w105])); Socket.recvVec (b, 2)) in Socket.close a; Socket.close b; result end;; (* local stream socket result *)
+```
+
 <span id="SIG:SOCKET.recvArr:VAL"></span>
+
+### `recvArr`
+
+```sml
+val recvArr : ('af, active stream) sock
+* Word8ArraySlice.slice -> int
+```
+
 `recvArr (``sock``, ``slice``) `
 `recvArr' (``sock``, ``slice``, {``peek``, ``oob``})`  
 These functions read data from the socket `sock` into the array slice `slice`. They return the number of bytes actually received. If the connection has been closed at the other end or the slice is empty, then 0 is returned.
@@ -503,7 +1032,20 @@ For [`recvArr'`](socket.md#SIG:SOCKET.recvArr':VAL:SPEC), if `peek` is `true`, t
 
 These functions raise [`SysErr`](os.md#SIG:OS.SysErr:EXN:SPEC) if `sock` has been closed.
 
-<span id="SIG:SOCKET.recvVecNB:VAL"></span>**`val`**` recvVecNB `**`:`**` (`_`'af`_`, active stream) sock `**`*`**` int`
+
+
+```repl
+let val (a, b) = UnixSock.Strm.socketPair () val result = (Socket.sendVec (a, Word8VectorSlice.full (Word8Vector.fromList [0w104, 0w105])); Socket.recvArr (b, Word8ArraySlice.full (Word8Array.array (2, 0w0)))) in Socket.close a; Socket.close b; result end;; (* local stream socket result *)
+```
+
+<span id="SIG:SOCKET.recvVecNB:VAL"></span>
+
+### `recvVecNB`
+
+```sml
+val recvVecNB : ('af, active stream) sock * int -> Word8Vector.vector option
+```
+**`val`**` recvVecNB `**`:`**` (`_`'af`_`, active stream) sock `**`*`**` int`
 `                  `**`->`**` Word8Vector.vector option`
 **`val`**` recvVecNB' `**`:`**` (`_`'af`_`, active stream) sock `**`*`**` int `**`*`**` in_flags`
 `                   `**`->`**` Word8Vector.vector option`
@@ -514,14 +1056,45 @@ These functions raise [`SysErr`](os.md#SIG:OS.SysErr:EXN:SPEC) if `sock` has bee
 `                   `**`*`**` in_flags `**`->`**` int option`  
 These functions are the nonblocking versions of [`recvVec`](socket.md#SIG:SOCKET.recvVec:VAL:SPEC), [`recvVec'`](socket.md#SIG:SOCKET.recvVec':VAL:SPEC), [`recvArr`](socket.md#SIG:SOCKET.recvArr:VAL:SPEC), and [`recvArr'`](socket.md#SIG:SOCKET.recvArr':VAL:SPEC) (resp.). They have the same semantics as their blocking forms, with the exception that when the operation can complete without blocking, then the result is wrapped in [`SOME`](option.md#SIG:OPTION.option:TY:SPEC) and if the operation would have to wait for input, then [`NONE`](option.md#SIG:OPTION.option:TY:SPEC) is returned instead.
 
+
+
+```repl
+let val (a, b) = UnixSock.Strm.socketPair () val result = (Socket.sendVec (a, Word8VectorSlice.full (Word8Vector.fromList [0w104, 0w105])); Socket.recvVecNB (b, 2)) in Socket.close a; Socket.close b; result end;; (* local stream socket result *)
+```
+
 <span id="SIG:SOCKET.sendVecTo:VAL"></span>
+
+### `sendVecTo`
+
+```sml
+val sendVecTo : ('af, dgram) sock
+* 'af sock_addr
+* Word8VectorSlice.slice -> unit
+```
+
 `sendVecTo (``sock``, ``sa``, ``slice``) `
 `sendArrTo (``sock``, ``sa``, ``slice``)`  
 These functions send the message specified by the slice `slice` on the datagram socket `sock` to the address `sa`.
 
 These functions raise [`SysErr`](os.md#SIG:OS.SysErr:EXN:SPEC) if `sock` has been closed or if the socket has been connected to a different address than `sa`.
 
+
+
+```repl
+let val (a, b) = UnixSock.DGrm.socketPair () val addr = Socket.Ctl.getSockName b val result = Socket.sendVecTo (a, addr, Word8VectorSlice.full (Word8Vector.fromList [0w104, 0w105])) in Socket.close a; Socket.close b; result end;; (* local datagram socket result *)
+```
+
 <span id="SIG:SOCKET.sendVecTo':VAL"></span>
+
+### `sendVecTo'`
+
+```sml
+val sendVecTo' : ('af, dgram) sock
+* 'af sock_addr
+* Word8VectorSlice.slice
+* out_flags -> unit
+```
+
 `sendVecTo' (``sock``, ``sa``, ``slice``, {``don't_route``, ``oob``}) `
 `sendArrTo' (``sock``, ``sa``, ``slice``, {``don't_route``, ``oob``})`  
 These functions send the message specified by the slice `slice` on the datagram socket `sock` to the address
@@ -530,7 +1103,22 @@ If the `don't_route` flag is `true`, the data is sent bypassing the normal routi
 
 These functions raise [`SysErr`](os.md#SIG:OS.SysErr:EXN:SPEC) if `sock` has been closed or if the socket has been connected to a different address than `sa`.
 
-<span id="SIG:SOCKET.sendVecToNB:VAL"></span>**`val`**` sendVecToNB `**`:`**` (`_`'af`_`, dgram) sock`
+
+
+```repl
+let val (a, b) = UnixSock.DGrm.socketPair () val addr = Socket.Ctl.getSockName b val result = Socket.sendVecTo' (a, addr, Word8VectorSlice.full (Word8Vector.fromList [0w104, 0w105]), {don't_route = false, oob = false}) in Socket.close a; Socket.close b; result end;; (* local datagram socket result *)
+```
+
+<span id="SIG:SOCKET.sendVecToNB:VAL"></span>
+
+### `sendVecToNB`
+
+```sml
+val sendVecToNB : ('af, dgram) sock
+* 'af sock_addr
+* Word8VectorSlice.slice -> bool
+```
+**`val`**` sendVecToNB `**`:`**` (`_`'af`_`, dgram) sock`
 `                    `**`*`**` `_`'af`_` sock_addr`
 `                    `**`*`**` Word8VectorSlice.slice `**`->`**` bool`
 **`val`**` sendVecToNB' `**`:`**` (`_`'af`_`, dgram) sock`
@@ -546,7 +1134,21 @@ These functions raise [`SysErr`](os.md#SIG:OS.SysErr:EXN:SPEC) if `sock` has bee
 `                     `**`*`**` out_flags `**`->`**` bool`  
 These functions are the nonblocking versions of [`sendVecTo`](socket.md#SIG:SOCKET.sendVecTo:VAL:SPEC), [`sendVecTo'`](socket.md#SIG:SOCKET.sendVecTo':VAL:SPEC), [`sendArrTo`](socket.md#SIG:SOCKET.sendArrTo:VAL:SPEC), and [`sendArrTo'`](socket.md#SIG:SOCKET.sendArrTo':VAL:SPEC) (resp.). They have the same semantics as their blocking forms, with the exception that if the operation can complete without blocking, then the operation is performed and `true` is returned. Otherwise, `false` is returned and the message is not sent.
 
+
+
+```repl
+let val (a, b) = UnixSock.DGrm.socketPair () val addr = Socket.Ctl.getSockName b val result = Socket.sendVecToNB (a, addr, Word8VectorSlice.full (Word8Vector.fromList [0w104, 0w105])) in Socket.close a; Socket.close b; result end;; (* local datagram socket result *)
+```
+
 <span id="SIG:SOCKET.recvVecFrom:VAL"></span>
+
+### `recvVecFrom`
+
+```sml
+val recvVecFrom : ('af, dgram) sock * int -> Word8Vector.vector
+* 'sock_type sock_addr
+```
+
 `recvVecFrom (``sock``, ``n``) `
 `recvVecFrom' (``sock``, ``n``, {``peek``, ``oob``})`  
 These functions receive up to `n` bytes on the datagram socket `sock`, and return a pair `(``vec``,``sa``)`, where the vector `vec` is the received message, and `sa` is the socket address from the which the data originated. If the message is larger than `n`, then data may be lost.
@@ -555,7 +1157,21 @@ In the second form, if `peek` is `true`, the data is received but not discarded 
 
 These functions raise [`SysErr`](os.md#SIG:OS.SysErr:EXN:SPEC) if `sock` has been closed; they raise [`Size`](general.md#SIG:GENERAL.Size:EXN:SPEC) if `n` \< 0 or `n` \> [`Word8Vector.maxLen`](mono-vector.md#SIG:MONO_VECTOR.maxLen:VAL:SPEC).
 
+
+
+```repl
+let val (a, b) = UnixSock.DGrm.socketPair () val addr = Socket.Ctl.getSockName b val result = (Socket.sendVecTo (a, addr, Word8VectorSlice.full (Word8Vector.fromList [0w104, 0w105])); Socket.recvVecFrom (b, 2)) in Socket.close a; Socket.close b; result end;; (* local datagram socket result *)
+```
+
 <span id="SIG:SOCKET.recvArrFrom:VAL"></span>
+
+### `recvArrFrom`
+
+```sml
+val recvArrFrom : ('af, dgram) sock
+* Word8ArraySlice.slice -> int * 'af sock_addr
+```
+
 `recvArrFrom (``sock``, ``slice``) `
 `recvArrFrom' (``sock``, ``slice``)`  
 These functions read a message from the datagram socket `sock` into the array slice `slice`. If the message is larger than the size of the slice, then data may be lost. They return the number of bytes actually received. If the connection has been closed at the other end or the slice is empty, then 0 is returned.
@@ -564,7 +1180,21 @@ For [`recvArrFrom'`](socket.md#SIG:SOCKET.recvArrFrom':VAL:SPEC), if `peek` is `
 
 These functions raise [`SysErr`](os.md#SIG:OS.SysErr:EXN:SPEC) if `sock` has been closed.
 
-<span id="SIG:SOCKET.recvVecFromNB:VAL"></span>**`val`**` recvVecFromNB `**`:`**` (`_`'af`_`, dgram) sock `**`*`**` int`
+
+
+```repl
+let val (a, b) = UnixSock.DGrm.socketPair () val addr = Socket.Ctl.getSockName b val result = (Socket.sendVecTo (a, addr, Word8VectorSlice.full (Word8Vector.fromList [0w104, 0w105])); Socket.recvArrFrom (b, Word8ArraySlice.full (Word8Array.array (2, 0w0)))) in Socket.close a; Socket.close b; result end;; (* local datagram socket result *)
+```
+
+<span id="SIG:SOCKET.recvVecFromNB:VAL"></span>
+
+### `recvVecFromNB`
+
+```sml
+val recvVecFromNB : ('af, dgram) sock * int -> (Word8Vector.vector
+* 'sock_type sock_addr) option
+```
+**`val`**` recvVecFromNB `**`:`**` (`_`'af`_`, dgram) sock `**`*`**` int`
 `                      `**`->`**` (Word8Vector.vector`
 `                      `**`*`**` `_`'sock_type`_` sock_addr) option`
 **`val`**` recvVecFromNB' `**`:`**` (`_`'af`_`, dgram) sock `**`*`**` int `**`*`**` in_flags`
@@ -579,10 +1209,484 @@ These functions raise [`SysErr`](os.md#SIG:OS.SysErr:EXN:SPEC) if `sock` has bee
 `                       `**`->`**` (int `**`*`**` `_`'af`_` sock_addr) option`  
 These functions are the nonblocking versions of [`recvVecFrom`](socket.md#SIG:SOCKET.recvVecFrom:VAL:SPEC), [`recvVecFrom'`](socket.md#SIG:SOCKET.recvVecFrom':VAL:SPEC), [`recvArrFrom`](socket.md#SIG:SOCKET.recvArrFrom:VAL:SPEC), and [`recvArrFrom'`](socket.md#SIG:SOCKET.recvArrFrom':VAL:SPEC) (resp.). They have the same semantics as their blocking forms, with the exception that when the operation can complete without blocking, then the result is wrapped in [`SOME`](option.md#SIG:OPTION.option:TY:SPEC) and if the operation would have to wait for input, then [`NONE`](option.md#SIG:OPTION.option:TY:SPEC) is returned instead.
 
+
+
+```repl
+let val (a, b) = UnixSock.DGrm.socketPair () val addr = Socket.Ctl.getSockName b val result = (Socket.sendVecTo (a, addr, Word8VectorSlice.full (Word8Vector.fromList [0w104, 0w105])); Socket.recvVecFromNB (b, 2)) in Socket.close a; Socket.close b; result end;; (* local datagram socket result *)
+```
+
+<span id="SIG:SOCKET.AF.fromString:VAL"></span>
+
+### `AF.fromString`
+
+```sml
+val fromString : string -> addr_family option
+```
+
+Example: `AF.fromString`.
+
+```repl
+Socket.AF.fromString "INET";; (* SOME address family *)
+```
+
+<span id="SIG:SOCKET.SOCK.fromString:VAL"></span>
+
+### `SOCK.fromString`
+
+```sml
+val fromString : string -> sock_type option
+```
+
+Example: `SOCK.fromString`.
+
+```repl
+Socket.SOCK.fromString "STREAM";; (* SOME socket type *)
+```
+
+<span id="SIG:SOCKET.Ctl.setDEBUG:VAL"></span>
+
+### `Ctl.setDEBUG`
+
+```sml
+val setDEBUG : ('af, 'sock_type) sock * bool -> unit
+```
+
+Example: `Ctl.setDEBUG`.
+
+```repl
+let val (a, b) = UnixSock.Strm.socketPair () val result = (Socket.Ctl.setDEBUG (a, true); Socket.Ctl.getDEBUG a) in Socket.close a; Socket.close b; result end;; (* local stream socket result *)
+```
+
+<span id="SIG:SOCKET.Ctl.setREUSEADDR:VAL"></span>
+
+### `Ctl.setREUSEADDR`
+
+```sml
+val setREUSEADDR : ('af, 'sock_type) sock * bool -> unit
+```
+
+Example: `Ctl.setREUSEADDR`.
+
+```repl
+let val (a, b) = UnixSock.Strm.socketPair () val result = (Socket.Ctl.setREUSEADDR (a, true); Socket.Ctl.getREUSEADDR a) in Socket.close a; Socket.close b; result end;; (* local stream socket result *)
+```
+
+<span id="SIG:SOCKET.Ctl.setKEEPALIVE:VAL"></span>
+
+### `Ctl.setKEEPALIVE`
+
+```sml
+val setKEEPALIVE : ('af, 'sock_type) sock * bool -> unit
+```
+
+Example: `Ctl.setKEEPALIVE`.
+
+```repl
+let val (a, b) = UnixSock.Strm.socketPair () val result = (Socket.Ctl.setKEEPALIVE (a, true); Socket.Ctl.getKEEPALIVE a) in Socket.close a; Socket.close b; result end;; (* local stream socket result *)
+```
+
+<span id="SIG:SOCKET.Ctl.setDONTROUTE:VAL"></span>
+
+### `Ctl.setDONTROUTE`
+
+```sml
+val setDONTROUTE : ('af, 'sock_type) sock * bool -> unit
+```
+
+Example: `Ctl.setDONTROUTE`.
+
+```repl
+let val (a, b) = UnixSock.Strm.socketPair () val result = (Socket.Ctl.setDONTROUTE (a, true); Socket.Ctl.getDONTROUTE a) in Socket.close a; Socket.close b; result end;; (* local stream socket result *)
+```
+
+<span id="SIG:SOCKET.Ctl.setLINGER:VAL"></span>
+
+### `Ctl.setLINGER`
+
+```sml
+val setLINGER : ('af, 'sock_type) sock
+* Time.time option -> unit
+```
+
+Example: `Ctl.setLINGER`.
+
+```repl
+let val (a, b) = UnixSock.Strm.socketPair () val result = (Socket.Ctl.setLINGER (a, NONE); Socket.Ctl.getLINGER a) in Socket.close a; Socket.close b; result end;; (* local stream socket result *)
+```
+
+<span id="SIG:SOCKET.Ctl.setBROADCAST:VAL"></span>
+
+### `Ctl.setBROADCAST`
+
+```sml
+val setBROADCAST : ('af, 'sock_type) sock * bool -> unit
+```
+
+Example: `Ctl.setBROADCAST`.
+
+```repl
+let val (a, b) = UnixSock.Strm.socketPair () val result = (Socket.Ctl.setBROADCAST (a, true); Socket.Ctl.getBROADCAST a) in Socket.close a; Socket.close b; result end;; (* local stream socket result *)
+```
+
+<span id="SIG:SOCKET.Ctl.setOOBINLINE:VAL"></span>
+
+### `Ctl.setOOBINLINE`
+
+```sml
+val setOOBINLINE : ('af, 'sock_type) sock * bool -> unit
+```
+
+Example: `Ctl.setOOBINLINE`.
+
+```repl
+let val (a, b) = UnixSock.Strm.socketPair () val result = (Socket.Ctl.setOOBINLINE (a, true); Socket.Ctl.getOOBINLINE a) in Socket.close a; Socket.close b; result end;; (* local stream socket result *)
+```
+
+<span id="SIG:SOCKET.Ctl.setSNDBUF:VAL"></span>
+
+### `Ctl.setSNDBUF`
+
+```sml
+val setSNDBUF : ('af, 'sock_type) sock * int -> unit
+```
+
+Example: `Ctl.setSNDBUF`.
+
+```repl
+let val (a, b) = UnixSock.Strm.socketPair () val result = (Socket.Ctl.setSNDBUF (a, 4096); Socket.Ctl.getSNDBUF a) in Socket.close a; Socket.close b; result end;; (* local stream socket result *)
+```
+
+<span id="SIG:SOCKET.Ctl.setRCVBUF:VAL"></span>
+
+### `Ctl.setRCVBUF`
+
+```sml
+val setRCVBUF : ('af, 'sock_type) sock * int -> unit
+```
+
+Example: `Ctl.setRCVBUF`.
+
+```repl
+let val (a, b) = UnixSock.Strm.socketPair () val result = (Socket.Ctl.setRCVBUF (a, 4096); Socket.Ctl.getRCVBUF a) in Socket.close a; Socket.close b; result end;; (* local stream socket result *)
+```
+
+<span id="SIG:SOCKET.sendArr:VAL"></span>
+
+### `sendArr`
+
+```sml
+val sendArr : ('af, active stream) sock
+* Word8ArraySlice.slice -> int
+```
+
+Example: `sendArr`.
+
+```repl
+let val (a, b) = UnixSock.Strm.socketPair () val result = Socket.sendArr (a, Word8ArraySlice.full (Word8Array.fromList [0w104, 0w105])) in Socket.close a; Socket.close b; result end;; (* local stream socket result *)
+```
+
+<span id="SIG:SOCKET.sendArr':VAL"></span>
+
+### `sendArr'`
+
+```sml
+val sendArr' : ('af, active stream) sock
+* Word8ArraySlice.slice
+* out_flags -> int
+```
+
+Example: `sendArr'`.
+
+```repl
+let val (a, b) = UnixSock.Strm.socketPair () val result = Socket.sendArr' (a, Word8ArraySlice.full (Word8Array.fromList [0w104, 0w105]), {don't_route = false, oob = false}) in Socket.close a; Socket.close b; result end;; (* local stream socket result *)
+```
+
+<span id="SIG:SOCKET.sendVecNB':VAL"></span>
+
+### `sendVecNB'`
+
+```sml
+val sendVecNB' : ('af, active stream) sock
+* Word8VectorSlice.slice
+* out_flags -> int option
+```
+
+Example: `sendVecNB'`.
+
+```repl
+let val (a, b) = UnixSock.Strm.socketPair () val result = Socket.sendVecNB' (a, Word8VectorSlice.full (Word8Vector.fromList [0w104, 0w105]), {don't_route = false, oob = false}) in Socket.close a; Socket.close b; result end;; (* local stream socket result *)
+```
+
+<span id="SIG:SOCKET.sendArrNB:VAL"></span>
+
+### `sendArrNB`
+
+```sml
+val sendArrNB : ('af, active stream) sock
+* Word8ArraySlice.slice -> int option
+```
+
+Example: `sendArrNB`.
+
+```repl
+let val (a, b) = UnixSock.Strm.socketPair () val result = Socket.sendArrNB (a, Word8ArraySlice.full (Word8Array.fromList [0w104, 0w105])) in Socket.close a; Socket.close b; result end;; (* local stream socket result *)
+```
+
+<span id="SIG:SOCKET.sendArrNB':VAL"></span>
+
+### `sendArrNB'`
+
+```sml
+val sendArrNB' : ('af, active stream) sock
+* Word8ArraySlice.slice
+* out_flags -> int option
+```
+
+Example: `sendArrNB'`.
+
+```repl
+let val (a, b) = UnixSock.Strm.socketPair () val result = Socket.sendArrNB' (a, Word8ArraySlice.full (Word8Array.fromList [0w104, 0w105]), {don't_route = false, oob = false}) in Socket.close a; Socket.close b; result end;; (* local stream socket result *)
+```
+
+<span id="SIG:SOCKET.recvVec':VAL"></span>
+
+### `recvVec'`
+
+```sml
+val recvVec' : ('af, active stream) sock * int * in_flags -> Word8Vector.vector
+```
+
+Example: `recvVec'`.
+
+```repl
+let val (a, b) = UnixSock.Strm.socketPair () val result = (Socket.sendVec (a, Word8VectorSlice.full (Word8Vector.fromList [0w104, 0w105])); Socket.recvVec' (b, 2, {peek = false, oob = false})) in Socket.close a; Socket.close b; result end;; (* local stream socket result *)
+```
+
+<span id="SIG:SOCKET.recvArr':VAL"></span>
+
+### `recvArr'`
+
+```sml
+val recvArr' : ('af, active stream) sock
+* Word8ArraySlice.slice
+* in_flags -> int
+```
+
+Example: `recvArr'`.
+
+```repl
+let val (a, b) = UnixSock.Strm.socketPair () val result = (Socket.sendVec (a, Word8VectorSlice.full (Word8Vector.fromList [0w104, 0w105])); Socket.recvArr' (b, Word8ArraySlice.full (Word8Array.array (2, 0w0)), {peek = false, oob = false})) in Socket.close a; Socket.close b; result end;; (* local stream socket result *)
+```
+
+<span id="SIG:SOCKET.recvVecNB':VAL"></span>
+
+### `recvVecNB'`
+
+```sml
+val recvVecNB' : ('af, active stream) sock * int * in_flags -> Word8Vector.vector option
+```
+
+Example: `recvVecNB'`.
+
+```repl
+let val (a, b) = UnixSock.Strm.socketPair () val result = (Socket.sendVec (a, Word8VectorSlice.full (Word8Vector.fromList [0w104, 0w105])); Socket.recvVecNB' (b, 2, {peek = false, oob = false})) in Socket.close a; Socket.close b; result end;; (* local stream socket result *)
+```
+
+<span id="SIG:SOCKET.recvArrNB:VAL"></span>
+
+### `recvArrNB`
+
+```sml
+val recvArrNB : ('af, active stream) sock
+* Word8ArraySlice.slice -> int option
+```
+
+Example: `recvArrNB`.
+
+```repl
+let val (a, b) = UnixSock.Strm.socketPair () val result = (Socket.sendVec (a, Word8VectorSlice.full (Word8Vector.fromList [0w104, 0w105])); Socket.recvArrNB (b, Word8ArraySlice.full (Word8Array.array (2, 0w0)))) in Socket.close a; Socket.close b; result end;; (* local stream socket result *)
+```
+
+<span id="SIG:SOCKET.recvArrNB':VAL"></span>
+
+### `recvArrNB'`
+
+```sml
+val recvArrNB' : ('af, active stream) sock
+* Word8ArraySlice.slice
+* in_flags -> int option
+```
+
+Example: `recvArrNB'`.
+
+```repl
+let val (a, b) = UnixSock.Strm.socketPair () val result = (Socket.sendVec (a, Word8VectorSlice.full (Word8Vector.fromList [0w104, 0w105])); Socket.recvArrNB' (b, Word8ArraySlice.full (Word8Array.array (2, 0w0)), {peek = false, oob = false})) in Socket.close a; Socket.close b; result end;; (* local stream socket result *)
+```
+
+<span id="SIG:SOCKET.sendArrTo:VAL"></span>
+
+### `sendArrTo`
+
+```sml
+val sendArrTo : ('af, dgram) sock
+* 'af sock_addr
+* Word8ArraySlice.slice -> unit
+```
+
+Example: `sendArrTo`.
+
+```repl
+let val (a, b) = UnixSock.DGrm.socketPair () val addr = Socket.Ctl.getSockName b val result = Socket.sendArrTo (a, addr, Word8ArraySlice.full (Word8Array.fromList [0w104, 0w105])) in Socket.close a; Socket.close b; result end;; (* local datagram socket result *)
+```
+
+<span id="SIG:SOCKET.sendArrTo':VAL"></span>
+
+### `sendArrTo'`
+
+```sml
+val sendArrTo' : ('af, dgram) sock
+* 'af sock_addr
+* Word8ArraySlice.slice
+* out_flags -> unit
+```
+
+Example: `sendArrTo'`.
+
+```repl
+let val (a, b) = UnixSock.DGrm.socketPair () val addr = Socket.Ctl.getSockName b val result = Socket.sendArrTo' (a, addr, Word8ArraySlice.full (Word8Array.fromList [0w104, 0w105]), {don't_route = false, oob = false}) in Socket.close a; Socket.close b; result end;; (* local datagram socket result *)
+```
+
+<span id="SIG:SOCKET.sendVecToNB':VAL"></span>
+
+### `sendVecToNB'`
+
+```sml
+val sendVecToNB' : ('af, dgram) sock
+* 'af sock_addr
+* Word8VectorSlice.slice
+* out_flags -> bool
+```
+
+Example: `sendVecToNB'`.
+
+```repl
+let val (a, b) = UnixSock.DGrm.socketPair () val addr = Socket.Ctl.getSockName b val result = Socket.sendVecToNB' (a, addr, Word8VectorSlice.full (Word8Vector.fromList [0w104, 0w105]), {don't_route = false, oob = false}) in Socket.close a; Socket.close b; result end;; (* local datagram socket result *)
+```
+
+<span id="SIG:SOCKET.sendArrToNB:VAL"></span>
+
+### `sendArrToNB`
+
+```sml
+val sendArrToNB : ('af, dgram) sock
+* 'af sock_addr
+* Word8ArraySlice.slice -> bool
+```
+
+Example: `sendArrToNB`.
+
+```repl
+let val (a, b) = UnixSock.DGrm.socketPair () val addr = Socket.Ctl.getSockName b val result = Socket.sendArrToNB (a, addr, Word8ArraySlice.full (Word8Array.fromList [0w104, 0w105])) in Socket.close a; Socket.close b; result end;; (* local datagram socket result *)
+```
+
+<span id="SIG:SOCKET.sendArrToNB':VAL"></span>
+
+### `sendArrToNB'`
+
+```sml
+val sendArrToNB' : ('af, dgram) sock
+* 'af sock_addr
+* Word8ArraySlice.slice
+* out_flags -> bool
+```
+
+Example: `sendArrToNB'`.
+
+```repl
+let val (a, b) = UnixSock.DGrm.socketPair () val addr = Socket.Ctl.getSockName b val result = Socket.sendArrToNB' (a, addr, Word8ArraySlice.full (Word8Array.fromList [0w104, 0w105]), {don't_route = false, oob = false}) in Socket.close a; Socket.close b; result end;; (* local datagram socket result *)
+```
+
+<span id="SIG:SOCKET.recvVecFrom':VAL"></span>
+
+### `recvVecFrom'`
+
+```sml
+val recvVecFrom' : ('af, dgram) sock * int * in_flags -> Word8Vector.vector
+* 'sock_type sock_addr
+```
+
+Example: `recvVecFrom'`.
+
+```repl
+let val (a, b) = UnixSock.DGrm.socketPair () val addr = Socket.Ctl.getSockName b val result = (Socket.sendVecTo (a, addr, Word8VectorSlice.full (Word8Vector.fromList [0w104, 0w105])); Socket.recvVecFrom' (b, 2, {peek = false, oob = false})) in Socket.close a; Socket.close b; result end;; (* local datagram socket result *)
+```
+
+<span id="SIG:SOCKET.recvArrFrom':VAL"></span>
+
+### `recvArrFrom'`
+
+```sml
+val recvArrFrom' : ('af, dgram) sock
+* Word8ArraySlice.slice
+* in_flags -> int * 'af sock_addr
+```
+
+Example: `recvArrFrom'`.
+
+```repl
+let val (a, b) = UnixSock.DGrm.socketPair () val addr = Socket.Ctl.getSockName b val result = (Socket.sendVecTo (a, addr, Word8VectorSlice.full (Word8Vector.fromList [0w104, 0w105])); Socket.recvArrFrom' (b, Word8ArraySlice.full (Word8Array.array (2, 0w0)), {peek = false, oob = false})) in Socket.close a; Socket.close b; result end;; (* local datagram socket result *)
+```
+
+<span id="SIG:SOCKET.recvVecFromNB':VAL"></span>
+
+### `recvVecFromNB'`
+
+```sml
+val recvVecFromNB' : ('af, dgram) sock * int * in_flags -> (Word8Vector.vector
+* 'sock_type sock_addr) option
+```
+
+Example: `recvVecFromNB'`.
+
+```repl
+let val (a, b) = UnixSock.DGrm.socketPair () val addr = Socket.Ctl.getSockName b val result = (Socket.sendVecTo (a, addr, Word8VectorSlice.full (Word8Vector.fromList [0w104, 0w105])); Socket.recvVecFromNB' (b, 2, {peek = false, oob = false})) in Socket.close a; Socket.close b; result end;; (* local datagram socket result *)
+```
+
+<span id="SIG:SOCKET.recvArrFromNB:VAL"></span>
+
+### `recvArrFromNB`
+
+```sml
+val recvArrFromNB : ('af, dgram) sock
+* Word8ArraySlice.slice -> (int * 'af sock_addr) option
+```
+
+Example: `recvArrFromNB`.
+
+```repl
+let val (a, b) = UnixSock.DGrm.socketPair () val addr = Socket.Ctl.getSockName b val result = (Socket.sendVecTo (a, addr, Word8VectorSlice.full (Word8Vector.fromList [0w104, 0w105])); Socket.recvArrFromNB (b, Word8ArraySlice.full (Word8Array.array (2, 0w0)))) in Socket.close a; Socket.close b; result end;; (* local datagram socket result *)
+```
+
+<span id="SIG:SOCKET.recvArrFromNB':VAL"></span>
+
+### `recvArrFromNB'`
+
+```sml
+val recvArrFromNB' : ('af, dgram) sock
+* Word8ArraySlice.slice
+* in_flags -> (int * 'af sock_addr) option
+```
+
+Example: `recvArrFromNB'`.
+
+```repl
+let val (a, b) = UnixSock.DGrm.socketPair () val addr = Socket.Ctl.getSockName b val result = (Socket.sendVecTo (a, addr, Word8VectorSlice.full (Word8Vector.fromList [0w104, 0w105])); Socket.recvArrFromNB' (b, Word8ArraySlice.full (Word8Array.array (2, 0w0)), {peek = false, oob = false})) in Socket.close a; Socket.close b; result end;; (* local datagram socket result *)
+```
+
 #### Examples
 
 ```repl
-INetSock.TCP.socket ();;
+let val (a, b) = UnixSock.Strm.socketPair () val _ = Socket.sendVec (a, Word8VectorSlice.full (Word8Vector.fromList [0w104, 0w105])) val result = Socket.recvVec (b, 2) in Socket.close a; Socket.close b; Word8Vector.foldr op:: [] result end;; (* [0w104, 0w105] *)
 ```
 
 #### See Also

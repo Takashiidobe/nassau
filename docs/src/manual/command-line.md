@@ -28,10 +28,27 @@ val arguments : unit -> string list
 
 #### Description
 
-<span id="SIG:COMMAND_LINE.name:VAL"></span>**`val`**` name `**`:`**` unit `**`->`**` string`  
+<span id="SIG:COMMAND_LINE.name:VAL"></span>
+
+### `name`
+
+```sml
+val name : unit -> string
+```
 The name used to invoke the current program.
 
-<span id="SIG:COMMAND_LINE.arguments:VAL"></span>**`val`**` arguments `**`:`**` unit `**`->`**` string list`  
+
+```repl
+CommandLine.name ();; (* current program name *)
+```
+
+<span id="SIG:COMMAND_LINE.arguments:VAL"></span>
+
+### `arguments`
+
+```sml
+val arguments : unit -> string list
+```
 The argument list used to invoke the current program.
 
 > **Implementation note:**
@@ -42,9 +59,3 @@ The argument list used to invoke the current program.
 #### Discussion
 
 The precise semantics of the above operations are operating system and implementation-specific. For example, `name` might return a full pathname or just the base name. See also the comment under `arguments`.
-
-#### Examples
-
-```repl
-CommandLine.arguments ();;
-```

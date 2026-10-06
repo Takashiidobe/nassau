@@ -59,23 +59,52 @@ The type representing errors that arise when making calls to the run-time or ope
 This exception is raised when a call to the runtime system or host operating system results in an error. The first argument is a descriptive string explaining the error, and the second argument optionally specifies the system error condition. The form and content of the description strings are operating system and implementation dependent, but if a `SysErr` exception has the form `SysErr(``s``,`[`SOME`](option.md#SIG:OPTION.option:TY:SPEC)` ``e``)`, then we have [`errorMsg`](os.md#SIG:OS.errorMsg:VAL:SPEC)` ``e`` = ``s`. System errors that do not have corresponding [`syserror`](os.md#SIG:OS.syserror:TY:SPEC) value will result in `SysErr` being raised with a second argument of [`NONE`](option.md#SIG:OPTION.option:TY:SPEC).
 
 <span id="SIG:OS.errorMsg:VAL"></span>
+
+### `errorMsg`
+
+```sml
+val errorMsg : syserror -> string
+```
 `errorMsg ``err`` `  
 returns a string describing the system error identified by the error code `err`. The form and content of the description strings are operating system and implementation dependent.
 
+```repl
+case OS.syserror "ENOENT" of SOME err => OS.errorMsg err | NONE => "unknown error";; (* system error description, when ENOENT is recognized *)
+```
 <span id="SIG:OS.errorName:VAL"></span>
+
+### `errorName`
+
+```sml
+val errorName : syserror -> string
+```
 `errorName ``err`` `
+```repl
+case OS.syserror "ENOENT" of SOME err => OS.errorName err | NONE => "ENOENT";; (* system error name, when recognized *)
+```
+
+<span id="SIG:OS.syserror:VAL"></span>
+
+### `syserror`
+
+```sml
+val syserror : string -> syserror option
+```
+
 ` syserror ``s`` `  
 These functions provide conversions between the abstract [`syserror`](os.md#SIG:OS.syserror:TY:SPEC) type, and their operating system dependent string names. The primary purpose of these functions is to provide a mechanism for dealing with error codes that might not have symbolic names defined for them in the operating system specific modules. The former function returns a unique name used for the [`syserror`](os.md#SIG:OS.syserror:TY:SPEC) value, while the latter returns the [`syserror`](os.md#SIG:OS.syserror:TY:SPEC) whose name is `s`, if it exists. If `e` is a [`syserror`](os.md#SIG:OS.syserror:TY:SPEC), then it should be the case that
 
 [SOME](option.md#SIG:OPTION.option:TY:SPEC) `e` = [syserror](os.md#SIG:OS.syserror:VAL:SPEC)([errorName](os.md#SIG:OS.errorName:VAL:SPEC) `e`)
 
 
-#### Examples
-
 ```repl
-OS.Process.isSuccess OS.Process.success;;
+OS.syserror "ENOENT";; (* SOME system error, when recognized *)
 ```
 
 #### See Also
 
 > [`OS.FileSys`](os.md#SIG:OS.FileSys:STR:SPEC), [`OS.IO`](os.md#SIG:OS.IO:STR:SPEC), [`OS.Path`](os.md#SIG:OS.Path:STR:SPEC), [`OS.Process`](os.md#SIG:OS.Process:STR:SPEC)
+
+```repl
+case OS.syserror "ENOENT" of SOME err => OS.errorName err | NONE => "ENOENT";; (* system error name, when ENOENT is recognized *)
+```

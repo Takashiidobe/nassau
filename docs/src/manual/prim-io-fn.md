@@ -38,17 +38,34 @@ val compare : pos * pos -> order
 
 #### Description
 
-<span id="ARG:PrimIO.someElem:VAL"></span>**`val`**` someElem `**`:`**` Vector.elem`  
+<span id="ARG:PrimIO.someElem:VAL"></span>
+
+### `someElem`
+
+```sml
+val someElem : Vector.elem
+```
+
+**`val`**` someElem `**`:`**` Vector.elem`  
 An element that may be read or written by a [`reader`](prim-io.md#SIG:PRIM_IO.reader:TY:SPEC) or [`writer`](prim-io.md#SIG:PRIM_IO.writer:TY:SPEC). The value [`someElem`](prim-io-fn.md#ARG:PrimIO.someElem:VAL:SPEC) is typically used for initialization of buffers.
 
+```repl
+TextPrimIO.someElem;; (* a representative character element *)
+```
+
 <span id="ARG:PrimIO.compare:VAL"></span>
+
+### `compare`
+
+```sml
+val compare : pos * pos -> order
+```
+
 `compare (``pos``, ``pos'``) `  
 returns [`LESS`](general.md#SIG:GENERAL.order:TY:SPEC), [`EQUAL`](general.md#SIG:GENERAL.order:TY:SPEC), or [`GREATER`](general.md#SIG:GENERAL.order:TY:SPEC) when `pos` is less than, equal to, or greater than `pos'`, respectively, in some underlying linear ordering on [`pos`](prim-io-fn.md#ARG:PrimIO.pos:TY:SPEC) values.
 
-#### Examples
-
 ```repl
-TextIO.getInstream TextIO.stdIn;;
+TextPrimIO.compare (0, 0);; (* EQUAL *)
 ```
 
 #### See Also

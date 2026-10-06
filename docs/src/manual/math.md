@@ -65,33 +65,119 @@ val tanh : real -> real
 
 #### Description
 
-<span id="SIG:MATH.pi:VAL"></span>**`val`**` pi `**`:`**` real`  
+<span id="SIG:MATH.pi:VAL"></span>
+
+### `pi`
+
+```sml
+val pi : real
+```
 The constant pi (3.141592653...).
 
-<span id="SIG:MATH.e:VAL"></span>**`val`**` e `**`:`**` real`  
+
+```repl
+Math.pi;; (* approximately 3.14159 *)
+```
+
+<span id="SIG:MATH.e:VAL"></span>
+
+### `e`
+
+```sml
+val e : real
+```
 The base `e` (2.718281828...) of the natural logarithm.
 
+
+```repl
+Math.e;; (* approximately 2.71828 *)
+```
+
 <span id="SIG:MATH.sqrt:VAL"></span>
-`sqrt ``x`` `  
+
+### `sqrt`
+
+```sml
+val sqrt : real -> real
+```
 returns the square root of `x`. [`sqrt`](math.md#SIG:MATH.sqrt:VAL:SPEC)` (~0.0) = ~0.0`. If `x` \< 0, it returns NaN.
 
+
+```repl
+Math.sqrt 4.0;; (* 2.0 *)
+Math.sqrt (~1.0);; (* NaN *)
+```
+
 <span id="SIG:MATH.sin:VAL"></span>
-`sin ``x`` `
-` cos ``x`` `
-` tan ``x`` `  
+
+### `sin`
+
+```sml
+val sin : real -> real
+```
+
+### `cos`
+
+```sml
+val cos : real -> real
+```
+
+### `tan`
+
+```sml
+val tan : real -> real
+```
 These return the sine, cosine, and tangent, respectively, of `x`, measured in radians. If `x` is an infinity, these functions return NaN. Note that [`tan`](math.md#SIG:MATH.tan:VAL:SPEC) will produce infinities at various finite values, roughly corresponding to the singularities of the tangent function.
 
+
+```repl
+Math.sin 0.0;; (* 0.0 *)
+Math.cos 0.0;; (* 1.0 *)
+Math.tan 0.0;; (* 0.0 *)
+```
+
 <span id="SIG:MATH.asin:VAL"></span>
-`asin ``x`` `
-` acos ``x`` `  
+
+### `asin`
+
+```sml
+val asin : real -> real
+```
+
+### `acos`
+
+```sml
+val acos : real -> real
+```
 These return the arc sine and arc cosine, respectively, of `x`. [`asin`](math.md#SIG:MATH.asin:VAL:SPEC) is the inverse of [`sin`](math.md#SIG:MATH.sin:VAL:SPEC). Its result is guaranteed to be in the closed interval \[-pi/2,pi/2\]. [`acos`](math.md#SIG:MATH.acos:VAL:SPEC) is the inverse of [`cos`](math.md#SIG:MATH.cos:VAL:SPEC). Its result is guaranteed to be in the closed interval \[0,pi\]. If the magnitude of `x` exceeds 1.0, they return NaN.
 
+
+```repl
+Math.asin 0.0;; (* 0.0 *)
+Math.acos 1.0;; (* 0.0 *)
+```
+
 <span id="SIG:MATH.atan:VAL"></span>
-`atan ``x`` `  
+
+### `atan`
+
+```sml
+val atan : real -> real
+```
 returns the arc tangent of `x`. [`atan`](math.md#SIG:MATH.atan:VAL:SPEC) is the inverse of [`tan`](math.md#SIG:MATH.tan:VAL:SPEC). For finite arguments, the result is guaranteed to be in the open interval (-pi/2,pi/2). If `x` is +infinity, it returns pi/2; if `x` is -infinity, it returns -pi/2.
 
+
+```repl
+Math.atan 0.0;; (* 0.0 *)
+```
+
 <span id="SIG:MATH.atan2:VAL"></span>
-`atan2 (``y``, ``x``) `  
+
+### `atan2`
+
+```sml
+val atan2 : real * real -> real
+```
 returns the arc tangent of `(``y``/``x``)` in the closed interval \[-pi,pi\], corresponding to angles within +-180 degrees. The quadrant of the resulting angle is determined using the signs of both `x` and `y`, and is the same as the quadrant of the point (`x`,`y`). When `x` = 0, this corresponds to an angle of 90 degrees, and the result is `(real (sign ``y``)) * pi/2.0`. It holds that
 
 > `sign` ( `cos` ( `atan2` (`y`,`x`))) = `sign`(`x`)
@@ -181,12 +267,32 @@ finite `x`
 ---
 
 
+
+```repl
+Math.atan2 (0.0, 1.0);; (* 0.0 *)
+```
+
 <span id="SIG:MATH.exp:VAL"></span>
-`exp ``x`` `  
+
+### `exp`
+
+```sml
+val exp : real -> real
+```
 returns e<sup>(`x`)</sup>, _i.e._, e raised to the `x`<sup>(th)</sup> power. If `x` is +infinity, it returns +infinity; if `x` is -infinity, it returns 0.
 
+
+```repl
+Math.exp 0.0;; (* 1.0 *)
+```
+
 <span id="SIG:MATH.pow:VAL"></span>
-`pow (``x``, ``y``) `  
+
+### `pow`
+
+```sml
+val pow : real * real -> real
+```
 returns `x`<sup>(`y`)</sup>, _i.e._, `x` raised to the `y`<sup>(th)</sup> power. For finite `x` and `y`, this is well-defined when `x` \> 0, or when `x` \< 0 and `y` is integral. Rules for exceptional cases are specified below.
 
 ---
@@ -314,15 +420,51 @@ finite `y` \< 0, not odd integer
 ---
 
 
+
+```repl
+Math.pow (2.0, 3.0);; (* 8.0 *)
+```
+
 <span id="SIG:MATH.ln:VAL"></span>
-`ln ``x`` `
-` log10 ``r`` `  
+
+### `ln`
+
+```sml
+val ln : real -> real
+```
+
+### `log10`
+
+```sml
+val log10 : real -> real
+```
 These return the natural logarithm (base e) and decimal logarithm (base 10), respectively, of `x`. If `x` \< 0, they return NaN; if `x` = 0, they return -infinity; if `x` is infinity, they return infinity.
 
+
+```repl
+Math.ln 1.0;; (* 0.0 *)
+Math.log10 100.0;; (* 2.0 *)
+```
+
 <span id="SIG:MATH.sinh:VAL"></span>
-`sinh ``x`` `
-` cosh ``x`` `
-` tanh ``x`` `  
+
+### `sinh`
+
+```sml
+val sinh : real -> real
+```
+
+### `cosh`
+
+```sml
+val cosh : real -> real
+```
+
+### `tanh`
+
+```sml
+val tanh : real -> real
+```
 These return the hyperbolic sine, hyperbolic cosine, and hyperbolic tangent, respectively, of `x`, that is, the values (e<sup>(`x`)</sup> - e<sup>(-`x`)</sup>) / 2, (e<sup>(`x`)</sup> + e<sup>(-`x`)</sup>) / 2, and `(`[`sinh`](math.md#SIG:MATH.sinh:VAL:SPEC)` x)/(`[`cosh`](math.md#SIG:MATH.cosh:VAL:SPEC)` x)`.
 
 These functions have the following properties:
@@ -368,11 +510,12 @@ These functions have the following properties:
 ---
 
 
-#### Examples
-
 ```repl
-Math.sqrt 81.0;;
+Math.sinh 0.0;; (* 0.0 *)
+Math.cosh 0.0;; (* 1.0 *)
+Math.tanh 0.0;; (* 0.0 *)
 ```
+
 
 #### See Also
 

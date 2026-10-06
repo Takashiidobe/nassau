@@ -111,67 +111,230 @@ val fromString : string -> word option
 
 #### Description
 
-<span id="SIG:WORD.wordSize:VAL"></span>**`val`**` wordSize `**`:`**` int`  
+<span id="SIG:WORD.wordSize:VAL"></span>
+
+### `wordSize`
+
+```sml
+val wordSize : int
+```
+**`val`**` wordSize `**`:`**` int`  
 The number of bits in type [`word`](word.md#SIG:WORD.word:TY:SPEC). [`wordSize`](word.md#SIG:WORD.wordSize:VAL:SPEC) need not be a power of two. Note that [`word`](word.md#SIG:WORD.word:TY:SPEC) has a fixed, finite precision.
 
+
+```repl
+Word.wordSize;; (* implementation-dependent bit count *)
+```
+
 <span id="SIG:WORD.toLarge:VAL"></span>
+
+### `toLarge`
+
+```sml
+val toLarge : word -> LargeWord.word
+```
+
 `toLarge ``w`` `
 ` toLargeX ``w`` `  
 These convert `w` to a value of type [`LargeWord.word`](word.md#SIG:WORD.word:TY:SPEC). In the first case, `w` is converted to its equivalent [`LargeWord.word`](word.md#SIG:WORD.word:TY:SPEC) value in the range \[0,2<sup>(`wordSize`)</sup>-1\]. In the second case, `w` is \`\`sign-extended,'' _i.e._, the [`wordSize`](word.md#SIG:WORD.wordSize:VAL:SPEC) low-order bits of `w` and [`toLargeX`](word.md#SIG:WORD.toLargeX:VAL:SPEC)` ``w` are the same, and the remaining bits of [`toLargeX`](word.md#SIG:WORD.toLargeX:VAL:SPEC)` ``w` are all equal to the most significant bit of `w`.
 
 [`toLargeWord`](word.md#SIG:WORD.toLargeWord:VAL:SPEC) and [`toLargeWordX`](word.md#SIG:WORD.toLargeWordX:VAL:SPEC) are respective synonyms of the first two, and are deprecated.
 
+
+```repl
+Word.toLarge 0w42;; (* 0wx2A *)
+```
+
 <span id="SIG:WORD.fromLarge:VAL"></span>
+
+### `fromLarge`
+
+```sml
+val fromLarge : LargeWord.word -> word
+```
+
 `fromLarge ``w`` `
 ` fromLargeWord ``w`` `  
 These functions convert `w` to the value `w`(**mod** (2<sup>(`wordSize`)</sup>)) of type [`word`](word.md#SIG:WORD.word:TY:SPEC). This has the effect of taking the low-order [`wordSize`](word.md#SIG:WORD.wordSize:VAL:SPEC) bits of the 2's complement representation of `w`.
 
 [`fromLargeWord`](word.md#SIG:WORD.fromLargeWord:VAL:SPEC) is a deprecated synonym for [`fromLarge`](word.md#SIG:WORD.fromLarge:VAL:SPEC).
 
+
+```repl
+Word.fromLarge 0w42;; (* 0w42 *)
+```
+
 <span id="SIG:WORD.toLargeInt:VAL"></span>
+
+### `toLargeInt`
+
+```sml
+val toLargeInt : word -> LargeInt.int
+```
+
 `toLargeInt ``w`` `
 ` toLargeIntX ``w`` `  
 These convert `w` to a value of type [`LargeInt.int`](integer.md#SIG:INTEGER.int:TY:SPEC). In the former case, `w` is viewed as an integer value in the range \[0,2<sup>(`wordSize`)</sup>-1\]. In the latter case, `w` is treated as a 2's complement signed integer with [`wordSize`](word.md#SIG:WORD.wordSize:VAL:SPEC) precision, thereby having a value in the range \[-2<sup>(`wordSize`-1)</sup>,2<sup>(`wordSize`-1)</sup>-1\]. [`toLargeInt`](word.md#SIG:WORD.toLargeInt:VAL:SPEC) raises [`Overflow`](general.md#SIG:GENERAL.Overflow:EXN:SPEC) if the target integer value cannot be represented as a [`LargeInt.int`](integer.md#SIG:INTEGER.int:TY:SPEC). Since the precision of [`LargeInt.int`](integer.md#SIG:INTEGER.int:TY:SPEC) is always at least [`wordSize`](word.md#SIG:WORD.wordSize:VAL:SPEC) (see the discussion below), [`toLargeIntX`](word.md#SIG:WORD.toLargeIntX:VAL:SPEC) will never raise an exception.
 
+
+```repl
+Word.toLargeInt 0w42;; (* 42 *)
+```
+
 <span id="SIG:WORD.fromLargeInt:VAL"></span>
+
+### `fromLargeInt`
+
+```sml
+val fromLargeInt : LargeInt.int -> word
+```
+
 `fromLargeInt ``i`` `  
 converts `i` of type [`LargeInt.int`](integer.md#SIG:INTEGER.int:TY:SPEC) to a value of type [`word`](word.md#SIG:WORD.word:TY:SPEC). This has the effect of taking the low-order [`wordSize`](word.md#SIG:WORD.wordSize:VAL:SPEC) bits of the 2's complement representation of `i`.
 
+
+```repl
+Word.fromLargeInt 42;; (* 0w42 *)
+```
+
 <span id="SIG:WORD.toInt:VAL"></span>
+
+### `toInt`
+
+```sml
+val toInt : word -> int
+```
+
 `toInt ``w`` `
 ` toIntX ``w`` `  
 These convert `w` to a value of default integer type. In the former case, `w` is viewed as an integer value in the range \[0,2<sup>(`wordSize`)</sup>-1\]. In the latter case, `w` is treated as a 2's complement signed integer with [`wordSize`](word.md#SIG:WORD.wordSize:VAL:SPEC) precision, thereby having a value in the range \[-2<sup>(`wordSize`-1)</sup>,2<sup>(`wordSize`-1)</sup>-1\]. They raise [`Overflow`](general.md#SIG:GENERAL.Overflow:EXN:SPEC) if the target integer value cannot be represented as an [`Int.int`](integer.md#SIG:INTEGER.int:TY:SPEC).
 
+
+```repl
+Word.toInt 0w42;; (* 42 *)
+```
+
 <span id="SIG:WORD.fromInt:VAL"></span>
+
+### `fromInt`
+
+```sml
+val fromInt : int -> word
+```
+
 `fromInt ``i`` `  
 converts `i` of the default integer type to a value of type [`word`](word.md#SIG:WORD.word:TY:SPEC). This has the effect of taking the low-order [`wordSize`](word.md#SIG:WORD.wordSize:VAL:SPEC) bits of the 2's complement representation of `i`. If the precision of [`Int.int`](integer.md#SIG:INTEGER.int:TY:SPEC) is less than [`wordSize`](word.md#SIG:WORD.wordSize:VAL:SPEC), then `i` is sign-extended to [`wordSize`](word.md#SIG:WORD.wordSize:VAL:SPEC) bits.
 
-<span id="SIG:WORD.andb:VAL"></span>**`val`**` andb `**`:`**` word `**`*`**` word `**`->`**` word`
+
+```repl
+Word.fromInt 42;; (* 0w42 *)
+```
+
+<span id="SIG:WORD.andb:VAL"></span>
+
+### `andb`
+
+```sml
+val andb : word * word -> word
+```
+**`val`**` andb `**`:`**` word `**`*`**` word `**`->`**` word`
 **`val`**` orb `**`:`**` word `**`*`**` word `**`->`**` word`
 **`val`**` xorb `**`:`**` word `**`*`**` word `**`->`**` word`  
 These functions return the bit-wise AND, OR, and exclusive OR, respectively, of their arguments.
 
+
+```repl
+Word.andb (0wxF0, 0wx3C);; (* 0wx30 *)
+```
+
 <span id="SIG:WORD.notb:VAL"></span>
+
+### `notb`
+
+```sml
+val notb : word -> word
+```
+
 `notb ``i`` `  
 returns the bit-wise complement (NOT) of `i`.
 
+
+```repl
+Word.notb 0w0;; (* all bits set *)
+```
+
 <span id="SIG:WORD.\|@LT\|\|@LT\|:VAL"></span>
+
+### `<<`
+
+```sml
+val << : word * Word.word -> word
+```
+
 `<< (``i``, ``n``) `  
 shifts `i` to the left by `n` bit positions, filling in zeros from the right. When `i` and `n` are interpreted as unsigned binary numbers, this returns (`i`\* 2<sup>(`n`)</sup>)(**mod** (2 <sup>(`wordSize`)</sup>)). In particular, shifting by greater than or equal to [`wordSize`](word.md#SIG:WORD.wordSize:VAL:SPEC) results in 0. This operation is similar to the \`\`(logical) shift left'' instruction in many processors.
 
+
+```repl
+Word.<< (0w1, 0w3);; (* 0w8 *)
+```
+
 <span id="SIG:WORD.\|@GT\|\|@GT\|:VAL"></span>
+
+### `>>`
+
+```sml
+val >> : word * Word.word -> word
+```
+
 `>> (``i``, ``n``) `  
 shifts `i` to the right by `n` bit positions, filling in zeros from the left. When `i` and `n` are interpreted as unsigned binary numbers, it returns **floor**((`i` / 2<sup>(`n`)</sup>)). In particular, shifting by greater than or equal to [`wordSize`](word.md#SIG:WORD.wordSize:VAL:SPEC) results in 0. This operation is similar to the \`\`logical shift right'' instruction in many processors.
 
+
+```repl
+Word.>> (0w8, 0w2);; (* 0w2 *)
+```
+
 <span id="SIG:WORD.~\|@GT\|\|@GT\|:VAL"></span>
+
+### `~>>`
+
+```sml
+val ~>> : word * Word.word -> word
+```
+
 `~>> (``i``, ``n``) `  
 shifts `i` to the right by `n` bit positions. The value of the leftmost bit of `i` remains the same; in a 2's-complement interpretation, this corresponds to sign extension. When `i` is interpreted as a [`wordSize`](word.md#SIG:WORD.wordSize:VAL:SPEC)-bit 2's-complement integer and `n` is interpreted as an unsigned binary number, it returns **floor**((`i` / 2<sup>(`n`)</sup>)). In particular, shifting by greater than or equal to [`wordSize`](word.md#SIG:WORD.wordSize:VAL:SPEC) results in either 0 or all 1's. This operation is similar to the \`\`arithmetic shift right'' instruction in many processors.
 
+
+```repl
+Word.~>> (0wx80000000, 0w2);; (* sign-extended shifted word *)
+```
+
 <span id="SIG:WORD.+:VAL"></span>
+
+### `+`
+
+```sml
+val + : word * word -> word
+```
+
 `i`` + ``j`` `  
 returns (`i`+`j`)(**mod** (2 <sup>(`wordSize`)</sup>)) when `i` and `j` are interpreted as unsigned binary numbers. It does _not_ raise [`Overflow`](general.md#SIG:GENERAL.Overflow:EXN:SPEC).
 
+
+```repl
+Word.+ (0w10, 0w5);; (* 0w15 *)
+```
+
 <span id="SIG:WORD.-:VAL"></span>
+
+### `-`
+
+```sml
+val - : word * word -> word
+```
+
 `i`` - ``j`` `  
 returns the difference of `i` and `j` modulo (2<sup>(`wordSize`)</sup>):
 
@@ -179,15 +342,51 @@ returns the difference of `i` and `j` modulo (2<sup>(`wordSize`)</sup>):
 
 when `i` and `j` are interpreted as unsigned binary numbers. It does _not_ raise [`Overflow`](general.md#SIG:GENERAL.Overflow:EXN:SPEC).
 
+
+```repl
+Word.- (0w10, 0w15);; (* modular subtraction result *)
+```
+
 <span id="SIG:WORD.*:VAL"></span>
+
+### `*`
+
+```sml
+val * : word * word -> word
+```
+
 `i`` * ``j`` `  
 returns the product (`i`\*`j`)(**mod** (2<sup>(`wordSize`)</sup>)) when `i` and `j` are interpreted as unsigned binary numbers. It does _not_ raise [`Overflow`](general.md#SIG:GENERAL.Overflow:EXN:SPEC).
 
+
+```repl
+Word.* (0w6, 0w7);; (* 0w42 *)
+```
+
 <span id="SIG:WORD.div:VAL"></span>
+
+### `div`
+
+```sml
+val div : word * word -> word
+```
+
 `i`` div ``j`` `  
 returns the truncated quotient of `i` and `j`, **floor**((`i` / `j`)), when `i` and `j` are interpreted as unsigned binary numbers. It raises [`Div`](general.md#SIG:GENERAL.Div:EXN:SPEC) when `j` = 0.
 
+
+```repl
+Word.div (0w17, 0w5);; (* 0w3 *)
+```
+
 <span id="SIG:WORD.mod:VAL"></span>
+
+### `mod`
+
+```sml
+val mod : word * word -> word
+```
+
 `i`` mod ``j`` `  
 returns the remainder of the division of `i` by `j`:
 
@@ -195,30 +394,102 @@ returns the remainder of the division of `i` by `j`:
 
 when `i` and `j` are interpreted as unsigned binary numbers. It raises [`Div`](general.md#SIG:GENERAL.Div:EXN:SPEC) when `j` = 0.
 
+
+```repl
+Word.mod (0w17, 0w5);; (* 0w2 *)
+```
+
 <span id="SIG:WORD.compare:VAL"></span>
+
+### `compare`
+
+```sml
+val compare : word * word -> order
+```
+
 `compare (``i``, ``j``) `  
 returns [`LESS`](general.md#SIG:GENERAL.order:TY:SPEC), [`EQUAL`](general.md#SIG:GENERAL.order:TY:SPEC), or [`GREATER`](general.md#SIG:GENERAL.order:TY:SPEC) if and only if `i` is less than, equal to, or greater than `j`, respectively, considered as unsigned binary numbers.
 
-<span id="SIG:WORD.\|@LT\|:VAL"></span>**`val`**` < `**`:`**` word `**`*`**` word `**`->`**` bool`
+
+```repl
+Word.compare (0w1, 0w2);; (* LESS *)
+```
+
+<span id="SIG:WORD.\|@LT\|:VAL"></span>
+
+### `<`
+
+```sml
+val < : word * word -> bool
+```
+**`val`**` < `**`:`**` word `**`*`**` word `**`->`**` bool`
 **`val`**` <= `**`:`**` word `**`*`**` word `**`->`**` bool`
 **`val`**` > `**`:`**` word `**`*`**` word `**`->`**` bool`
 **`val`**` >= `**`:`**` word `**`*`**` word `**`->`**` bool`  
 These return `true` if and only if the input arguments satisfy the given relation when interpreted as unsigned binary numbers.
 
+
+```repl
+Word.< (0w1, 0w2);; (* true *)
+```
+
 <span id="SIG:WORD.~:VAL"></span>
+
+### `~`
+
+```sml
+val ~ : word -> word
+```
+
 `~ ``i`` `  
 returns the 2's complement of `i`.
 
-<span id="SIG:WORD.min:VAL"></span>**`val`**` min `**`:`**` word `**`*`**` word `**`->`**` word`
+
+```repl
+Word.~ 0w1;; (* 2's complement of 0w1 *)
+```
+
+<span id="SIG:WORD.min:VAL"></span>
+
+### `min`
+
+```sml
+val min : word * word -> word
+```
+**`val`**` min `**`:`**` word `**`*`**` word `**`->`**` word`
 **`val`**` max `**`:`**` word `**`*`**` word `**`->`**` word`  
 These return the smaller (respectively, larger) of the arguments.
 
+
+```repl
+Word.min (0w3, 0w7);; (* 0w3 *)
+```
+
 <span id="SIG:WORD.fmt:VAL"></span>
+
+### `fmt`
+
+```sml
+val fmt : StringCvt.radix -> word -> string
+```
+
 `fmt ``radix`` ``i`` `
 ` toString ``i`` `  
 These return a string containing a numeric representation of `i`. No prefix `"Ow"`, `"OwX"`, etc. is generated. The version using [`fmt`](word.md#SIG:WORD.fmt:VAL:SPEC) creates a representation specified the given `radix`. The hexadecimal digits in the range \[10,15\] are represented by the characters `#"A"` through `#"F"`. The version using [`toString`](word.md#SIG:WORD.toString:VAL:SPEC) is equivalent to [`fmt`](word.md#SIG:WORD.fmt:VAL:SPEC)` `[`StringCvt.HEX`](string-cvt.md#SIG:STRING_CVT.radix:TY:SPEC)` ``i`.
 
+
+```repl
+Word.fmt StringCvt.HEX 0wx2A;; (* "2A" *)
+```
+
 <span id="SIG:WORD.scan:VAL"></span>
+
+### `scan`
+
+```sml
+val scan : StringCvt.radix -> (char, 'a) StringCvt.reader -> (word, 'a) StringCvt.reader
+```
+
 `scan ``radix`` ``getc`` ``strm`` `
 ` fromString ``s`` `  
 These functions scan a [`word`](word.md#SIG:WORD.word:TY:SPEC) from a character source. In the first version, if an unsigned number in the format denoted by `radix` can be parsed from a prefix of the character strm `strm` using the character input function `getc`, the expression evaluates to [`SOME`](option.md#SIG:OPTION.option:TY:SPEC)`(w,rest)`, where `w` is the value of the number parsed and `rest` is the remainder of the character stream. Initial whitespace is ignored. [`NONE`](option.md#SIG:OPTION.option:TY:SPEC) is returned otherwise. It raises [`Overflow`](general.md#SIG:GENERAL.Overflow:EXN:SPEC) when a number can be parsed, but is too large to fit in type `word`.
@@ -254,10 +525,184 @@ The [`fromString`](word.md#SIG:WORD.fromString:VAL:SPEC) version returns [`SOME`
         [StringCvt.scanString](string-cvt.md#SIG:STRING_CVT.scanString:VAL:SPEC) (scan [StringCvt.HEX](string-cvt.md#SIG:STRING_CVT.radix:TY:SPEC))
 
 
+
+```repl
+Word.fromString "2A";; (* NONE *)
+```
+
+<span id="SIG:WORD.toLargeX:VAL"></span>
+
+### `toLargeX`
+
+```sml
+val toLargeX : word -> LargeWord.word
+```
+
+```repl
+Word.toLargeX 0w42;; (* 0wx2A *)
+```
+
+<span id="SIG:WORD.toLargeWord:VAL"></span>
+
+### `toLargeWord`
+
+```sml
+val toLargeWord : word -> LargeWord.word
+```
+
+```repl
+Word.toLargeWord 0w42;; (* 0wx2A *)
+```
+
+<span id="SIG:WORD.toLargeWordX:VAL"></span>
+
+### `toLargeWordX`
+
+```sml
+val toLargeWordX : word -> LargeWord.word
+```
+
+```repl
+Word.toLargeWordX 0w42;; (* 0wx2A *)
+```
+
+<span id="SIG:WORD.fromLargeWord:VAL"></span>
+
+### `fromLargeWord`
+
+```sml
+val fromLargeWord : LargeWord.word -> word
+```
+
+```repl
+Word.fromLargeWord 0w42;; (* 0w42 *)
+```
+
+<span id="SIG:WORD.toLargeIntX:VAL"></span>
+
+### `toLargeIntX`
+
+```sml
+val toLargeIntX : word -> LargeInt.int
+```
+
+```repl
+Word.toLargeIntX 0w42;; (* 42 *)
+```
+
+<span id="SIG:WORD.toIntX:VAL"></span>
+
+### `toIntX`
+
+```sml
+val toIntX : word -> int
+```
+
+```repl
+Word.toIntX 0w42;; (* 42 *)
+```
+
+<span id="SIG:WORD.orb:VAL"></span>
+
+### `orb`
+
+```sml
+val orb : word * word -> word
+```
+
+```repl
+Word.orb (0wxF0, 0wx0F);; (* 0wxFF *)
+```
+
+<span id="SIG:WORD.xorb:VAL"></span>
+
+### `xorb`
+
+```sml
+val xorb : word * word -> word
+```
+
+```repl
+Word.xorb (0wxF0, 0wx0F);; (* 0wxFF *)
+```
+
+<span id="SIG:WORD.<=:VAL"></span>
+
+### `<=`
+
+```sml
+val <= : word * word -> bool
+```
+
+```repl
+Word.<= (0w2, 0w2);; (* true *)
+```
+
+<span id="SIG:WORD.>:VAL"></span>
+
+### `>`
+
+```sml
+val > : word * word -> bool
+```
+
+```repl
+Word.> (0w3, 0w2);; (* true *)
+```
+
+<span id="SIG:WORD.>=:VAL"></span>
+
+### `>=`
+
+```sml
+val >= : word * word -> bool
+```
+
+```repl
+Word.>= (0w3, 0w2);; (* true *)
+```
+
+<span id="SIG:WORD.max:VAL"></span>
+
+### `max`
+
+```sml
+val max : word * word -> word
+```
+
+```repl
+Word.max (0w3, 0w7);; (* 0w7 *)
+```
+
+<span id="SIG:WORD.toString:VAL"></span>
+
+### `toString`
+
+```sml
+val toString : word -> string
+```
+
+```repl
+Word.toString 0w42;; (* "42" *)
+```
+
+<span id="SIG:WORD.fromString:VAL"></span>
+
+### `fromString`
+
+```sml
+val fromString : string -> word option
+```
+
+```repl
+Word.fromString "";; (* NONE *)
+```
+
 #### Examples
 
 ```repl
-Word.toString 0w42;;
+Word.fromString "42";; (* SOME 0w42 *)
+Word.fromString "";; (* NONE *)
 ```
 
 #### See Also

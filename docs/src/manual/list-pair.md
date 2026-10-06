@@ -54,21 +54,69 @@ val allEq : ('a * 'b -> bool) -> 'a list * 'b list -> bool
 
 #### Description
 
-<span id="SIG:LIST_PAIR.UnequalLengths:EXN"></span>**`exception`**` UnequalLengths`  
+<span id="SIG:LIST_PAIR.UnequalLengths:EXN"></span>
+
+### `UnequalLengths`
+
+```sml
+exception UnequalLengths
+```
 This exception is raised by those functions that require arguments of identical length.
 
+
+```repl
+((ListPair.zipEq ([1], []); false) handle ListPair.UnequalLengths => true);; (* true *)
+```
+
 <span id="SIG:LIST_PAIR.zip:VAL"></span>
-`zip (``l1``, ``l2``) `
-`zipEq (``l1``, ``l2``)`  
+
+### `zip`
+
+```sml
+val zip : 'a list * 'b list -> ('a * 'b) list
+```
+
+### `zipEq`
+
+```sml
+val zipEq : 'a list * 'b list -> ('a * 'b) list
+```
 These functions combine the two lists `l1` and `l2` into a list of pairs, with the first element of each list comprising the first element of the result, the second elements comprising the second element of the result, and so on. If the lists are of unequal lengths, [`zip`](list-pair.md#SIG:LIST_PAIR.zip:VAL:SPEC) ignores the excess elements from the tail of the longer one, while [`zipEq`](list-pair.md#SIG:LIST_PAIR.zipEq:VAL:SPEC) raises the exception [`UnequalLengths`](list-pair.md#SIG:LIST_PAIR.UnequalLengths:EXN:SPEC).
 
+
+```repl
+ListPair.zip ([1, 2], ["a"]);; (* [(1, "a")] *)
+ListPair.zipEq ([1, 2], ["a", "b"]);; (* [(1, "a"), (2, "b")] *)
+((ListPair.zipEq ([1], []); false) handle ListPair.UnequalLengths => true);; (* true *)
+```
+
 <span id="SIG:LIST_PAIR.unzip:VAL"></span>
-`unzip ``l`` `  
+
+### `unzip`
+
+```sml
+val unzip : ('a * 'b) list -> 'a list * 'b list
+```
 returns a pair of lists formed by splitting the elements of `l`. This is the inverse of `zip` for equal length lists.
 
+
+```repl
+ListPair.unzip [(1, "a"), (2, "b")];; (* ([1, 2], ["a", "b"]) *)
+```
+
 <span id="SIG:LIST_PAIR.app:VAL"></span>
-`app ``f`` (``l1``, ``l2``) `
-`appEq ``f`` (``l1``, ``l2``)`  
+
+### `app`
+
+```sml
+val app : ('a * 'b -> unit) -> 'a list * 'b list -> unit
+```
+
+### `appEq`
+
+```sml
+val appEq : ('a * 'b -> unit) -> 'a list * 'b list -> unit
+```
 These apply the function `f` to the list of pairs of elements generated from left to right from the lists `l1` and `l2`. If the lists are of unequal lengths, the former ignores the excess elements from the tail of the longer one, and the latter raises [`UnequalLengths`](list-pair.md#SIG:LIST_PAIR.UnequalLengths:EXN:SPEC). The above expressions are respectively equivalent to:
 
       [List.app](list.md#SIG:LIST.app:VAL:SPEC) `f` (zip (`l1`, `l2`))
@@ -76,9 +124,25 @@ These apply the function `f` to the list of pairs of elements generated from lef
 
 ignoring possible side-effects of the function `f`.
 
+
+```repl
+ListPair.app (fn (n, s) => print (Int.toString n ^ s)) ([1, 2], ["a", "b"]);; (* () *)
+ListPair.appEq (fn (n, s) => print (Int.toString n ^ s)) ([1], ["a"]);; (* () *)
+```
+
 <span id="SIG:LIST_PAIR.map:VAL"></span>
-`map ``f`` (``l1``, ``l2``) `
-`mapEq ``f`` (``l1``, ``l2``)`  
+
+### `map`
+
+```sml
+val map : ('a * 'b -> 'c) -> 'a list * 'b list -> 'c list
+```
+
+### `mapEq`
+
+```sml
+val mapEq : ('a * 'b -> 'c) -> 'a list * 'b list -> 'c list
+```
 These map the function `f` over the list of pairs of elements generated from left to right from the lists `l1` and `l2`, returning the list of results. If the lists are of unequal lengths, the former ignores the excess elements from the tail of the longer one, and the latter raises [`UnequalLengths`](list-pair.md#SIG:LIST_PAIR.UnequalLengths:EXN:SPEC). The above expressions are respectively equivalent to:
 
       [List.map](list.md#SIG:LIST.map:VAL:SPEC) `f` (zip (`l1`, `l2`))
@@ -86,11 +150,37 @@ These map the function `f` over the list of pairs of elements generated from lef
 
 ignoring possible side-effects of the function `f`.
 
+
+```repl
+ListPair.map (op +) ([1, 2], [10]);; (* [11] *)
+ListPair.mapEq (op +) ([1, 2], [10, 20]);; (* [11, 22] *)
+```
+
 <span id="SIG:LIST_PAIR.foldl:VAL"></span>
-`foldl ``f`` ``init`` (``l1``, ``l2``) `
-`foldr ``f`` ``init`` (``l1``, ``l2``)`
-`foldlEq ``f`` ``init`` (``l1``, ``l2``)`
-`foldrEq ``f`` ``init`` (``l1``, ``l2``)`  
+
+### `foldl`
+
+```sml
+val foldl : ('a * 'b * 'c -> 'c) -> 'c -> 'a list * 'b list -> 'c
+```
+
+### `foldr`
+
+```sml
+val foldr : ('a * 'b * 'c -> 'c) -> 'c -> 'a list * 'b list -> 'c
+```
+
+### `foldlEq`
+
+```sml
+val foldlEq : ('a * 'b * 'c -> 'c) -> 'c -> 'a list * 'b list -> 'c
+```
+
+### `foldrEq`
+
+```sml
+val foldrEq : ('a * 'b * 'c -> 'c) -> 'c -> 'a list * 'b list -> 'c
+```
 These return the result of folding the function `f` in the specified direction over the pair of lists `l1` and `l2` starting with the value `init`. They are respectively equivalent to:
 
       [List.foldl](list.md#SIG:LIST.foldl:VAL:SPEC) `f'` `init` (zip (`l1`, `l2`))
@@ -100,17 +190,46 @@ These return the result of folding the function `f` in the specified direction o
 
 where `f'` is `fn ((a,b),c) => f(a,b,c)` and ignoring possible side-effects of the function `f`.
 
+
+```repl
+ListPair.foldl (fn (x, y, a) => x + y + a) 0 ([1, 2], [10, 20]);; (* 33 *)
+ListPair.foldr (fn (x, y, a) => x + y + a) 0 ([1, 2], [10, 20]);; (* 33 *)
+ListPair.foldlEq (fn (x, y, a) => x + y + a) 0 ([1, 2], [10, 20]);; (* 33 *)
+ListPair.foldrEq (fn (x, y, a) => x + y + a) 0 ([1, 2], [10, 20]);; (* 33 *)
+```
+
 <span id="SIG:LIST_PAIR.all:VAL"></span>
-`all ``f`` (``l1``, ``l2``) `
-`exists ``f`` (``l1``, ``l2``)`  
+
+### `all`
+
+```sml
+val all : ('a * 'b -> bool) -> 'a list * 'b list -> bool
+```
+
+### `exists`
+
+```sml
+val exists : ('a * 'b -> bool) -> 'a list * 'b list -> bool
+```
 These functions provide short-circuit testing of a predicate over a pair of lists. They are respectively equivalent to:
 
       [List.all](list.md#SIG:LIST.all:VAL:SPEC) `f` (zip (`l1`, `l2`))
       [List.exists](list.md#SIG:LIST.exists:VAL:SPEC) `f` (zip (`l1`, `l2`))
 
 
+
+```repl
+ListPair.all (op =) ([1, 2], [1, 2]);; (* true *)
+ListPair.exists (op =) ([1, 2], [3, 2]);; (* true *)
+```
+
 <span id="SIG:LIST_PAIR.allEq:VAL"></span>
-`allEq ``f`` (``l1``, ``l2``) `  
+
+### `allEq`
+
+```sml
+val allEq : ('a * 'b -> bool) -> 'a list * 'b list -> bool
+```
 returns `true` if `l1` and `l2` have equal length and all pairs of elements satisfy the predicate `f`. That is, the expression is equivalent to:
 
         ([List.length](list.md#SIG:LIST.length:VAL:SPEC) `l1` = [List.length](list.md#SIG:LIST.length:VAL:SPEC) `l2`) andalso
@@ -128,11 +247,11 @@ This function does not appear to have any nice algebraic relation with the other
 >       
 
 
-#### Examples
-
 ```repl
-ListPair.zip ([1, 2, 3], ["a", "b", "c"]);;
+ListPair.allEq (op =) ([1, 2], [1, 2]);; (* true *)
+ListPair.allEq (op =) ([1], [1, 2]);; (* false *)
 ```
+
 
 #### See Also
 

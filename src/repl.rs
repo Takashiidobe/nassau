@@ -3,13 +3,13 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-use crate::codegen::{Codegen, CodegenOptions, OptLevel, Symbols};
-use crate::runtime;
 use crossterm::event::{Event, KeyCode as CrosstermKeyCode};
+use nassau::codegen::{Codegen, CodegenOptions, OptLevel, Symbols};
 use nassau::core;
 use nassau::error::LexerErrorKind;
 use nassau::lexer::{Lexer, TokenKind};
 use nassau::printing::ReplValue;
+use nassau::runtime;
 use nassau::session::{Backend, Execution, Session};
 use nassau::value;
 use nu_ansi_term::{Color, Style};
@@ -323,7 +323,6 @@ impl Backend for NativeBackend {
 }
 
 pub fn run(
-    interpret: bool,
     opt_level: OptLevel,
     debug_passes: bool,
     dump_ir: bool,
@@ -331,9 +330,6 @@ pub fn run(
     verify: bool,
     stats: bool,
 ) -> miette::Result<i32> {
-    if interpret {
-        return terminal(Session::default());
-    }
     let codegen = Codegen::new(CodegenOptions {
         opt_level,
         debug_passes,

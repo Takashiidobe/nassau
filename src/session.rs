@@ -3,7 +3,6 @@ use std::fmt::Write;
 use crate::core;
 use crate::error::SourceError;
 use crate::infer;
-use crate::interpreter::{Interpreter, Signal, Value};
 use crate::lower;
 use crate::parser::{Fixity, Parser, Program};
 use crate::prelude::Basis;
@@ -35,7 +34,7 @@ pub struct Response {
     pub clear: bool,
 }
 
-pub struct Session<B = Interpreter> {
+pub struct Session<B> {
     backend: B,
     next_chunk: usize,
     fixity: Option<Fixity>,
@@ -43,12 +42,6 @@ pub struct Session<B = Interpreter> {
     lowering: lower::Session,
     lines: usize,
     exit: Option<u8>,
-}
-
-impl Default for Session {
-    fn default() -> Self {
-        Self::new(Interpreter::default())
-    }
 }
 
 impl<B: Backend> Session<B> {
@@ -255,52 +248,4 @@ fn report<E: std::error::Error + Send + Sync + 'static>(
     source: &miette::NamedSource<String>,
 ) -> miette::Report {
     miette::Report::new(SourceError::new(error, span)).with_source_code(source.clone())
-}
-
-impl Backend for Interpreter {
-    type Value = Value;
-    fn execute(&mut self, module: core::Module) -> miette::Result<Execution<Value>> {
-        Ok(match self.run(module) {
-            Ok(value) => Execution::Returned(value),
-            Err(Signal::Raised(value)) => Execution::Raised(value),
-            Err(Signal::Exit(status)) => Execution::Exit(status),
-        })
-    }
-    fn global(&self, id: core::GlobalId) -> Option<Value> {
-        self.global(id)
-    }
-    fn retain_globals(&mut self, roots: &[core::GlobalId]) {
-        self.retain_globals(roots);
-    }
-    fn reset(&mut self) -> miette::Result<()> {
-        *self = Self::default();
-        Ok(())
-    }
-    fn take_output(&mut self) -> Vec<u8> {
-        std::mem::take(&mut self.output)
-    }
-}
-
-impl ReplValue for Value {
-    fn is_boxed(&self) -> bool {
-        matches!(self, Value::Block(_))
-    }
-    fn immediate(&self) -> i64 {
-        self.word()
-    }
-    fn field(&self, index: usize) -> Self {
-        self.field(index)
-    }
-    fn length(&self) -> usize {
-        self.object().fields.borrow().len()
-    }
-    fn bytes(&self) -> Vec<u8> {
-        self.object().bytes.clone()
-    }
-    fn real(&self) -> f64 {
-        self.object().real
-    }
-    fn builtin(&self, name: &str) -> bool {
-        self.object().kind == crate::value::KIND_REF && self.field(0).bytes() == name.as_bytes()
-    }
 }

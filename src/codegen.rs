@@ -1,12 +1,32 @@
 //! Translates the core IR to Cranelift, for an object file or the JIT.
 
 use std::collections::HashMap;
+#[cfg(feature = "native")]
 use std::env;
+#[cfg(feature = "native")]
 use std::fs;
+#[cfg(feature = "native")]
 use std::path::Path;
+#[cfg(feature = "native")]
 use std::process::Command;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+#[cfg(not(all(target_arch = "wasm32", feature = "web")))]
+use std::time::Instant;
 
+#[cfg(all(target_arch = "wasm32", feature = "web"))]
+struct Instant(f64);
+
+#[cfg(all(target_arch = "wasm32", feature = "web"))]
+impl Instant {
+    fn now() -> Self {
+        Self(js_sys::Date::now())
+    }
+    fn elapsed(&self) -> Duration {
+        Duration::from_secs_f64((js_sys::Date::now() - self.0).max(0.0) / 1000.0)
+    }
+}
+
+#[cfg(feature = "native")]
 use clap::ValueEnum;
 use cranelift_codegen::ir::{
     AbiParam, BlockArg, FuncRef, InstBuilder, MemFlagsData, Signature, Value,
@@ -14,30 +34,40 @@ use cranelift_codegen::ir::{
     types,
 };
 use cranelift_codegen::isa::CallConv;
+#[cfg(feature = "native")]
+use cranelift_codegen::settings;
+#[cfg(feature = "native")]
 use cranelift_codegen::settings::Configurable;
-use cranelift_codegen::{self, settings};
 use cranelift_control::ControlPlane;
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
+#[cfg(feature = "native")]
 use cranelift_jit::{JITBuilder, JITModule};
-use cranelift_module::{DataDescription, DataId, FuncId, Linkage, Module, default_libcall_names};
+use cranelift_module::{DataDescription, DataId, FuncId, Linkage, Module};
+#[cfg(feature = "native")]
 use cranelift_object::{ObjectBuilder, ObjectModule};
 
 use crate::core::{self, Atom, Callee, Failure, FnId, GlobalId, Op, Prim, Stmt, Term};
 use crate::error::CodegenError;
+#[cfg(feature = "native")]
 use crate::runtime;
 use crate::value;
+#[cfg(feature = "native")]
+use cranelift_module::default_libcall_names;
 
 mod helpers;
 mod roots;
 
-#[derive(Clone, Copy, Debug, ValueEnum)]
+#[derive(Clone, Copy, Debug, Default)]
+#[cfg_attr(feature = "native", derive(ValueEnum))]
 pub enum OptLevel {
+    #[default]
     None,
     Speed,
-    #[value(name = "speed-and-size")]
+    #[cfg_attr(feature = "native", value(name = "speed-and-size"))]
     SpeedAndSize,
 }
 
+#[cfg(feature = "native")]
 impl OptLevel {
     fn as_cranelift(self) -> &'static str {
         match self {
@@ -49,17 +79,21 @@ impl OptLevel {
 }
 
 pub struct Codegen {
+    #[cfg(feature = "native")]
     opt_level: OptLevel,
     debug_passes: bool,
     asm: bool,
     dump_ir: bool,
     dump_optimized_ir: bool,
     verify: bool,
+    #[cfg(feature = "native")]
     timings: bool,
     stats: bool,
+    #[cfg(feature = "native")]
     objdump: bool,
 }
 
+#[derive(Default)]
 pub struct CodegenOptions {
     pub opt_level: OptLevel,
     pub debug_passes: bool,
@@ -74,7 +108,7 @@ pub struct CodegenOptions {
 
 /// The Cranelift functions and data already declared for IR functions and
 /// globals; the REPL keeps them from one chunk to the next.
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct Symbols {
     functions: HashMap<FnId, FuncId>,
     globals: HashMap<GlobalId, DataId>,
@@ -87,9 +121,13 @@ pub struct Symbols {
 }
 
 struct FunctionBuild {
+    #[cfg(feature = "native")]
     context: cranelift_codegen::Context,
+    #[cfg(feature = "native")]
     frontend: Duration,
+    #[cfg(feature = "native")]
     optimization: Duration,
+    #[cfg(feature = "native")]
     codegen: Duration,
 }
 
@@ -108,21 +146,31 @@ fn sml_signature(params: usize) -> Signature {
     signature
 }
 
+impl Symbols {
+    pub fn global_data(&self, global: GlobalId) -> Option<DataId> {
+        self.globals.get(&global).copied()
+    }
+}
+
 impl Codegen {
     pub fn new(options: CodegenOptions) -> Self {
         Self {
+            #[cfg(feature = "native")]
             opt_level: options.opt_level,
             debug_passes: options.debug_passes,
             asm: options.asm,
             dump_ir: options.dump_ir,
             dump_optimized_ir: options.dump_optimized_ir,
             verify: options.verify,
+            #[cfg(feature = "native")]
             timings: options.timings,
             stats: options.stats,
+            #[cfg(feature = "native")]
             objdump: options.objdump,
         }
     }
 
+    #[cfg(feature = "native")]
     fn isa(&self, jit: bool) -> Result<cranelift_codegen::isa::OwnedTargetIsa, CodegenError> {
         let mut flag_builder = settings::builder();
         flag_builder
@@ -146,6 +194,7 @@ impl Codegen {
             .map_err(backend)
     }
 
+    #[cfg(feature = "native")]
     pub fn new_jit_module(&self) -> Result<JITModule, CodegenError> {
         let mut builder = JITBuilder::with_isa(self.isa(true)?, default_libcall_names());
         for (name, address) in runtime::symbols() {
@@ -155,6 +204,7 @@ impl Codegen {
     }
 
     /// Compiles a REPL chunk and returns its entry function.
+    #[cfg(feature = "native")]
     pub fn compile_jit_chunk(
         &self,
         jit: &mut JITModule,
@@ -170,6 +220,7 @@ impl Codegen {
     }
 
     /// The address of a global's cell, once its chunk is compiled.
+    #[cfg(feature = "native")]
     pub fn global_address(
         jit: &JITModule,
         symbols: &Symbols,
@@ -179,6 +230,7 @@ impl Codegen {
         Some(jit.get_finalized_data(*data).0.cast())
     }
 
+    #[cfg(feature = "native")]
     pub fn compile(&self, module: &core::Module, output: &Path) -> Result<(), CodegenError> {
         let total_start = Instant::now();
         let isa = self.isa(false)?;
@@ -260,6 +312,17 @@ impl Codegen {
         }
         self.print_timings(&functions, link_start.elapsed(), total_start.elapsed());
         Ok(())
+    }
+
+    #[cfg(feature = "web")]
+    pub fn define_chunk<M: Module>(
+        &self,
+        target: &mut M,
+        symbols: &mut Symbols,
+        module: &core::Module,
+    ) -> Result<FuncId, CodegenError> {
+        self.define_module(target, symbols, module)
+            .map(|(entry, _)| entry)
     }
 
     /// Declares and defines everything `module` introduces; returns its
@@ -389,7 +452,7 @@ impl Codegen {
             );
         }
         let optimization_start = Instant::now();
-        if needs_manual_optimization {
+        if needs_manual_optimization && target.isa().pointer_type() == types::I64 {
             context
                 .optimize(target.isa(), &mut ControlPlane::default())
                 .map_err(backend)?;
@@ -426,14 +489,21 @@ impl Codegen {
                 "== Cranelift stats ==\nblocks: {blocks}\nIR instructions: {instructions}\ncode bytes: {code_size}"
             );
         }
+        #[cfg(not(feature = "native"))]
+        let _ = (frontend, optimization, codegen);
         Ok(FunctionBuild {
+            #[cfg(feature = "native")]
             context,
+            #[cfg(feature = "native")]
             frontend,
+            #[cfg(feature = "native")]
             optimization,
+            #[cfg(feature = "native")]
             codegen,
         })
     }
 
+    #[cfg(feature = "native")]
     fn print_timings(&self, functions: &[FunctionBuild], link: Duration, total: Duration) {
         if self.timings {
             let frontend: Duration = functions.iter().map(|function| function.frontend).sum();
@@ -546,10 +616,7 @@ impl<M: Module> Translator<'_, M> {
             match handler {
                 Some(handler) => {
                     let state = self.raised_address()?;
-                    let exception =
-                        self.builder
-                            .ins()
-                            .load(types::I64, MemFlagsData::trusted(), state, 0);
+                    let exception = self.load_memory(types::I64, MemFlagsData::trusted(), state, 0);
                     let empty = self.word(value::RAISED);
                     self.store(empty, state, 0);
                     self.builder
@@ -587,6 +654,84 @@ impl<M: Module> Translator<'_, M> {
         self.builder.set_cold_block(landing);
         self.landings.push((self.handler, landing));
         landing
+    }
+
+    fn pointer(&mut self, value: Value) -> Value {
+        let ty = self.target.isa().pointer_type();
+        if self.builder.func.dfg.value_type(value) == ty {
+            value
+        } else {
+            self.builder.ins().ireduce(ty, value)
+        }
+    }
+
+    fn pointer_word(&mut self, value: Value) -> Value {
+        if self.builder.func.dfg.value_type(value) == types::I64 {
+            value
+        } else {
+            self.builder.ins().uextend(types::I64, value)
+        }
+    }
+
+    fn load_memory(
+        &mut self,
+        ty: types::Type,
+        flags: MemFlagsData,
+        address: Value,
+        offset: i32,
+    ) -> Value {
+        let address = self.pointer(address);
+        self.builder.ins().load(ty, flags, address, offset)
+    }
+
+    fn load_byte(
+        &mut self,
+        ty: types::Type,
+        flags: MemFlagsData,
+        address: Value,
+        offset: i32,
+    ) -> Value {
+        let address = self.pointer(address);
+        self.builder.ins().uload8(ty, flags, address, offset)
+    }
+
+    fn store_memory(&mut self, flags: MemFlagsData, value: Value, address: Value, offset: i32) {
+        let address = self.pointer(address);
+        self.builder.ins().store(flags, value, address, offset);
+    }
+
+    fn stack_address(
+        &mut self,
+        _: types::Type,
+        slot: cranelift_codegen::ir::StackSlot,
+        offset: i32,
+    ) -> Value {
+        let address = self
+            .builder
+            .ins()
+            .stack_addr(self.target.isa().pointer_type(), slot, offset);
+        self.pointer_word(address)
+    }
+
+    fn code_address(&mut self, _: types::Type, function: FuncRef) -> Value {
+        let code = self
+            .builder
+            .ins()
+            .func_addr(self.target.isa().pointer_type(), function);
+        self.pointer_word(code)
+    }
+
+    fn compare_bytes(
+        &mut self,
+        config: cranelift_codegen::isa::TargetFrontendConfig,
+        left: Value,
+        right: Value,
+        length: Value,
+    ) -> Value {
+        let left = self.pointer(left);
+        let right = self.pointer(right);
+        let length = self.pointer(length);
+        self.builder.call_memcmp(config, left, right, length)
     }
 
     fn word(&mut self, word: i64) -> Value {
@@ -642,7 +787,13 @@ impl<M: Module> Translator<'_, M> {
 
     fn data_address(&mut self, id: DataId) -> Value {
         let global = self.target.declare_data_in_func(id, self.builder.func);
-        self.builder.ins().symbol_value(types::I64, global)
+        {
+            let address = self
+                .builder
+                .ins()
+                .symbol_value(self.target.isa().pointer_type(), global);
+            self.pointer_word(address)
+        }
     }
 
     /// A C function, declared on first use.
@@ -707,7 +858,7 @@ impl<M: Module> Translator<'_, M> {
     }
 
     fn load(&mut self, block: Value, field: usize) -> Value {
-        self.builder.ins().load(
+        self.load_memory(
             types::I64,
             MemFlagsData::trusted(),
             block,
@@ -717,9 +868,7 @@ impl<M: Module> Translator<'_, M> {
 
     /// Stores `value` at byte `offset` of `block`.
     fn store(&mut self, value: Value, block: Value, offset: i32) {
-        self.builder
-            .ins()
-            .store(MemFlagsData::trusted(), value, block, offset);
+        self.store_memory(MemFlagsData::trusted(), value, block, offset);
     }
 
     fn untag(&mut self, word: Value) -> Value {
@@ -738,16 +887,12 @@ impl<M: Module> Translator<'_, M> {
     }
 
     fn real(&mut self, boxed: Value) -> Value {
-        self.builder
-            .ins()
-            .load(types::F64, MemFlagsData::trusted(), boxed, 8)
+        self.load_memory(types::F64, MemFlagsData::trusted(), boxed, 8)
     }
 
     fn box_real(&mut self, real: Value) -> Result<Value, CodegenError> {
         let block = self.allocate(1, value::KIND_REAL)?;
-        self.builder
-            .ins()
-            .store(MemFlagsData::trusted(), real, block, 8);
+        self.store_memory(MemFlagsData::trusted(), real, block, 8);
         Ok(block)
     }
 
@@ -819,14 +964,9 @@ impl<M: Module> Translator<'_, M> {
                 self.boolean(compared)
             }
             Prim::StringLt | Prim::StringLe | Prim::StringGt | Prim::StringGe => {
-                let left_header =
-                    self.builder
-                        .ins()
-                        .load(types::I64, MemFlagsData::trusted(), args[0], 0);
+                let left_header = self.load_memory(types::I64, MemFlagsData::trusted(), args[0], 0);
                 let right_header =
-                    self.builder
-                        .ins()
-                        .load(types::I64, MemFlagsData::trusted(), args[1], 0);
+                    self.load_memory(types::I64, MemFlagsData::trusted(), args[1], 0);
                 let left_length = self.builder.ins().ushr_imm_u(left_header, 8);
                 let right_length = self.builder.ins().ushr_imm_u(right_header, 8);
                 let shorter =
@@ -839,12 +979,8 @@ impl<M: Module> Translator<'_, M> {
                     .select(shorter, left_length, right_length);
                 let left = self.builder.ins().iadd_imm_s(args[0], 8);
                 let right = self.builder.ins().iadd_imm_s(args[1], 8);
-                let compared = self.builder.call_memcmp(
-                    self.target.isa().frontend_config(),
-                    left,
-                    right,
-                    length,
-                );
+                let compared =
+                    self.compare_bytes(self.target.isa().frontend_config(), left, right, length);
                 let compared = self.builder.ins().sextend(types::I64, compared);
                 let equal = self.builder.ins().icmp_imm_s(IntCC::Equal, compared, 0);
                 let lengths = self.builder.ins().isub(left_length, right_length);
@@ -935,25 +1071,17 @@ impl<M: Module> Translator<'_, M> {
                 let string = self.allocate(1, value::KIND_STRING)?;
                 let code = self.untag(args[0]);
                 let byte = self.builder.ins().ireduce(types::I8, code);
-                self.builder
-                    .ins()
-                    .store(MemFlagsData::trusted(), byte, string, 8);
+                self.store_memory(MemFlagsData::trusted(), byte, string, 8);
                 string
             }
             Prim::StringSub => {
                 let index = self.untag(args[1]);
                 let address = self.builder.ins().iadd(args[0], index);
-                let byte =
-                    self.builder
-                        .ins()
-                        .uload8(types::I64, MemFlagsData::trusted(), address, 8);
+                let byte = self.load_byte(types::I64, MemFlagsData::trusted(), address, 8);
                 self.tag(byte)
             }
             Prim::Size => {
-                let header =
-                    self.builder
-                        .ins()
-                        .load(types::I64, MemFlagsData::trusted(), args[0], 0);
+                let header = self.load_memory(types::I64, MemFlagsData::trusted(), args[0], 0);
                 let length = self.builder.ins().sshr_imm_u(header, 8);
                 self.tag(length)
             }
@@ -1059,7 +1187,7 @@ impl<M: Module> Translator<'_, M> {
                 values.push(closure);
                 let code = self.load(closure, 0);
                 let signature = self.builder.import_signature(sml_signature(args.len() + 1));
-                CallTarget::Indirect(signature, code)
+                CallTarget::Indirect(signature, self.pointer(code))
             }
         };
         values.extend(self.atoms(args)?);
@@ -1087,9 +1215,7 @@ impl<M: Module> Translator<'_, M> {
             }
             Op::Global(global) => {
                 let address = self.data_address(self.symbols.globals[global]);
-                self.builder
-                    .ins()
-                    .load(types::I64, MemFlagsData::trusted(), address, 0)
+                self.load_memory(types::I64, MemFlagsData::trusted(), address, 0)
             }
             Op::Call(callee, args) => {
                 let call = self.callee(callee, args)?;
@@ -1138,7 +1264,7 @@ impl<M: Module> Translator<'_, M> {
                     let block = self.vars[&closure.var];
                     let id = self.symbols.functions[&closure.code];
                     let func = self.target.declare_func_in_func(id, self.builder.func);
-                    let code = self.builder.ins().func_addr(types::I64, func);
+                    let code = self.code_address(types::I64, func);
                     self.store(code, block, 8);
                     for (index, captured) in closure.captured.iter().enumerate() {
                         let value = self.atom(captured)?;

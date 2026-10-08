@@ -124,10 +124,7 @@ impl<M: Module> Translator<'_, M> {
     }
 
     fn length(&mut self, string: Value) -> Value {
-        let header = self
-            .builder
-            .ins()
-            .load(types::I64, MemFlagsData::trusted(), string, 0);
+        let header = self.load_memory(types::I64, MemFlagsData::trusted(), string, 0);
         self.builder.ins().ushr_imm_u(header, 8)
     }
 
@@ -145,6 +142,9 @@ impl<M: Module> Translator<'_, M> {
     }
 
     fn copy_bytes(&mut self, source: Value, destination: Value, length: Value) {
+        let source = self.pointer(source);
+        let destination = self.pointer(destination);
+        let length = self.pointer(length);
         self.builder.call_memcpy(
             self.target.isa().frontend_config(),
             destination,
@@ -175,7 +175,7 @@ impl<M: Module> Translator<'_, M> {
             32,
             0,
         ));
-        let buffer = self.builder.ins().stack_addr(types::I64, slot, 0);
+        let buffer = self.stack_address(types::I64, slot, 0);
         let end = self.builder.ins().iadd_imm_s(buffer, 32);
         let integer = self.untag(integer);
         let negative = self
@@ -202,9 +202,7 @@ impl<M: Module> Translator<'_, M> {
         let digit = self.builder.ins().iadd_imm_s(digit, 48);
         let digit = self.builder.ins().ireduce(types::I8, digit);
         let cursor = self.builder.ins().iadd_imm_s(cursor, -1);
-        self.builder
-            .ins()
-            .store(MemFlagsData::trusted(), digit, cursor, 0);
+        self.store_memory(MemFlagsData::trusted(), digit, cursor, 0);
         let rest = self.builder.ins().udiv(number, ten);
         let more = self.builder.ins().icmp_imm_s(IntCC::NotEqual, rest, 0);
         self.builder
@@ -217,9 +215,7 @@ impl<M: Module> Translator<'_, M> {
         self.builder.switch_to_block(prefix);
         let cursor = self.builder.ins().iadd_imm_s(cursor, -1);
         let tilde = self.builder.ins().iconst(types::I8, 126);
-        self.builder
-            .ins()
-            .store(MemFlagsData::trusted(), tilde, cursor, 0);
+        self.store_memory(MemFlagsData::trusted(), tilde, cursor, 0);
         self.builder.ins().jump(finish, &[cursor.into()]);
         self.builder.switch_to_block(finish);
         let cursor = self.builder.block_params(finish)[0];
@@ -257,14 +253,8 @@ impl<M: Module> Translator<'_, M> {
         let immediate = self.builder.ins().band_imm_u(bits, 1);
         self.builder.ins().brif(immediate, no, &[], headers, &[]);
         self.builder.switch_to_block(headers);
-        let header = self
-            .builder
-            .ins()
-            .load(types::I64, MemFlagsData::trusted(), lhs, 0);
-        let other = self
-            .builder
-            .ins()
-            .load(types::I64, MemFlagsData::trusted(), rhs, 0);
+        let header = self.load_memory(types::I64, MemFlagsData::trusted(), lhs, 0);
+        let other = self.load_memory(types::I64, MemFlagsData::trusted(), rhs, 0);
         let same = self.builder.ins().icmp(IntCC::Equal, header, other);
         self.builder.ins().brif(same, kinds, &[], no, &[]);
         self.builder.switch_to_block(kinds);
@@ -278,20 +268,12 @@ impl<M: Module> Translator<'_, M> {
         self.builder.switch_to_block(string);
         let left = self.builder.ins().iadd_imm_s(lhs, 8);
         let right = self.builder.ins().iadd_imm_s(rhs, 8);
-        let compared =
-            self.builder
-                .call_memcmp(self.target.isa().frontend_config(), left, right, length);
+        let compared = self.compare_bytes(self.target.isa().frontend_config(), left, right, length);
         let same = self.builder.ins().icmp_imm_s(IntCC::Equal, compared, 0);
         self.builder.ins().brif(same, yes, &[], no, &[]);
         self.builder.switch_to_block(real);
-        let left = self
-            .builder
-            .ins()
-            .load(types::F64, MemFlagsData::trusted(), lhs, 8);
-        let right = self
-            .builder
-            .ins()
-            .load(types::F64, MemFlagsData::trusted(), rhs, 8);
+        let left = self.load_memory(types::F64, MemFlagsData::trusted(), lhs, 8);
+        let right = self.load_memory(types::F64, MemFlagsData::trusted(), rhs, 8);
         let same = self.builder.ins().fcmp(FloatCC::Equal, left, right);
         self.builder.ins().brif(same, yes, &[], no, &[]);
         self.builder.switch_to_block(record);
@@ -312,14 +294,8 @@ impl<M: Module> Translator<'_, M> {
         let offset = self.builder.ins().ishl_imm_u(index, 3);
         let left = self.builder.ins().iadd(lhs, offset);
         let right = self.builder.ins().iadd(rhs, offset);
-        let left = self
-            .builder
-            .ins()
-            .load(types::I64, MemFlagsData::trusted(), left, 8);
-        let right = self
-            .builder
-            .ins()
-            .load(types::I64, MemFlagsData::trusted(), right, 8);
+        let left = self.load_memory(types::I64, MemFlagsData::trusted(), left, 8);
+        let right = self.load_memory(types::I64, MemFlagsData::trusted(), right, 8);
         self.builder
             .ins()
             .brif(is_last, last_field, &[], recurse, &[]);

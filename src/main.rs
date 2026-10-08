@@ -1,18 +1,16 @@
 mod ast_dump;
-mod codegen;
 mod repl;
-mod runtime;
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::codegen::{Codegen, CodegenOptions, OptLevel};
 use crate::error::SourceError;
 use crate::lexer::Lexer;
 use crate::parser::Parser as SmlParser;
 use clap::Parser;
+use nassau::codegen::{Codegen, CodegenOptions, OptLevel};
 use nassau::prelude::Basis;
-use nassau::{core, error, infer, interpreter, lexer, lower, matching, parser, scope, value};
+use nassau::{error, infer, lexer, lower, matching, parser, scope};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -22,8 +20,6 @@ use nassau::{core, error, infer, interpreter, lexer, lower, matching, parser, sc
 struct Cli {
     #[arg(value_name = "FILE")]
     input: Option<PathBuf>,
-    #[arg(long, conflicts_with_all = ["asm", "dump_ir", "dump_optimized_ir", "debug_passes", "objdump", "timings", "stats", "verify"], help = "Run a source file with the portable Rust interpreter")]
-    interpret: bool,
     #[arg(
         long,
         help = "Print IR before and after optimization and lowered instructions"
@@ -155,52 +151,6 @@ fn run(cli: &Cli) -> miette::Result<Option<PathBuf>> {
         print!("{module}");
         return Ok(None);
     }
-    if cli.interpret {
-        use interpreter::{Interpreter, Signal, Value};
-        use std::io::Write;
-
-        let mut interpreter = Interpreter::default();
-        let result = interpreter.run(module);
-        std::io::stdout()
-            .write_all(&interpreter.output)
-            .map_err(miette::Report::msg)?;
-        let status = match result {
-            Ok(value) => (value.word() >> 1) as i32,
-            Err(Signal::Exit(status)) => i32::from(status),
-            Err(Signal::Raised(exception)) => {
-                let name = exception.field(0).field(0);
-                let argument = exception.field(1);
-                let location = exception.field(2);
-                let detail = match &argument {
-                    Value::Word(word) => (word >> 1).to_string().into_bytes(),
-                    Value::Block(object) if object.kind == value::KIND_STRING => {
-                        [b"\"", object.bytes.as_slice(), b"\""].concat()
-                    }
-                    _ => b"<unknown>".to_vec(),
-                };
-                let separator: &[u8] = if matches!(argument, Value::Word(_)) {
-                    b"\n raised at "
-                } else {
-                    b" raised at "
-                };
-                let diagnostic = [
-                    b"/usr/lib/smlnj/bin/sml: Fatal error -- Uncaught exception ",
-                    name.object().bytes.as_slice(),
-                    b" with ",
-                    &detail,
-                    separator,
-                    &location.object().bytes,
-                    b"\n\n",
-                ]
-                .concat();
-                std::io::stderr()
-                    .write_all(&diagnostic)
-                    .map_err(miette::Report::msg)?;
-                1
-            }
-        };
-        std::process::exit(status);
-    }
     let output = if cli.asm {
         input.with_extension("S")
     } else {
@@ -325,7 +275,6 @@ fn main() {
     }
     if cli.input.is_none() {
         match repl::run(
-            cli.interpret,
             cli.opt_level,
             cli.debug_passes,
             cli.dump_ir,

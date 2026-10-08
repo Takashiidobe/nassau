@@ -98,12 +98,11 @@ def nassau_matches(oracle, path, stdout, code):
         native = run_limited([str(executable)], path.parent)
     finally:
         executable.unlink(missing_ok=True)
-    interpreted = run_limited([oracle.nassau, "--interpret", str(path)], path.parent)
-    if native is None or interpreted is None:
-        return False
-    return all(
-        uf.decode(run.stdout) == stdout and run.returncode == code and not run.stderr
-        for run in (native, interpreted)
+    return (
+        native is not None
+        and uf.decode(native.stdout) == stdout
+        and native.returncode == code
+        and not native.stderr
     )
 
 

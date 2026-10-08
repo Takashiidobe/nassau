@@ -1,9 +1,10 @@
 # Architecture
 
-Nassau is a native Standard ML compiler written in Rust, with Cranelift doing
-the final machine-code generation. The REPL compiles each input into native
-code too. File compilation and the REPL share the type checker, lowering pass,
-code generator, and support runtime.
+Nassau is a Standard ML compiler written in Rust. Cranelift emits native
+machine code for file compilation and the native REPL. The browser REPL uses
+the same CLIF emitter, then clif2wasm and Waffle translate its output to Wasm.
+All paths share the type checker and lowering pass; both REPLs share the
+session and value printer.
 
 A useful way to read the project is to follow one binding from source to its
 compiled value. [grammar.md](grammar.md) describes which language forms can
@@ -18,8 +19,9 @@ flowchart TD
     parser --> checks["scope.rs + matching.rs: source-file diagnostics"]
     checks --> infer["infer.rs: types and bindings"]
     infer --> lower["lower.rs: core IR"]
-    lower --> codegen["codegen.rs: Cranelift IR and machine code"]
-    lower --> interpreter["interpreter.rs: portable Rust execution"]
+    lower --> codegen["codegen.rs: Cranelift IR"]
+    codegen --> wasm["clif2wasm + Waffle: Wasm module"]
+    wasm --> browser["browser REPL: shared memory and function table"]
     codegen --> object["ObjectModule: object file"]
     object --> linker["system linker + Rust runtime archive"]
     linker --> executable["native executable"]
@@ -103,45 +105,34 @@ an exception handler must return to that handler, so it is emitted as an
 ordinary call. Cranelift then optimizes the IR, allocates registers, and emits
 machine code.
 
-Two Cranelift module implementations handle the output. `ObjectModule` emits
+Three module implementations handle the output. `ObjectModule` emits
 an object file for file compilation. `JITModule` keeps code and global cells
 inside the compiler process for the REPL. The translator is generic over the
-module interface, so both paths compile the same core operations.
+module interface. `clif2wasm::WasmModule` translates the same CLIF through
+Waffle into Wasm for the browser REPL.
 
-### Executing core IR in Rust
+### Executing in the browser
 
-[interpreter.rs](../src/interpreter.rs) executes the same core IR directly.
-`cargo run -- --interpret input.sml` uses this backend for a source file.
-`cargo run -- --interpret` starts a persistent interpreter REPL.
-The library exports the frontend, shared session and printer, interpreter,
-core IR and shared value constants for other hosts.
-
-An explicit frame stack holds block positions, variables and call results.
-Tail calls replace the current frame; exceptions enter a block's handler or
-remove frames until a handler is found. Neither operation uses Rust recursion.
-The result distinguishes normal return, an uncaught SML exception and process
-exit. Printed bytes accumulate in the interpreter's output buffer.
-
-Interpreter values are tagged immediates or typed `boa_gc::Gc` objects, rather
-than native machine words. `GcRefCell` supports mutable fields and recursive
-closure initialization. The collector traces iteratively, including long
-lists and cyclic references; the interpreter implements no collector or
-unsafe tracing code. Structural equality also uses an explicit work list.
-
-Globals are GC-managed cells. Closures retain cells used by their code,
-including dependencies of statically called functions and created closures.
-A host can call `retain_globals` with its current lowering-session roots to
-drop historical bindings while preserving globals needed by saved closures.
-Function IR and dependency metadata remain for the interpreter's lifetime;
-dropping the interpreter releases its heap roots and code. Collection is
-thread local, so a browser host should keep a session in one worker.
-
-The portable library builds with `--no-default-features`; the `native` feature
-enables Cranelift, CLI dependencies and native runtime archive generation.
 The `web` feature exports a `wasm-bindgen` `BrowserRepl` wrapping the shared
-session. [www](../www/README.md) packages it for `wasm32-unknown-unknown`
-with local editor assets and a worker that owns the session. Stop and reset
-replace the worker, releasing its code and heap.
+session with a Cranelift/Wasm backend. [www](../www/README.md) packages the
+compiler for `wasm32-unknown-unknown` with local editor assets and a worker
+that owns the session. No native REPL process is required.
+
+Each submission translates CLIF through clif2wasm and Waffle, then instantiates
+a Wasm module importing the session's memory, function table and stack pointer.
+Earlier function exports and stable global addresses preserve saved closures
+when bindings are shadowed. Tagged values remain 64-bit words; memory addresses
+and function-table indices use Wasm's 32-bit representation.
+
+The JavaScript runtime supplies allocation, mark-and-sweep collection, output
+and exception state. Roots include active generated frames, visible globals,
+host printing and historical globals reached through live closures. Stop and
+reset replace the worker, releasing its code and heap.
+
+The `codegen` feature enables the common CLIF emitter; `native` adds Cranelift's
+JIT and object backends, CLI dependencies and the native runtime. A frontend-only
+library builds with `--no-default-features`. There is no separate core-IR
+interpreter or native `--interpret` mode.
 
 ## Values, memory, and the runtime
 
@@ -220,8 +211,8 @@ and again after `reset;;`.
 [session.rs](../src/session.rs) owns the persistent inference and lowering
 environments, fixity and phrase transactions. Its backend supplies execution,
 global values and root retention. [repl.rs](../src/repl.rs) supplies the native
-JIT backend and terminal input; `--interpret` selects the portable backend.
-Both preserve closures and references across submissions and use the shared
+JIT backend and terminal input; [web.rs](../src/web.rs) supplies the browser
+Wasm backend. Both preserve closures and references across submissions and use the shared
 [printing.rs](../src/printing.rs) value printer.
 
 A chunk is checked and lowered against copies of the environments. Those

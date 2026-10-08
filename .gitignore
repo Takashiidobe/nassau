@@ -8,7 +8,6 @@ tests/**/*
 !tests/fixtures/**/
 !tests/fixtures/**/*.sml
 !tests/fixtures/**/*.tokens
-!tests/fixtures/runtime/interpreter-session.rs
 
 # Beads / Dolt files (added by bd init)
 .dolt/
@@ -26,3 +25,5 @@ tests/**/*
 .llog/
 
 /docs/book/
+
+!tests/fixtures/runtime/browser-session.mjs

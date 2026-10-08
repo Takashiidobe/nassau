@@ -134,14 +134,14 @@ impl<M: Module> Translator<'_, M> {
             bytes,
             3,
         ));
-        let address = self.builder.ins().stack_addr(types::I64, slot, 0);
+        let address = self.stack_address(types::I64, slot, 0);
         let zero = self.word(0);
         for field in 0..capacity {
             self.store(zero, address, ((field + 3) * 8) as i32);
         }
         let count = self.word(capacity as i64);
         let code = match self.root_function {
-            Some(function) => self.builder.ins().func_addr(types::I64, function),
+            Some(function) => self.code_address(types::I64, function),
             None => self.word(0),
         };
         self.call_c(
@@ -261,7 +261,7 @@ impl<M: Module> Translator<'_, M> {
             let reference = self
                 .target
                 .declare_func_in_func(self.symbols.functions[&function], self.builder.func);
-            let code = self.builder.ins().func_addr(types::I64, reference);
+            let code = self.code_address(types::I64, reference);
             for global in self.symbols.dependencies[&function].clone() {
                 let address = self.data_address(self.symbols.globals[&global]);
                 self.call_c(

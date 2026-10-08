@@ -180,18 +180,12 @@ fn unsupported_fixture(fixture: &Path, supported: &Path, polyml: &str) {
     let native = Command::new(&executable).current_dir(directory).output();
     let _ = fs::remove_file(&executable);
     let native = native.expect("run Nassau output");
-    let interpreted = Command::new(env!("CARGO_BIN_EXE_nassau"))
-        .arg("--interpret")
-        .arg(fixture)
-        .current_dir(directory)
-        .output()
-        .expect("interpret fixture");
     let matches_oracle = |output: &Output| {
         output.stdout == reference.stdout
             && output.status.code() == reference.status.code()
             && output.stderr.is_empty()
     };
-    if matches_oracle(&native) && matches_oracle(&interpreted) {
+    if matches_oracle(&native) {
         let root = Path::new(env!("CARGO_MANIFEST_DIR"));
         let from = fixture.strip_prefix(root).unwrap_or(fixture).display();
         let to = supported.strip_prefix(root).unwrap_or(supported).display();
@@ -437,48 +431,6 @@ fn runtime_fixture(fixture: &Path, polyml: &str, precision: u32) {
     }
 }
 
-fn interpreter_fixture(fixture: &Path, polyml: &str, precision: u32, oracle: bool) {
-    let source = fs::read_to_string(fixture).expect("read interpreter fixture");
-    let mut output = Command::new(env!("CARGO_BIN_EXE_nassau"))
-        .arg("--interpret")
-        .arg(fixture)
-        .current_dir(fixture.parent().expect("fixture parent"))
-        .output()
-        .expect("interpret fixture");
-    output.stderr = output
-        .stderr
-        .split_inclusive(|byte| *byte == b'\n')
-        .filter(|line| !line.starts_with(b"warning: match nonexhaustive at "))
-        .flatten()
-        .copied()
-        .collect();
-    let prefix =
-        if is_types_fixture(fixture) || is_parser_fixture(fixture) || is_core_fixture(fixture) {
-            "CHECK-RUN"
-        } else {
-            "CHECK"
-        };
-    check_program(fixture, &source, &output, prefix);
-    if oracle
-        && directive(&source, "POLYML-SKIP").is_none()
-        && matching_precision(&source, precision)
-    {
-        let reference = polyml_program(polyml, fixture);
-        assert_eq!(
-            output.stdout,
-            reference.stdout,
-            "interpreter stdout: {}",
-            fixture.display()
-        );
-        assert_eq!(
-            output.status.code(),
-            reference.status.code(),
-            "interpreter exit: {}",
-            fixture.display()
-        );
-    }
-}
-
 fn main() {
     let arguments = Arguments::from_args();
     let explicit_polyml = std::env::var_os("POLYML").is_some();
@@ -511,31 +463,6 @@ fn main() {
                 Ok(Completion::Completed)
             }));
             continue;
-        }
-        if expected_valid(&fixture) && !is_lexer_fixture(&fixture) {
-            let source = fs::read_to_string(&fixture).expect("read fixture");
-            let interpreter_path = fixture.clone();
-            let interpreter_polyml = polyml.clone();
-            let skip = directive(&source, "RUNTIME-SKIP")
-                .map(str::to_owned)
-                .or_else(|| {
-                    directive(&source, "GC-PLAN").map(|_| "native MMTk fixture".to_owned())
-                });
-            trials.push(Trial::ignorable_test(
-                format!("interpreter/{name}"),
-                move || {
-                    if let Some(reason) = skip {
-                        return Ok(Completion::ignored_with(reason));
-                    }
-                    interpreter_fixture(
-                        &interpreter_path,
-                        &interpreter_polyml,
-                        precision,
-                        polyml_available,
-                    );
-                    Ok(Completion::Completed)
-                },
-            ));
         }
         if expected_valid(&fixture)
             && (is_types_fixture(&fixture)

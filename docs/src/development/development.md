@@ -46,15 +46,14 @@ not installed. SML/NJ and MLton are not required.
 
 ## Fixture expectations
 
-The `interpreter/<fixture>` trials execute accepted programs with `--interpret`
-and check the same runtime expectations and Poly/ML oracle. Native MMTk
-fixtures and constructs rejected by shared lowering remain excluded. The
-standalone session fixture checks historical closure globals and reclamation
-of unreachable cycles with `boa_gc` weak references:
+The browser session fixture executes the generated Wasm in Node. It checks
+persistent bindings, historical closure globals, exception recovery, tail calls
+and collection, then compares REPL transcripts with the native JIT:
 
 ```sh
-cargo test --test fixtures interpreter/
-cargo test --test interpreter-session
+cargo build --release
+./www/build.sh
+node tests/fixtures/runtime/browser-session.mjs
 ```
 
 Fixtures carry their expected output as FileCheck comments at the end of the
@@ -86,7 +85,7 @@ arithmetic.
 grammar. Productions Nassau does not handle yet live in
 `tests/fixtures/grammar.unsupported`, where each header names the tracking
 bead. Poly/ML must accept them and Nassau must still fail (by rejecting them,
-or by producing different output natively or in the interpreter). Once one
+or by producing different output natively). Once one
 passes, its trial fails and prints the `git mv` that moves it into
 `tests/fixtures/grammar`. The same applies to any `*.unsupported/` directory.
 
@@ -256,11 +255,10 @@ Using that interval for growing long-list fixtures makes GC work quadratic;
 the full suite uses a larger interval and a heap large enough for its live
 graphs. The collecting/history fixtures independently enforce their 8 MiB heap.
 
-The REPL fixture harness runs transcripts through both the native JIT and
-`--interpret`; native GC-plan fixtures remain specific to the JIT. The standalone
-`interpreter-session` fixture also checks separate submissions, error recovery,
-exception effects, process exit, reset and historical closure collection.
+The REPL fixture harness runs transcripts through the native JIT. The browser
+session fixture compares the same transcripts with generated Wasm and also
+checks separate submissions, error recovery, process exit and reset.
 
 REPL fixtures marked `(* REPL-COMMANDS *)` exercise Nassau host commands
 without a Poly/ML comparison. They check terminal clearing and fresh bindings
-after reset against both backends.
+after reset. The browser session fixture checks the same host commands.

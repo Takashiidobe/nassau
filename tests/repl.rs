@@ -78,14 +78,11 @@ fn value_echoes(transcript: &str) -> Vec<String> {
     bindings.iter().map(|line| compact(line)).collect()
 }
 
-fn compare_repl(fixture: &Path, polyml: &str, interpret: bool) {
+fn compare_repl(fixture: &Path, polyml: &str) {
     let source = fs::read_to_string(fixture).expect("read fixture");
     let input = repl_source(&source);
     let directory = fixture.parent().unwrap();
     let mut command = Command::new(env!("CARGO_BIN_EXE_nassau"));
-    if interpret {
-        command.arg("--interpret");
-    }
     command.current_dir(directory);
     common::configure_gc(&mut command, &source);
     let nassau = run_with_input(&mut command, &input).expect("run Nassau REPL");
@@ -194,10 +191,6 @@ fn repl_matches_polyml() {
     }
 
     for fixture in fixtures() {
-        compare_repl(&fixture, polyml, false);
-        let source = fs::read_to_string(&fixture).expect("read REPL fixture");
-        if !source.contains("(* GC-PLAN:") {
-            compare_repl(&fixture, polyml, true);
-        }
+        compare_repl(&fixture, polyml);
     }
 }

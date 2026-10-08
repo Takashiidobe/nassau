@@ -1,12 +1,16 @@
 # Nassau in the browser
 
 A persistent Standard ML REPL running entirely in a Web Worker. The Rust
-frontend lowers SML to core IR, which the portable Rust interpreter executes.
-Boa GC manages values. Cranelift and the native MMTk runtime are excluded from
-this build. All editor assets are local; no CDN or execution server is needed.
+frontend lowers SML to core IR and emits Cranelift IR using the same emitter as
+the native compiler. The `clif2wasm` bridge translates this through
+Waffle into Wasm modules, which the browser compiles and executes locally.
+A browser runtime supplies allocation, mark-and-sweep collection, output and
+exception state. All editor assets are local; no CDN or execution server is
+needed. The browser must support WebAssembly tail calls.
 
 Build from the repository root with Rust, the `wasm32-unknown-unknown` target
-and `wasm-pack` available:
+and `wasm-pack` available. Cargo fetches `clif2wasm` from its pinned
+[GitHub revision](https://github.com/Takashiidobe/clif2wasm/tree/edf08ece9bd24991c1325cb3e99ee94a026be42d):
 
 ```sh
 rustup target add wasm32-unknown-unknown
@@ -34,7 +38,7 @@ Examples populate the current prompt without resetting the session. `clear;;`
 clears previous prompts and results but keeps bindings. `reset;;` clears the
 display and starts a fresh session. Both show a confirmation at the top of the
 terminal: `Cleared` or `Reset`. These commands also work in the native
-REPL, including `--interpret`. They are reserved only when submitted alone;
+REPL. They are reserved only when submitted alone;
 expressions such as `clear + 1;;` still use ordinary SML bindings. The toolbar
 buttons provide the same clear/reset actions. Reset starts a fresh worker. Stop terminates the executing worker and resets the session. Share
 links contain the current prompt; opening one starts a fresh session.
@@ -43,12 +47,26 @@ Parse and type errors appear beside the submitted source. An uncaught SML
 exception discards the failing phrase's new bindings while retaining previous
 bindings and effects. Compiler diagnostics refer to the submitted source;
 runtime exception locations use the session's cumulative `stdIn` line numbers.
-The interpreter retains function IR for the session's lifetime, so reset also
-releases historical code. Browsers display printed bytes as UTF-8.
+Compiled modules, literals and global cells remain allocated for the session's
+lifetime; collection reclaims unreachable heap objects, including cycles.
+Closures retain the historical globals their code reads. Reset releases the
+whole session, including compiled code. Browsers display printed bytes as UTF-8.
 
 The Wasm API is a `BrowserRepl` with `submit(source)`, returning captured output
 bytes, diagnostics, an optional exit status and a display-clear flag. The worker runs this same
-persistent session used by `nassau --interpret`.
+frontend session with a Cranelift/Wasm execution backend. Native execution
+continues to use Cranelift JIT and the native MMTk runtime.
+
+The automated session fixture runs the generated browser Wasm in Node, checks
+persistent bindings, exception recovery, direct and indirect tail calls, and
+collection under allocation pressure, then compares REPL fixtures with the
+native JIT. Build the native executable and web bundle first:
+
+```sh
+cargo build --release
+./www/build.sh
+node tests/fixtures/runtime/browser-session.mjs
+```
 
 Browser UI testing is manual. Check loading, example selection, repeated runs,
 diagnostics, stop/reset, copy link, and the narrow screen layout. To exercise

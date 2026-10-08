@@ -3,30 +3,7 @@ use crate::infer::{self, TypeTable};
 use crate::lower::{self, Part, Source};
 use crate::parser::{Parser, Program};
 
-const SOURCE: &str = concat!(
-    include_str!("../basis/general.sml"),
-    "\n",
-    include_str!("../basis/bool.sml"),
-    "\n",
-    include_str!("../basis/int.sml"),
-    "\n",
-    include_str!("../basis/char.sml"),
-    "\n",
-    include_str!("../basis/real.sml"),
-    "\n",
-    include_str!("../basis/string.sml"),
-    "\n",
-    include_str!("../basis/textio.sml"),
-    "\n",
-    include_str!("../basis/word8.sml"),
-    "\n",
-    include_str!("../basis/os.sml"),
-    "\n",
-    include_str!("../basis/list.sml"),
-    "\n",
-    include_str!("../basis/option.sml"),
-    "\n"
-);
+const SOURCE: &str = include_str!(concat!(env!("OUT_DIR"), "/basis.sml"));
 
 /// The basis library, written in SML and checked and lowered ahead of the
 /// user's program.

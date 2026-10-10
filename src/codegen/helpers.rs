@@ -49,7 +49,7 @@ impl Codegen {
         for &(name, _) in &helpers {
             let start = Instant::now();
             let id = symbols.helpers[name];
-            let frontend_config = target.isa().frontend_config();
+            let frontend_config = target.target_config();
             let mut context = target.make_context();
             context.func.signature = target
                 .declarations()
@@ -145,12 +145,8 @@ impl<M: Module> Translator<'_, M> {
         let source = self.pointer(source);
         let destination = self.pointer(destination);
         let length = self.pointer(length);
-        self.builder.call_memcpy(
-            self.target.isa().frontend_config(),
-            destination,
-            source,
-            length,
-        );
+        self.builder
+            .call_memcpy(self.target.target_config(), destination, source, length);
     }
 
     fn concat(&mut self, args: &[Value]) -> Result<(), CodegenError> {
@@ -268,7 +264,7 @@ impl<M: Module> Translator<'_, M> {
         self.builder.switch_to_block(string);
         let left = self.builder.ins().iadd_imm_s(lhs, 8);
         let right = self.builder.ins().iadd_imm_s(rhs, 8);
-        let compared = self.compare_bytes(self.target.isa().frontend_config(), left, right, length);
+        let compared = self.compare_bytes(self.target.target_config(), left, right, length);
         let same = self.builder.ins().icmp_imm_s(IntCC::Equal, compared, 0);
         self.builder.ins().brif(same, yes, &[], no, &[]);
         self.builder.switch_to_block(real);

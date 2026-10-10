@@ -1,4 +1,4 @@
-use clif2wasm::module_impl::WasmModule;
+use clif2wasm::WasmModule;
 use wasm_bindgen::prelude::*;
 
 use crate::codegen::{Codegen, CodegenOptions, Symbols};
@@ -152,8 +152,12 @@ impl Backend for WasmBackend {
         let bytes = target
             .emit_incremental(|size, align| {
                 self.runtime
-                    .allocate_static(u32::try_from(size)?, align)
-                    .map_err(|error| anyhow::anyhow!(js_error(error).to_string()))
+                    .allocate_static(
+                        u32::try_from(size)
+                            .map_err(|error| clif2wasm::error::Error::general(error.to_string()))?,
+                        align,
+                    )
+                    .map_err(|error| clif2wasm::error::Error::general(js_error(error).to_string()))
             })
             .map_err(|error| miette::Report::msg(format!("{error:#}")))?;
         let names = serde_wasm_bindgen::to_value(&target.function_names())

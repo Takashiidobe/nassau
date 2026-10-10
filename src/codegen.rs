@@ -398,7 +398,7 @@ impl Codegen {
         file: &str,
     ) -> Result<FunctionBuild, CodegenError> {
         let total_start = Instant::now();
-        let frontend_config = target.isa().frontend_config();
+        let frontend_config = target.target_config();
         let mut context = target.make_context();
         context.func.signature = if entry {
             let mut signature = target.make_signature();
@@ -443,7 +443,15 @@ impl Codegen {
         let dump_optimized_ir = self.debug_passes || self.dump_optimized_ir;
         let needs_manual_optimization = dump_optimized_ir || self.verify || self.stats;
         if self.verify {
-            cranelift_codegen::verify_function(&context.func, target.isa()).map_err(backend)?;
+            // the Wasm module's x64 ISA is only a facade; its frontend config uses I32 pointers.
+            let verification_target: cranelift_codegen::settings::FlagsOrIsa<'_> =
+                if target.target_config().pointer_type() == types::I32 {
+                    target.isa().flags().into()
+                } else {
+                    target.isa().into()
+                };
+            cranelift_codegen::verify_function(&context.func, verification_target)
+                .map_err(backend)?;
         }
         if dump_ir {
             println!(
@@ -452,14 +460,21 @@ impl Codegen {
             );
         }
         let optimization_start = Instant::now();
-        if needs_manual_optimization && target.isa().pointer_type() == types::I64 {
+        if needs_manual_optimization && target.target_config().pointer_type() == types::I64 {
             context
                 .optimize(target.isa(), &mut ControlPlane::default())
                 .map_err(backend)?;
         }
         let optimization = optimization_start.elapsed();
         if self.verify && needs_manual_optimization {
-            cranelift_codegen::verify_function(&context.func, target.isa()).map_err(backend)?;
+            let verification_target: cranelift_codegen::settings::FlagsOrIsa<'_> =
+                if target.target_config().pointer_type() == types::I32 {
+                    target.isa().flags().into()
+                } else {
+                    target.isa().into()
+                };
+            cranelift_codegen::verify_function(&context.func, verification_target)
+                .map_err(backend)?;
         }
         if dump_optimized_ir {
             println!(
@@ -657,7 +672,7 @@ impl<M: Module> Translator<'_, M> {
     }
 
     fn pointer(&mut self, value: Value) -> Value {
-        let ty = self.target.isa().pointer_type();
+        let ty = self.target.target_config().pointer_type();
         if self.builder.func.dfg.value_type(value) == ty {
             value
         } else {
@@ -706,10 +721,10 @@ impl<M: Module> Translator<'_, M> {
         slot: cranelift_codegen::ir::StackSlot,
         offset: i32,
     ) -> Value {
-        let address = self
-            .builder
-            .ins()
-            .stack_addr(self.target.isa().pointer_type(), slot, offset);
+        let address =
+            self.builder
+                .ins()
+                .stack_addr(self.target.target_config().pointer_type(), slot, offset);
         self.pointer_word(address)
     }
 
@@ -717,7 +732,7 @@ impl<M: Module> Translator<'_, M> {
         let code = self
             .builder
             .ins()
-            .func_addr(self.target.isa().pointer_type(), function);
+            .func_addr(self.target.target_config().pointer_type(), function);
         self.pointer_word(code)
     }
 
@@ -791,7 +806,7 @@ impl<M: Module> Translator<'_, M> {
             let address = self
                 .builder
                 .ins()
-                .symbol_value(self.target.isa().pointer_type(), global);
+                .symbol_value(self.target.target_config().pointer_type(), global);
             self.pointer_word(address)
         }
     }
@@ -979,8 +994,7 @@ impl<M: Module> Translator<'_, M> {
                     .select(shorter, left_length, right_length);
                 let left = self.builder.ins().iadd_imm_s(args[0], 8);
                 let right = self.builder.ins().iadd_imm_s(args[1], 8);
-                let compared =
-                    self.compare_bytes(self.target.isa().frontend_config(), left, right, length);
+                let compared = self.compare_bytes(self.target.target_config(), left, right, length);
                 let compared = self.builder.ins().sextend(types::I64, compared);
                 let equal = self.builder.ins().icmp_imm_s(IntCC::Equal, compared, 0);
                 let lengths = self.builder.ins().isub(left_length, right_length);

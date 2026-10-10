@@ -290,15 +290,15 @@ checksum = "1c133bc6a41be0d194c306b5506d15e6feeea7b1d6604bd3f8310dfb2ca96486"
 [[package]]
 name = "clif2wasm"
 version = "0.0.0"
-source = "git+https://github.com/Takashiidobe/clif2wasm?rev=edf08ece9bd24991c1325cb3e99ee94a026be42d#edf08ece9bd24991c1325cb3e99ee94a026be42d"
+source = "git+https://github.com/Takashiidobe/clif2wasm?rev=43274bf90f7070da3221f6de924e9bfc11a284d9#43274bf90f7070da3221f6de924e9bfc11a284d9"
 dependencies = [
- "anyhow",
  "cranelift-codegen",
  "cranelift-frontend",
  "cranelift-module",
+ "miette",
  "target-lexicon",
+ "thiserror",
  "waffle",
- "wasm-encoder 0.261.0",
  "wasmparser 0.261.0",
 ]
 
@@ -379,7 +379,6 @@ dependencies = [
  "hashbrown 0.17.1",
  "libm",
  "log",
- "pulley-interpreter",
  "regalloc2",
  "rustc-hash",
  "serde",
@@ -398,7 +397,6 @@ dependencies = [
  "cranelift-codegen-shared",
  "cranelift-srcgen",
  "heck",
- "pulley-interpreter",
 ]
 
 [[package]]
@@ -1492,28 +1490,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "pulley-interpreter"
-version = "49.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "21c6285a6d0e71302c567546cb1e4c39dd8477a2a0910e098f4d30cdb7da907f"
-dependencies = [
- "cranelift-bitset",
- "log",
- "pulley-macros",
-]
-
-[[package]]
-name = "pulley-macros"
-version = "49.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "292caa820c675e563d62b2cfb3fbe78908bcf7603096b5487272860db3e5d9ef"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.119",
-]
-
-[[package]]
 name = "quote"
 version = "1.0.47"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2030,15 +2006,14 @@ dependencies = [
 
 [[package]]
 name = "waffle"
-version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c5961e9d8856d376c62428e5cdb9ccb5bd2dc65124f7fa4c48893331a6d77d34"
+version = "0.3.3"
+source = "git+https://github.com/Takashiidobe/waffle?rev=bb4ed2c0b5cf1bea85884e9106a65d297e2d53f7#bb4ed2c0b5cf1bea85884e9106a65d297e2d53f7"
 dependencies = [
  "anyhow",
  "fxhash",
  "log",
  "smallvec",
- "wasm-encoder 0.248.0",
+ "wasm-encoder",
  "wasmparser 0.248.0",
 ]
 
@@ -2100,16 +2075,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ac92cf547bc18d27ecc521015c08c353b4f18b84ab388bb6d1b6b682c620d9b6"
 dependencies = [
  "leb128fmt",
-]
-
-[[package]]
-name = "wasm-encoder"
-version = "0.261.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2608e8bb6d67fd68f5a8d0eb1363d6e7bcbc1f8ded5a0bd3a1e382462b876b22"
-dependencies = [
- "leb128fmt",
- "wasmparser 0.261.0",
 ]
 
 [[package]]

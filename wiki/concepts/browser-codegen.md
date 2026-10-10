@@ -8,9 +8,10 @@ no native REPL process or compiler service.
 
 The `codegen` feature contains the common emitter. `native` adds the JIT,
 object emitter and MMTk runtime; `web` adds clif2wasm and the browser bindings.
-Cranelift 0.136.0 is shared with clif2wasm. Pulley32 supplies the bridge's
-32-bit target configuration; it does not execute SML or compile native code.
-The browser path consumes CLIF before ISA-specific machine-code compilation.
+Cranelift 0.136.0 is shared with clif2wasm. Its x64 ISA only satisfies
+Cranelift's `Module` interface; `WasmModule::target_config()` supplies Wasm's
+32-bit pointers and System V convention. The browser path consumes CLIF before
+ISA-specific machine-code compilation.
 
 ## Values and state
 
@@ -49,8 +50,10 @@ status protocol; Wasm traps and unexpected host errors stop the worker.
 ## Dependency source
 
 Nassau pins [clif2wasm](https://github.com/Takashiidobe/clif2wasm) at
-`edf08ece9bd24991c1325cb3e99ee94a026be42d`, with Cranelift 0.136.0 and
-Waffle 0.3.2. No sibling checkout or vendored snapshot is required.
+`43274bf90f7070da3221f6de924e9bfc11a284d9`, with Cranelift 0.136.0 and
+Waffle. The pin includes the x64 frontend facade and
+`WasmModule::target_config()`; the module seam is on mainline and needs no
+feature flag.
 
 The former core-IR interpreter and native `--interpret` mode are removed.
 Browser execution uses generated Wasm; native REPL execution uses Cranelift

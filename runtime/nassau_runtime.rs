@@ -10,7 +10,7 @@ mod gc;
 #[path = "../src/value.rs"]
 mod value;
 
-use value::{BUILTIN_EXCEPTIONS, KIND_REF, KIND_STRING, NIL, header};
+use value::{BUILTIN_EXCEPTIONS, KIND_ARRAY, KIND_REF, KIND_STRING, KIND_VECTOR, NIL, header};
 
 unsafe extern "C" {
     fn fwrite(bytes: *const u8, size: usize, count: usize, stream: *mut c_void) -> usize;
@@ -30,6 +30,30 @@ static mut UNCAUGHT: i64 = 0;
 pub unsafe extern "C" fn nassau_alloc(length: i64, kind: i64) -> *mut i64 {
     let bytes = gc::physical_size(length, kind).unwrap_or_else(|| out_of_memory());
     gc::allocate(bytes, header(length, kind))
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nassau_array_new(length: i64, initial: i64) -> i64 {
+    let length = usize::try_from(length >> 1).unwrap_or_else(|_| out_of_memory());
+    gc::with_roots([initial as usize], || unsafe {
+        let array = nassau_alloc(length as i64, KIND_ARRAY);
+        for index in 0..length {
+            array.add(index + 1).write(initial);
+        }
+        array as i64
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nassau_vector_from_array(array: i64) -> i64 {
+    let array = array as *const i64;
+    gc::with_roots([array as usize], || unsafe {
+        let header = array.read();
+        let length = (header >> 8) as usize;
+        let vector = nassau_alloc(length as i64, KIND_VECTOR);
+        ptr::copy_nonoverlapping(array.add(1), vector.add(1), length);
+        vector as i64
+    })
 }
 
 fn out_of_memory() -> ! {

@@ -1108,6 +1108,42 @@ impl<M: Module> Translator<'_, M> {
                 self.store(args[1], args[0], 8);
                 self.word(value::tagged(0))
             }
+            Prim::ArrayNew => self
+                .call_c(
+                    "nassau_array_new",
+                    &[types::I64, types::I64],
+                    Some(types::I64),
+                    args,
+                )?
+                .expect("nassau_array_new returns an array pointer"),
+            Prim::ArrayLength | Prim::VectorLength => {
+                let header = self.load_memory(types::I64, MemFlagsData::trusted(), args[0], 0);
+                let length = self.builder.ins().ushr_imm_u(header, 8);
+                self.tag(length)
+            }
+            Prim::ArraySub | Prim::VectorSub => {
+                let index = self.untag(args[1]);
+                let offset = self.builder.ins().ishl_imm_u(index, 3);
+                let offset = self.builder.ins().iadd_imm_s(offset, 8);
+                let address = self.builder.ins().iadd(args[0], offset);
+                self.load_memory(types::I64, MemFlagsData::trusted(), address, 0)
+            }
+            Prim::ArrayUpdate => {
+                let index = self.untag(args[1]);
+                let offset = self.builder.ins().ishl_imm_u(index, 3);
+                let offset = self.builder.ins().iadd_imm_s(offset, 8);
+                let address = self.builder.ins().iadd(args[0], offset);
+                self.store_memory(MemFlagsData::trusted(), args[2], address, 0);
+                self.word(value::tagged(0))
+            }
+            Prim::ArrayVector => self
+                .call_c(
+                    "nassau_vector_from_array",
+                    &[types::I64],
+                    Some(types::I64),
+                    args,
+                )?
+                .expect("nassau_vector_from_array returns a vector pointer"),
             Prim::Exit => {
                 self.call_c("nassau_exit", &[types::I64], None, args)?;
                 self.word(value::tagged(0))

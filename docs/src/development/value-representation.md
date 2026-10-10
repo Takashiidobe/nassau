@@ -34,9 +34,11 @@ header = (length << 8) | kind
 | string  | 2     | bytes         | NUL-terminated bytes, padded to a word            |
 | real    | 3     | 1             | one IEEE double                                   |
 | ref     | 4     | 1             | one mutable value                                 |
+| array   | 5     | elements      | mutable SML values                                |
+| vector  | 6     | elements      | immutable SML values                              |
 
-The collector traces record and ref fields and closure fields after field 0.
-String and real blocks hold raw bytes.
+The collector traces record, array, vector, and ref fields and closure fields
+after field 0. String and real blocks hold raw bytes.
 
 ## Layout by construct
 

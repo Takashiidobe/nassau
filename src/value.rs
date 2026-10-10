@@ -36,6 +36,10 @@ pub const KIND_STRING: i64 = 2;
 pub const KIND_REAL: i64 = 3;
 /// One mutable field.
 pub const KIND_REF: i64 = 4;
+/// Mutable fields, with the same layout as a record.
+pub const KIND_ARRAY: i64 = 5;
+/// Immutable fields, with the same layout as a record.
+pub const KIND_VECTOR: i64 = 6;
 
 /// A block's header word: its length above the kind byte.
 pub const fn header(length: i64, kind: i64) -> i64 {

@@ -3,7 +3,9 @@ use std::collections::{BTreeSet, HashMap};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Condvar, LazyLock, Mutex, Once};
 
-use super::value::{KIND_CLOSURE, KIND_REAL, KIND_RECORD, KIND_REF, KIND_STRING};
+use super::value::{
+    KIND_ARRAY, KIND_CLOSURE, KIND_REAL, KIND_RECORD, KIND_REF, KIND_STRING, KIND_VECTOR,
+};
 
 use mmtk::memory_manager;
 use mmtk::util::alloc::AllocationError;
@@ -117,7 +119,7 @@ pub fn physical_size(length: i64, kind: i64) -> Option<usize> {
     }
     let words = match kind {
         KIND_STRING => (length / 8).checked_add(1)?,
-        KIND_RECORD => length,
+        KIND_RECORD | KIND_ARRAY | KIND_VECTOR => length,
         KIND_CLOSURE if length >= 1 => length,
         KIND_REAL | KIND_REF if length == 1 => 1,
         _ => return None,
@@ -344,7 +346,7 @@ impl Scanning<Nassau> for Nassau {
         let header = object_header(object);
         let length = (header >> 8) as usize;
         let first = match header & 0xff {
-            KIND_RECORD | KIND_REF => 0,
+            KIND_RECORD | KIND_ARRAY | KIND_REF | KIND_VECTOR => 0,
             KIND_CLOSURE => {
                 let code = unsafe { object.to_raw_address().to_ptr::<usize>().add(1).read() };
                 for slot in code_roots(code) {

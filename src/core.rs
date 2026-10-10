@@ -67,6 +67,13 @@ pub enum Prim {
     Ref,
     /// `r := v`: stores into a reference cell.
     Assign,
+    ArrayNew,
+    ArrayLength,
+    ArraySub,
+    ArrayUpdate,
+    ArrayVector,
+    VectorLength,
+    VectorSub,
     /// Prints a string.
     Print,
     /// `^`.
@@ -122,6 +129,13 @@ impl Prim {
             Prim::IsBoxed => "is_boxed",
             Prim::Ref => "ref",
             Prim::Assign => "assign",
+            Prim::ArrayNew => "array.new",
+            Prim::ArrayLength => "array.length",
+            Prim::ArraySub => "array.sub",
+            Prim::ArrayUpdate => "array.update",
+            Prim::ArrayVector => "array.vector",
+            Prim::VectorLength => "vector.length",
+            Prim::VectorSub => "vector.sub",
             Prim::Print => "print",
             Prim::Concat => "concat",
             Prim::IntToString => "int.to_string",

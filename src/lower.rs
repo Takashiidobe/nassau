@@ -405,6 +405,13 @@ enum Builtin {
     NegateReal,
     Ref,
     Deref,
+    ArrayNew,
+    ArrayLength,
+    ArraySub,
+    ArrayUpdate,
+    ArrayVector,
+    VectorLength,
+    VectorSub,
     Equal,
     Unequal,
     Assign,
@@ -419,6 +426,13 @@ fn builtin(name: &str) -> Option<Builtin> {
         "Prim.realFloor" => Builtin::RealFloor,
         "Prim.charToString" => Builtin::CharToString,
         "Prim.stringSub" => Builtin::StringSub,
+        "Prim.arrayNew" => Builtin::ArrayNew,
+        "Prim.arrayLength" => Builtin::ArrayLength,
+        "Prim.arraySub" => Builtin::ArraySub,
+        "Prim.arrayUpdate" => Builtin::ArrayUpdate,
+        "Prim.arrayVector" => Builtin::ArrayVector,
+        "Prim.vectorLength" => Builtin::VectorLength,
+        "Prim.vectorSub" => Builtin::VectorSub,
         "Prim.word8OfInt" | "Prim.intOfWord8" | "Prim.ord" | "Prim.chr" => Builtin::Identity,
         "size" => Builtin::Size,
         "not" => Builtin::Not,
@@ -1764,6 +1778,30 @@ impl Lowerer<'_> {
             Builtin::NegateReal => self.bind("", Op::Prim(Prim::RealNeg, vec![argument])),
             Builtin::Ref => self.bind("", Op::Prim(Prim::Ref, vec![argument])),
             Builtin::Deref => self.bind("", Op::Select(argument, 0)),
+            Builtin::ArrayNew => {
+                let length = self.bind("", Op::Select(argument.clone(), 0));
+                let initial = self.bind("", Op::Select(argument, 1));
+                self.bind("", Op::Prim(Prim::ArrayNew, vec![length, initial]))
+            }
+            Builtin::ArrayLength => self.bind("", Op::Prim(Prim::ArrayLength, vec![argument])),
+            Builtin::ArraySub => {
+                let array = self.bind("", Op::Select(argument.clone(), 0));
+                let index = self.bind("", Op::Select(argument, 1));
+                self.bind("", Op::Prim(Prim::ArraySub, vec![array, index]))
+            }
+            Builtin::ArrayUpdate => {
+                let array = self.bind("", Op::Select(argument.clone(), 0));
+                let index = self.bind("", Op::Select(argument.clone(), 1));
+                let value = self.bind("", Op::Select(argument, 2));
+                self.bind("", Op::Prim(Prim::ArrayUpdate, vec![array, index, value]))
+            }
+            Builtin::ArrayVector => self.bind("", Op::Prim(Prim::ArrayVector, vec![argument])),
+            Builtin::VectorLength => self.bind("", Op::Prim(Prim::VectorLength, vec![argument])),
+            Builtin::VectorSub => {
+                let vector = self.bind("", Op::Select(argument.clone(), 0));
+                let index = self.bind("", Op::Select(argument, 1));
+                self.bind("", Op::Prim(Prim::VectorSub, vec![vector, index]))
+            }
             Builtin::Equal | Builtin::Unequal => {
                 let lhs = self.bind("", Op::Select(argument.clone(), 0));
                 let rhs = self.bind("", Op::Select(argument, 1));

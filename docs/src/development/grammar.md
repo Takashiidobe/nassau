@@ -201,13 +201,30 @@ structure Counter = MakeCounter (struct val step = 1 end)
 ## The Basis subset
 
 Most of the Basis is SML under `basis/`, compiled ahead of every program. It
-covers `General`, `Bool`, `Int`, `Char`, `Real`, `String`, `TextIO`, `Word8`,
-`Posix.Process`, `OS.Process`, `List`, and `Option`, plus the top-level names
+covers `General`, `Bool`, `Int`, `LargeInt`, `Position`, `IO`, `Char`, `Real`,
+`Math`, `IEEEReal`, `String`, `StringCvt`, `Substring`, `TextIO`, `Word8`, `Byte`,
+`OS.Process`, `List`, `ListPair`, `Array2`, `Option`, and `Posix.Process.exit`,
+plus the top-level names
 they export, such as `hd`, `map`, `@`, `ignore`, `o`, and `valOf`. Each
-structure has only the functions in its source file.
+structure has only the functions in its source file. `OS.Path` implements Unix
+path syntax; `OS.FileSys`, `OS.IO`, and the OS error interface need runtime
+support. `OS.Process` currently provides status constants, success checking,
+and exit; process execution, environment lookup, cleanup hooks, and sleep are
+not implemented. `PACK_REAL`, `PACK_WORD`, and the
+optional POSIX structures are unavailable. POSIX filesystem, descriptor I/O,
+process, signal, and process-environment support is tracked in Beads. `Socket`
+is unavailable pending native socket support.
 
-Arrays, vectors, general file I/O, `Real.toString`, substrings, and most other
-structures are not implemented. The compiler itself provides `print`, `size`,
+Arrays, vectors, general file/stream I/O, `IntInf`, `Real.toString`, and most
+other structures are not implemented. `TextIO` currently only exposes
+`print`; `Time` needs runtime time services. `TEXT` needs the missing
+array/vector structures. `Real` exposes its primitive
+arithmetic, radix and precision, and a few classification and ordering
+operations. `Math` currently has only `pi` and `e`; the monomorphic array and
+vector signatures are defined without their structures. The polymorphic
+`VECTOR` signature is also defined without its structure. `WORD`, `Windows`,
+and network database structures are unavailable.
+The compiler itself provides `print`, `size`,
 `not`, `~`, `^`, `ref`, `!`, `:=`, equality, and the built-in constructors and
 exceptions.
 

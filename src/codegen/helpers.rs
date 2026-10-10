@@ -260,6 +260,7 @@ impl<M: Module> Translator<'_, M> {
         switch.set_entry(value::KIND_STRING as u128, string);
         switch.set_entry(value::KIND_REAL as u128, real);
         switch.set_entry(value::KIND_RECORD as u128, record);
+        switch.set_entry(value::KIND_VECTOR as u128, record);
         switch.emit(&mut self.builder, kind, no);
         self.builder.switch_to_block(string);
         let left = self.builder.ins().iadd_imm_s(lhs, 8);

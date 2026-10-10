@@ -401,6 +401,8 @@ const TYPE_CONSTRUCTORS: &[(&str, usize)] = &[
     ("list", 1),
     ("option", 1),
     ("ref", 1),
+    ("array", 1),
+    ("vector", 1),
 ];
 
 fn con(name: &str) -> Type {
@@ -506,6 +508,8 @@ impl Infer {
         let real = || con("real");
         let option = |ty: Type| Type::Con(TyCon::builtin("option"), vec![ty]);
         let reference = |ty: Type| Type::Con(TyCon::builtin("ref"), vec![ty]);
+        let array = |ty: Type| Type::Con(TyCon::builtin("array"), vec![ty]);
+        let vector = |ty: Type| Type::Con(TyCon::builtin("vector"), vec![ty]);
         self.builtin("nil", true, 1, |v| list(v[0].clone()));
         self.builtin("::", true, 1, |v| {
             arrow(
@@ -571,6 +575,30 @@ impl Infer {
         });
         self.builtin("Prim.word8OfInt", false, 0, |_| arrow(int(), con("word8")));
         self.builtin("Prim.intOfWord8", false, 0, |_| arrow(con("word8"), int()));
+        self.builtin("Prim.arrayNew", false, 1, |v| {
+            arrow(tuple(vec![int(), v[0].clone()]), array(v[0].clone()))
+        });
+        self.builtin("Prim.arrayLength", false, 1, |v| {
+            arrow(array(v[0].clone()), int())
+        });
+        self.builtin("Prim.arraySub", false, 1, |v| {
+            arrow(tuple(vec![array(v[0].clone()), int()]), v[0].clone())
+        });
+        self.builtin("Prim.arrayUpdate", false, 1, |v| {
+            arrow(
+                tuple(vec![array(v[0].clone()), int(), v[0].clone()]),
+                unit(),
+            )
+        });
+        self.builtin("Prim.arrayVector", false, 1, |v| {
+            arrow(array(v[0].clone()), vector(v[0].clone()))
+        });
+        self.builtin("Prim.vectorLength", false, 1, |v| {
+            arrow(vector(v[0].clone()), int())
+        });
+        self.builtin("Prim.vectorSub", false, 1, |v| {
+            arrow(tuple(vec![vector(v[0].clone()), int()]), v[0].clone())
+        });
         self.builtin("Prim.exit", false, 1, |v| arrow(int(), v[0].clone()));
     }
 
@@ -812,6 +840,7 @@ impl Infer {
                 Err(UnifyError::NotEquality(ty.clone()))
             }
             Type::Con(name, _) if name.is("ref") => Ok(()),
+            Type::Con(name, _) if name.is("array") => Ok(()),
             Type::Con(name, args) if name.stamp != 0 => {
                 let Some(info) = self.datatypes.get(&name.stamp) else {
                     return Ok(());

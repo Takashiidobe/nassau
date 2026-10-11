@@ -2,6 +2,21 @@
 name = "nassau"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.88"
+description = "A Standard ML implementation with a Cranelift backend"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/Takashiidobe/nassau"
+keywords = ["sml", "standard-ml", "compiler", "cranelift"]
+categories = ["compilers", "development-tools"]
+include = [
+  "/src/**",
+  "/basis/**",
+  "/runtime/**",
+  "/build.rs",
+  "/Cargo.toml",
+  "/README.md",
+  "/LICENSE-*",
+]
 
 [lib]
 crate-type = ["rlib", "cdylib"]
@@ -14,9 +29,36 @@ resolver = "3"
 
 [features]
 default = ["native"]
-codegen = ["dep:cranelift-codegen", "dep:cranelift-control", "dep:cranelift-frontend", "dep:cranelift-module"]
-native = ["codegen", "dep:nassau-runtime", "dep:clap", "cranelift-codegen/host-arch", "cranelift-codegen/unwind", "dep:cranelift-jit", "dep:cranelift-native", "dep:cranelift-object", "dep:reedline", "dep:directories", "dep:nu-ansi-term", "dep:crossterm", "miette/fancy"]
-web = ["codegen", "dep:clif2wasm", "dep:js-sys", "dep:anyhow", "dep:wasm-bindgen", "dep:serde", "dep:serde-wasm-bindgen"]
+codegen = [
+  "dep:cranelift-codegen",
+  "dep:cranelift-control",
+  "dep:cranelift-frontend",
+  "dep:cranelift-module",
+]
+native = [
+  "codegen",
+  "dep:nassau-runtime",
+  "dep:clap",
+  "cranelift-codegen/host-arch",
+  "cranelift-codegen/unwind",
+  "dep:cranelift-jit",
+  "dep:cranelift-native",
+  "dep:cranelift-object",
+  "dep:reedline",
+  "dep:directories",
+  "dep:nu-ansi-term",
+  "dep:crossterm",
+  "miette/fancy",
+]
+web = [
+  "codegen",
+  "dep:clif2wasm",
+  "dep:js-sys",
+  "dep:anyhow",
+  "dep:wasm-bindgen",
+  "dep:serde",
+  "dep:serde-wasm-bindgen",
+]
 
 [[bin]]
 name = "nassau"
@@ -24,11 +66,13 @@ path = "src/main.rs"
 required-features = ["native"]
 
 [dependencies]
-nassau-runtime = { path = "runtime", optional = true }
+nassau-runtime = { version = "0.1.0", path = "runtime", optional = true }
 clap = { version = "4", features = ["derive"], optional = true }
 miette = { version = "7", features = ["fancy-no-backtrace"] }
 thiserror = "2"
-cranelift-codegen = { version = "0.136", default-features = false, features = ["std"], optional = true }
+cranelift-codegen = { version = "0.136", default-features = false, features = [
+  "std",
+], optional = true }
 cranelift-control = { version = "0.136", optional = true }
 cranelift-frontend = { version = "0.136", optional = true }
 cranelift-jit = { version = "0.136", optional = true }
@@ -43,7 +87,7 @@ directories = { version = "6", optional = true }
 nu-ansi-term = { version = "0.50", optional = true }
 crossterm = { version = "0.29", optional = true }
 
-clif2wasm = { git = "https://github.com/Takashiidobe/clif2wasm", rev = "43274bf90f7070da3221f6de924e9bfc11a284d9", optional = true }
+clif2wasm = { version = "0.1.0", optional = true }
 anyhow = { version = "1", optional = true }
 js-sys = { version = "0.3", optional = true }
 

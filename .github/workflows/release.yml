@@ -1,0 +1,84 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install fixture dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes polyml llvm
+          echo "FILECHECK=$(find /usr/lib/llvm-*/bin -name FileCheck | sort -V | tail -n 1)" >> "$GITHUB_ENV"
+
+      - name: Check tag version
+        shell: bash
+        run: |
+          crate_version="$(cargo metadata --locked --no-deps --format-version 1 | jq -er '.packages[] | select(.name == "nassau") | .version')"
+          if [ "$GITHUB_REF_NAME" != "v$crate_version" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match Nassau Cargo.toml version $crate_version" >&2
+            exit 1
+          fi
+
+      - name: Run fixture suite
+        run: cargo test --locked --test fixtures
+
+  release:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Create release if needed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if ! gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes
+          fi
+
+  binaries:
+    needs: release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+          - runner: macos-14
+            target: aarch64-apple-darwin
+          - runner: windows-2022
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: taiki-e/upload-rust-binary-action@f0d45ae91ee7b8ee928de7a9d04d893a08bcbec6 # v1.30.2
+        with:
+          bin: nassau
+          target: ${{ matrix.target }}
+          archive: nassau-$target-$tag
+          locked: true
+          tar: all
+          zip: none
+          include: LICENSE-APACHE LICENSE-MIT README.md
+          checksum: sha256

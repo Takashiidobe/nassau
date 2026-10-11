@@ -2,7 +2,11 @@
 name = "nassau-runtime"
 version = "0.1.0"
 edition = "2024"
-publish = false
+rust-version = "1.88"
+description = "Native runtime for the Nassau Standard ML implementation"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/Takashiidobe/nassau"
+publish = true
 
 [lib]
 path = "nassau_runtime.rs"

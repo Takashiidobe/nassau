@@ -50,7 +50,9 @@ struct
   val base = ArraySlice.base
   val vector = ArraySlice.vector
   val copy = ArraySlice.copy
-  val copyVec = ArraySlice.copyVec
+  fun copyVec {src, dst, di} =
+    let val (vector, start, count) = Word8VectorSlice.base src
+    in ArraySlice.copyVec {src = VectorSlice.slice (vector, start, SOME count), dst = dst, di = di} end
   val isEmpty = ArraySlice.isEmpty
   val getItem = ArraySlice.getItem
   val appi = ArraySlice.appi

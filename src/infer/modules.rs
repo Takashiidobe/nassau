@@ -440,11 +440,7 @@ impl Infer {
                 let Some(TypeEntry::Data { tycon, arity }) = self.lookup_type(original) else {
                     return Err((TypeError::UnboundType(original.clone()), spec.source_span()));
                 };
-                let constructors = self
-                    .datatypes
-                    .get(&tycon.stamp)
-                    .map(|info| info.constructors.clone())
-                    .unwrap_or_default();
+                let constructors = self.datatype_constructors(&tycon);
                 items.push(SigItem::Datatype {
                     name: name.clone(),
                     tycon,
@@ -1126,9 +1122,7 @@ impl Infer {
                         unreachable!("checked when realizing");
                     };
                     let info = self.datatypes.get(&actual.stamp);
-                    let actual_constructors = info
-                        .map(|info| info.constructors.clone())
-                        .unwrap_or_default();
+                    let actual_constructors = self.datatype_constructors(&actual);
                     let (never_equal, equal_params) = info
                         .map(|info| (info.never_equal, info.equal_params.clone()))
                         .unwrap_or((false, Vec::new()));

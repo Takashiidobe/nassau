@@ -9,7 +9,7 @@ struct
     then raise Size
     else ref {rows = rows, cols = cols, data = Array.array (rows * cols, init)}
 
-  fun dimensions a = let val {rows, cols, ...} = !a in (rows, cols) end
+  fun dimensions (a : 'a array) = let val {rows, cols, ...} = !a in (rows, cols) end
   fun nRows a = #1 (dimensions a)
   fun nCols a = #2 (dimensions a)
   fun index (a, row, col) =
@@ -31,12 +31,17 @@ struct
         in ref {rows = rowsN, cols = cols, data = values} end
 
   fun tabulate trv (rows, cols, f) =
-    let val result = array (rows, cols, ())
-        fun rowMajor i j = if i = rows then () else if j = cols then rowMajor (i + 1) 0
-          else (update (result, i, j, f (i, j)); rowMajor i (j + 1))
-        fun colMajor i j = if j = cols then () else if i = rows then colMajor 0 (j + 1)
-          else (update (result, i, j, f (i, j)); colMajor (i + 1) j)
-    in (case trv of RowMajor => rowMajor 0 0 | ColMajor => colMajor 0 0); result end
+    if rows < 0 orelse cols < 0 orelse (rows <> 0 andalso cols > Array.maxLen div rows)
+    then raise Size
+    else
+      let
+        val values = Array.tabulate (rows * cols, fn k =>
+          case trv of RowMajor => f (k div cols, k mod cols)
+                    | ColMajor => f (k mod rows, k div rows))
+        val data = case trv of RowMajor => values
+          | ColMajor => Array.tabulate (rows * cols, fn k =>
+              Array.sub (values, (k mod cols) * rows + k div cols))
+      in ref {rows = rows, cols = cols, data = data} end
 
   fun row (a, i) = if i < 0 orelse i >= nRows a then raise Subscript
     else Vector.tabulate (nCols a, fn j => sub (a, i, j))

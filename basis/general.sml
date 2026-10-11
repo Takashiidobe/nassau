@@ -6,13 +6,13 @@ struct
 
   exception Bind = Bind
   exception Match = Match
-  exception Chr = Chr
+  exception Chr
   exception Div = Div
-  exception Domain = Domain
+  exception Domain
   exception Fail = Fail
   exception Overflow = Overflow
   exception Size = Size
-  exception Span = Span
+  exception Span
   exception Subscript = Subscript
 
   val op ! = op !
@@ -25,6 +25,10 @@ struct
 
   fun op before (x, ()) = x
 end
+
+exception Chr = General.Chr
+exception Domain = General.Domain
+exception Span = General.Span
 
 val ignore = General.ignore
 val op o = General.o

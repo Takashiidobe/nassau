@@ -1230,10 +1230,12 @@ impl Parser {
                 self.index += 1;
                 let mut values = Vec::new();
                 loop {
-                    if self.at_reserved("op") {
-                        self.index += 1;
-                    }
-                    let name = self.parse_binder("a value name")?;
+                    let name = self
+                        .peek()
+                        .filter(|kind| !matches!(kind, TokenKind::Equals))
+                        .and_then(Self::token_name)
+                        .ok_or_else(|| self.error(ParseErrorKind::Expect("a value name".into())))?;
+                    self.index += 1;
                     self.expect(
                         TokenKind::Colon,
                         ParseErrorKind::Expect(": after the value name".into()),

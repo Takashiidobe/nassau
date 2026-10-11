@@ -68,13 +68,6 @@ struct
   fun sub ((s, i, n), j) =
     if j < 0 orelse j >= n then raise Subscript else String.sub (s, i + j)
 
-  fun getc ss =
-    if isEmpty ss then NONE
-    else SOME (sub (ss, 0), slice (ss, 1, NONE))
-
-  fun first ss =
-    case getc ss of NONE => NONE | SOME (c, _) => SOME c
-
   fun slice ((s, i, n), j, len) =
     if j < 0 orelse j > n then raise Subscript
     else
@@ -82,6 +75,13 @@ struct
       in if count < 0 orelse count > n - j then raise Subscript
          else (s, i + j, count)
       end
+
+  fun getc ss =
+    if isEmpty ss then NONE
+    else SOME (sub (ss, 0), slice (ss, 1, NONE))
+
+  fun first ss =
+    case getc ss of NONE => NONE | SOME (c, _) => SOME c
 
   fun triml count ss =
     let val n = if count < 0 then 0 else if count > size ss then size ss else count

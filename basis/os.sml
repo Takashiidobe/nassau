@@ -118,7 +118,7 @@ struct
         | _ => {isAbs = false, vol = "", arcs = splitChars chars}
       end
 
-    fun validVolume {vol, ...} = vol = ""
+    fun validVolume ({vol, ...} : {isAbs : bool, vol : string}) = vol = ""
 
     fun toString {isAbs, vol, arcs} =
       if not (validArcs arcs) then raise InvalidArc
@@ -206,6 +206,8 @@ struct
 
     fun isCanonical path = path = mkCanonical path
 
+    fun isRoot path = isCanonical path andalso isAbsolute path andalso path = "/"
+
     fun getParent path =
       if isRoot path then path
       else
@@ -218,8 +220,6 @@ struct
               | "." :: rest => reverse (".." :: rest)
               | _ :: rest => reverse rest
         in toString {isAbs=isAbs, vol="", arcs=parent} end
-
-    fun isRoot path = isCanonical path andalso isAbsolute path andalso path = "/"
 
     fun concat (p, t) =
       if isAbsolute t then raise Path

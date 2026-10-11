@@ -34,7 +34,7 @@ struct
 
   val maxLen = 1073741823
 
-  fun checkSize n = if n < 0 orelse n > maxLen then raise Size
+  fun checkSize n = if n < 0 orelse n > maxLen then raise Size else ()
 
   fun array (n, init) =
     (checkSize n; Prim.arrayNew (n, init))
@@ -49,7 +49,7 @@ struct
     if index < 0 orelse index >= length array then raise Subscript
     else Prim.arrayUpdate (array, index, value)
 
-  fun fromList [] = Prim.arrayNew (0, ())
+  fun fromList [] = Prim.arrayEmpty ()
     | fromList (first :: rest) =
         let
           val result = Prim.arrayNew (List.length (first :: rest), first)
@@ -63,7 +63,7 @@ struct
 
   fun tabulate (n, f) =
     (checkSize n;
-     if n = 0 then Prim.arrayNew (0, ())
+     if n = 0 then Prim.arrayEmpty ()
      else
        let
          val result = Prim.arrayNew (n, f 0)

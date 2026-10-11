@@ -10,18 +10,18 @@ struct
   val posInf = 1.0 / 0.0
   val negInf = ~posInf
 
-  val op + = op +
-  val op - = op -
-  val op * = op *
-  val op / = op /
-  val op ~ = op ~
-  val op < = op <
-  val op <= = op <=
-  val op > = op >
-  val op >= = op >=
+  val op + : real * real -> real = op +
+  val op - : real * real -> real = op -
+  val op * : real * real -> real = op *
+  val op / : real * real -> real = op /
+  val op ~ : real -> real = op ~
+  val op < : real * real -> bool = op <
+  val op <= : real * real -> bool = op <=
+  val op > : real * real -> bool = op >
+  val op >= : real * real -> bool = op >=
 
   fun abs r =
-    if r < 0.0 then ~r else if r = 0.0 then 0.0 else r
+    if r < 0.0 then ~r else if r <= 0.0 andalso r >= 0.0 then 0.0 else r
 
   fun isNan r = not (r <= r)
 
@@ -32,7 +32,7 @@ struct
   fun class r =
     if isNan r then IEEEReal.NAN
     else if not (isFinite r) then IEEEReal.INF
-    else if r = 0.0 then IEEEReal.ZERO
+    else if r <= 0.0 andalso r >= 0.0 then IEEEReal.ZERO
     else if abs r < minNormalPos then IEEEReal.SUBNORMAL
     else IEEEReal.NORMAL
 
@@ -51,11 +51,11 @@ struct
     | IEEEReal.GREATER => GREATER
     | IEEEReal.UNORDERED => raise IEEEReal.Unordered
 
-  fun op == (x, y) = not (unordered (x, y)) andalso x = y
+  fun op == (x, y) = not (unordered (x, y)) andalso x <= y andalso x >= y
 
   fun op != (x, y) = not (op == (x, y))
 
-  fun op ?= (x, y) = unordered (x, y) orelse x = y
+  fun op ?= (x, y) = unordered (x, y) orelse x <= y andalso x >= y
 
   fun min (x, y) =
     if isNan x then if isNan y then x else y
@@ -69,7 +69,7 @@ struct
 
   fun sign r =
     if isNan r then raise Domain
-    else if r < 0.0 then ~1
+    else if r < 0.0 then Int.~ 1
     else if r > 0.0 then 1
     else 0
 

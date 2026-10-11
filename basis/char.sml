@@ -1,7 +1,9 @@
-exception Chr
+exception Chr = General.Chr
 
 structure Char =
 struct
+  type char = char
+
   val minChar = Prim.chr 0
   val maxChar = Prim.chr 255
   val maxOrd = 255

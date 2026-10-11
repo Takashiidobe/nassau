@@ -406,6 +406,7 @@ enum Builtin {
     Ref,
     Deref,
     ArrayNew,
+    ArrayEmpty,
     ArrayLength,
     ArraySub,
     ArrayUpdate,
@@ -427,6 +428,7 @@ fn builtin(name: &str) -> Option<Builtin> {
         "Prim.charToString" => Builtin::CharToString,
         "Prim.stringSub" => Builtin::StringSub,
         "Prim.arrayNew" => Builtin::ArrayNew,
+        "Prim.arrayEmpty" => Builtin::ArrayEmpty,
         "Prim.arrayLength" => Builtin::ArrayLength,
         "Prim.arraySub" => Builtin::ArraySub,
         "Prim.arrayUpdate" => Builtin::ArrayUpdate,
@@ -1783,6 +1785,13 @@ impl Lowerer<'_> {
                 let initial = self.bind("", Op::Select(argument, 1));
                 self.bind("", Op::Prim(Prim::ArrayNew, vec![length, initial]))
             }
+            Builtin::ArrayEmpty => self.bind(
+                "",
+                Op::Prim(
+                    Prim::ArrayNew,
+                    vec![Atom::Word(value::tagged(0)), Atom::Word(value::tagged(0))],
+                ),
+            ),
             Builtin::ArrayLength => self.bind("", Op::Prim(Prim::ArrayLength, vec![argument])),
             Builtin::ArraySub => {
                 let array = self.bind("", Op::Select(argument.clone(), 0));

@@ -7,7 +7,7 @@ sig
   val sub : string * int -> char
   val extract : string * int * int option -> string
   val substring : string * int * int -> string
-  val op ^ : string * string -> string
+  val ^ : string * string -> string
   val concat : string list -> string
   val concatWith : string -> string list -> string
   val str : char -> string
@@ -22,10 +22,10 @@ sig
   val isSuffix : string -> string -> bool
   val compare : string * string -> order
   val collate : (char * char -> order) -> string * string -> order
-  val op < : string * string -> bool
-  val op <= : string * string -> bool
-  val op > : string * string -> bool
-  val op >= : string * string -> bool
+  val < : string * string -> bool
+  val <= : string * string -> bool
+  val > : string * string -> bool
+  val >= : string * string -> bool
   val toString : string -> string
   val scan : (char, 'a) StringCvt.reader -> (string, 'a) StringCvt.reader
   val fromString : string -> string option
@@ -308,9 +308,9 @@ struct
   fun cCharString c =
     let val n = Char.ord c
         fun octal n =
-          String.str (Char.chr (48 + n div 64)) ^
-          String.str (Char.chr (48 + (n div 8) mod 8)) ^
-          String.str (Char.chr (48 + n mod 8))
+          str (Char.chr (48 + n div 64)) ^
+          str (Char.chr (48 + (n div 8) mod 8)) ^
+          str (Char.chr (48 + n mod 8))
     in
       case n of
         7 => "\\a"
@@ -324,7 +324,7 @@ struct
       | 39 => "\\'"
       | 63 => "\\?"
       | 92 => "\\\\"
-      | _ => if n >= 32 andalso n <= 126 then String.str c else "\\" ^ octal n
+      | _ => if n >= 32 andalso n <= 126 then str c else "\\" ^ octal n
     end
 
   fun toCString s = translate cCharString s

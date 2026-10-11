@@ -1,10 +1,10 @@
 signature LIST =
 sig
-  datatype 'a list = datatype list
+  datatype list = datatype list
   exception Empty
   val null : 'a list -> bool
   val length : 'a list -> int
-  val op @ : 'a list * 'a list -> 'a list
+  val @ : 'a list * 'a list -> 'a list
   val hd : 'a list -> 'a
   val tl : 'a list -> 'a list
   val last : 'a list -> 'a
@@ -35,6 +35,7 @@ fun op@ ([], ys) = ys
 
 structure List :> LIST =
 struct
+  datatype list = datatype list
   exception Empty = Empty
 
   fun null [] = true

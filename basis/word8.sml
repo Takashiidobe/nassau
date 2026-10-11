@@ -22,7 +22,7 @@ struct
   fun op * (a, b) = fromInt (toInt a * toInt b)
   fun op div (a, b) = fromInt (toInt a div toInt b)
   fun op mod (a, b) = fromInt (Int.mod (toInt a, toInt b))
-  fun op ~ a = fromInt (~ (toInt a))
+  fun op ~ a = fromInt (Int.~ (toInt a))
 
   fun compare (a, b) = Int.compare (toInt a, toInt b)
   fun op < (a, b) = toInt a < toInt b
@@ -73,7 +73,7 @@ struct
           if n >= 48 andalso n <= 57 then n - 48
           else if n >= 65 andalso n <= 70 then n - 55
           else if n >= 97 andalso n <= 102 then n - 87
-          else ~1
+          else Int.~ 1
         end
 
       fun startsWithDigit state =

@@ -1,0 +1,9 @@
+val values = Array.fromList [1, 2];
+val vector = Array.vector values;
+val _ = Array.update (values, 0, 9);
+val first = Array.sub (values, 0);
+val snapshot = Vector.sub (vector, 0);
+val count = Array.length (Array.fromList ([] : int list));
+(* CHECK-REPL: val first = 9 : int *)
+(* CHECK-REPL-NEXT: val snapshot = 1 : int *)
+(* CHECK-REPL-NEXT: val count = 0 : int *)

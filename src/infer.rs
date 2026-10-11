@@ -578,6 +578,9 @@ impl Infer {
         self.builtin("Prim.arrayNew", false, 1, |v| {
             arrow(tuple(vec![int(), v[0].clone()]), array(v[0].clone()))
         });
+        self.builtin("Prim.arrayEmpty", false, 1, |v| {
+            arrow(unit(), array(v[0].clone()))
+        });
         self.builtin("Prim.arrayLength", false, 1, |v| {
             arrow(array(v[0].clone()), int())
         });
@@ -600,6 +603,15 @@ impl Infer {
             arrow(tuple(vec![vector(v[0].clone()), int()]), v[0].clone())
         });
         self.builtin("Prim.exit", false, 1, |v| arrow(int(), v[0].clone()));
+        for (name, arity) in [("order", 0), ("list", 1), ("option", 1), ("ref", 1)] {
+            self.types.push((
+                name.to_string(),
+                TypeEntry::Data {
+                    tycon: TyCon::builtin(name),
+                    arity,
+                },
+            ));
+        }
     }
 
     fn builtin(
@@ -2282,11 +2294,7 @@ impl Infer {
             };
             return Err((error, span));
         };
-        let constructors = self
-            .datatypes
-            .get(&tycon.stamp)
-            .map(|info| info.constructors.clone())
-            .unwrap_or_default();
+        let constructors = self.datatype_constructors(&tycon);
         self.types
             .push((name.to_string(), TypeEntry::Data { tycon, arity }));
         for (name, scheme) in constructors {
@@ -2297,6 +2305,32 @@ impl Infer {
             });
         }
         Ok(())
+    }
+
+    fn datatype_constructors(&self, tycon: &TyCon) -> Vec<(String, Scheme)> {
+        if tycon.stamp != 0 {
+            return self
+                .datatypes
+                .get(&tycon.stamp)
+                .map(|info| info.constructors.clone())
+                .unwrap_or_default();
+        }
+        let names: &[&str] = match tycon.name.as_str() {
+            "order" => &["LESS", "EQUAL", "GREATER"],
+            "list" => &["nil", "::"],
+            "option" => &["NONE", "SOME"],
+            "ref" => &["ref"],
+            _ => &[],
+        };
+        names
+            .iter()
+            .filter_map(|name| {
+                self.values
+                    .iter()
+                    .find(|entry| entry.name == *name)
+                    .map(|entry| (entry.name.clone(), entry.scheme.clone()))
+            })
+            .collect()
     }
 
     fn infer_val_binding(&mut self, pattern: &Pat, expr: &Expr) -> Res<Vec<(String, Type)>> {

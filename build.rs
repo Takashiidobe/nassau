@@ -20,21 +20,42 @@ fn main() {
         return;
     }
     println!("cargo:rerun-if-changed=runtime");
+    println!("cargo:rerun-if-changed=src/lib.rs");
     println!("cargo:rerun-if-changed=src/value.rs");
     println!("cargo:rerun-if-changed=Cargo.toml");
     println!("cargo:rerun-if-changed=Cargo.lock");
     let runtime_target = out.join("runtime-target");
     let target = env::var("TARGET").expect("cargo sets TARGET");
     let cargo = env::var_os("CARGO").expect("cargo sets CARGO");
-    let result = Command::new(cargo)
+    let mut command = Command::new(cargo);
+    for (name, _) in env::vars_os() {
+        if name.to_string_lossy().starts_with("CARGO_FEATURE_") {
+            command.env_remove(name);
+        }
+    }
+    let result = command
+        .env_remove("CARGO_ENCODED_RUSTFLAGS")
+        .env_remove("RUSTC_WORKSPACE_WRAPPER")
         .args([
             "rustc",
             "--package",
-            "nassau-runtime",
+            "nassau",
             "--lib",
+            "--crate-type",
+            "staticlib",
+            "--no-default-features",
+            "--features",
+            "runtime-archive",
             "--release",
             "--locked",
         ])
+        .arg("--manifest-path")
+        .arg(
+            PathBuf::from(
+                env::var_os("CARGO_MANIFEST_DIR").expect("cargo sets CARGO_MANIFEST_DIR"),
+            )
+            .join("Cargo.toml"),
+        )
         .args(["--target", &target, "--target-dir"])
         .arg(&runtime_target)
         .args(["--", "--print=native-static-libs", "-D", "warnings"])
@@ -52,9 +73,7 @@ fn main() {
         .expect("rustc reports native libraries for the runtime staticlib");
     println!("cargo:rustc-env=NASSAU_RUNTIME_NATIVE_LIBS={libraries}");
     std::fs::copy(
-        runtime_target
-            .join(target)
-            .join("release/libnassau_runtime.a"),
+        runtime_target.join(target).join("release/libnassau.a"),
         out.join("libnassau_runtime.a"),
     )
     .expect("embed the native runtime archive");

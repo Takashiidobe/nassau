@@ -23,12 +23,9 @@ crate-type = ["rlib", "cdylib"]
 test = false
 doctest = false
 
-[workspace]
-members = ["runtime"]
-resolver = "3"
-
 [features]
 default = ["native"]
+runtime-archive = ["dep:mmtk"]
 codegen = [
   "dep:cranelift-codegen",
   "dep:cranelift-control",
@@ -37,7 +34,7 @@ codegen = [
 ]
 native = [
   "codegen",
-  "dep:nassau-runtime",
+  "dep:mmtk",
   "dep:clap",
   "cranelift-codegen/host-arch",
   "cranelift-codegen/unwind",
@@ -66,7 +63,7 @@ path = "src/main.rs"
 required-features = ["native"]
 
 [dependencies]
-nassau-runtime = { version = "0.1.0", path = "runtime", optional = true }
+mmtk = { version = "=0.33.0", default-features = false, features = ["vo_bit"], optional = true }
 clap = { version = "4", features = ["derive"], optional = true }
 miette = { version = "7", features = ["fancy-no-backtrace"] }
 thiserror = "2"
@@ -107,4 +104,10 @@ required-features = ["native"]
 
 [[test]]
 name = "repl"
+required-features = ["native"]
+
+[[test]]
+name = "object-model"
+path = "tests/fixtures/runtime/mmtk-object-model.rs"
+harness = false
 required-features = ["native"]

@@ -3,12 +3,7 @@ use core::ptr;
 
 mod gc;
 
-#[expect(
-    dead_code,
-    reason = "the shared value layout also defines compiler-only helpers"
-)]
-#[path = "../src/value.rs"]
-mod value;
+use crate::value;
 
 use value::{BUILTIN_EXCEPTIONS, KIND_ARRAY, KIND_REF, KIND_STRING, KIND_VECTOR, NIL, header};
 

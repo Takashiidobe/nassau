@@ -1,6 +1,6 @@
 //! The shared runtime, linked as a Rust library for JIT calls and an archive for native code.
 
-use nassau_runtime::{
+use crate::native_runtime::{
     nassau_alloc, nassau_code_global, nassau_exception, nassau_exit, nassau_global_root,
     nassau_print, nassau_raised, nassau_repl, nassau_roots_pop, nassau_roots_push,
     nassau_take_uncaught, nassau_uncaught,
@@ -48,13 +48,13 @@ pub fn builtin_exception(index: i64) -> i64 {
 }
 
 pub fn with_root<T>(value: i64, f: impl FnOnce() -> T) -> T {
-    nassau_runtime::with_root(value, f)
+    crate::native_runtime::with_root(value, f)
 }
 
 pub fn replace_global_roots(addresses: &[usize]) {
-    nassau_runtime::replace_global_roots(addresses);
+    crate::native_runtime::replace_global_roots(addresses);
 }
 
 pub fn reset_repl_roots() {
-    nassau_runtime::reset_repl_roots();
+    crate::native_runtime::reset_repl_roots();
 }

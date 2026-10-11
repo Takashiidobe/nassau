@@ -128,9 +128,10 @@ or `use`.
 
 ## Garbage collector
 
-The `runtime` crate wraps MMTk. The compiler and JIT link it as an rlib;
-generated programs link it as a staticlib embedded in the compiler. It requires
-`std`. Only x86_64 Linux is tested.
+Nassau’s native runtime wraps MMTk and is part of the `nassau` crate. The
+compiler and JIT call it directly. The build script builds the same package with
+only the `runtime-archive` feature as a staticlib, then embeds that archive for
+linking generated programs. It requires `std`. Only x86_64 Linux is tested.
 
 The default is non-moving MarkSweep with a 32 MiB heap. Set these environment
 variables to change it:
@@ -155,7 +156,7 @@ Run the allocation and object-model fixtures:
 ```sh
 cargo test --test fixtures mmtk-nogc
 cargo test --test repl
-cargo test -p nassau-runtime --test object-model
+cargo test -p nassau --test object-model
 ```
 
 The GC-specific fixtures:

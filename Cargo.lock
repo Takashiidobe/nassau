@@ -1287,20 +1287,13 @@ dependencies = [
  "js-sys",
  "libtest-mimic",
  "miette",
- "nassau-runtime",
+ "mmtk",
  "nu-ansi-term",
  "reedline",
  "serde",
  "serde-wasm-bindgen",
  "thiserror",
  "wasm-bindgen",
-]
-
-[[package]]
-name = "nassau-runtime"
-version = "0.1.0"
-dependencies = [
- "mmtk",
 ]
 
 [[package]]

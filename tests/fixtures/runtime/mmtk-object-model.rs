@@ -150,17 +150,23 @@ fn main() {
     } else if std::env::args().any(|arg| arg == "--allocation") {
         binding::verify();
     } else {
-        for mode in ["--allocation", "--collect"] {
-            assert!(
-                std::process::Command::new(std::env::current_exe().unwrap())
-                    .arg(mode)
-                    .env("NASSAU_GC_PLAN", "NoGC")
-                    .env_remove("NASSAU_GC_STRESS")
-                    .status()
-                    .unwrap()
-                    .success()
-            );
-        }
-        println!("MMTk object model fixture passed");
+        libtest_mimic::run(
+            &libtest_mimic::Arguments::from_args(),
+            vec![libtest_mimic::Trial::test("object-model", || {
+                for mode in ["--allocation", "--collect"] {
+                    assert!(
+                        std::process::Command::new(std::env::current_exe().unwrap())
+                            .arg(mode)
+                            .env("NASSAU_GC_PLAN", "NoGC")
+                            .env_remove("NASSAU_GC_STRESS")
+                            .status()
+                            .unwrap()
+                            .success()
+                    );
+                }
+                Ok(())
+            })],
+        )
+        .exit();
     }
 }

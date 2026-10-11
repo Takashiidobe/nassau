@@ -26,6 +26,11 @@ doctest = false
 [features]
 default = ["native"]
 runtime-archive = ["dep:mmtk"]
+basis-bootstrap = [
+  "codegen",
+  "cranelift-codegen/host-arch",
+  "dep:cranelift-object",
+]
 codegen = [
   "dep:cranelift-codegen",
   "dep:cranelift-control",
@@ -62,6 +67,11 @@ name = "nassau"
 path = "src/main.rs"
 required-features = ["native"]
 
+[[bin]]
+name = "nassau-basis"
+path = "src/bin/basis.rs"
+required-features = ["basis-bootstrap"]
+
 [dependencies]
 mmtk = { version = "=0.33.0", default-features = false, features = ["vo_bit"], optional = true }
 clap = { version = "4", features = ["derive"], optional = true }
@@ -90,6 +100,9 @@ js-sys = { version = "0.3", optional = true }
 
 [dev-dependencies]
 libtest-mimic = "0.8"
+
+[build-dependencies]
+cc = "1"
 
 [lints.clippy]
 large_enum_variant = "allow"

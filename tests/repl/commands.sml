@@ -14,6 +14,7 @@ reset + 1;;
 reset;;
 val kept = 9;;
 kept;;
+Array.length (Array.fromList [1, 2]);;
 (* REPL-COMMANDS *)
 (* CHECK-REPL: val kept = 41 : int *)
 (* CHECK-REPL-NEXT: val saved = fn : unit -> int *)
@@ -30,4 +31,5 @@ kept;;
 (* CHECK-REPL-NEXT: Reset *)
 (* CHECK-REPL-NEXT: val kept = 9 : int *)
 (* CHECK-REPL-NEXT: val it = 9 : int *)
+(* CHECK-REPL-NEXT: val it = 2 : int *)
 (* CHECK-ERR: unbound variable *)

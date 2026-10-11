@@ -34,16 +34,16 @@ use cranelift_codegen::ir::{
     types,
 };
 use cranelift_codegen::isa::CallConv;
-#[cfg(feature = "native")]
+#[cfg(any(feature = "native", feature = "basis-bootstrap"))]
 use cranelift_codegen::settings;
-#[cfg(feature = "native")]
+#[cfg(any(feature = "native", feature = "basis-bootstrap"))]
 use cranelift_codegen::settings::Configurable;
 use cranelift_control::ControlPlane;
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 #[cfg(feature = "native")]
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{DataDescription, DataId, FuncId, Linkage, Module};
-#[cfg(feature = "native")]
+#[cfg(any(feature = "native", feature = "basis-bootstrap"))]
 use cranelift_object::{ObjectBuilder, ObjectModule};
 
 use crate::core::{self, Atom, Callee, Failure, FnId, GlobalId, Op, Prim, Stmt, Term};
@@ -51,9 +51,11 @@ use crate::error::CodegenError;
 #[cfg(feature = "native")]
 use crate::runtime;
 use crate::value;
-#[cfg(feature = "native")]
+#[cfg(any(feature = "native", feature = "basis-bootstrap"))]
 use cranelift_module::default_libcall_names;
 
+#[cfg(any(feature = "native", feature = "basis-bootstrap"))]
+mod basis;
 mod helpers;
 mod roots;
 
@@ -112,6 +114,8 @@ pub struct CodegenOptions {
 pub struct Symbols {
     functions: HashMap<FnId, FuncId>,
     globals: HashMap<GlobalId, DataId>,
+    #[cfg(feature = "native")]
+    linked_globals: HashMap<GlobalId, *const u64>,
     /// How many anonymous data objects (literals) exist.
     data: usize,
     helpers: HashMap<&'static str, FuncId>,
@@ -200,6 +204,9 @@ impl Codegen {
         for (name, address) in runtime::symbols() {
             builder.symbol(name, address);
         }
+        for (name, address) in basis::symbols() {
+            builder.symbol(name, address);
+        }
         Ok(JITModule::new(builder))
     }
 
@@ -226,6 +233,9 @@ impl Codegen {
         symbols: &Symbols,
         global: GlobalId,
     ) -> Option<*const u64> {
+        if let Some(address) = symbols.linked_globals.get(&global) {
+            return Some(*address);
+        }
         let data = symbols.globals.get(&global)?;
         Some(jit.get_finalized_data(*data).0.cast())
     }
@@ -333,12 +343,22 @@ impl Codegen {
         symbols: &mut Symbols,
         module: &core::Module,
     ) -> Result<(FuncId, Vec<FunctionBuild>), CodegenError> {
+        self.define_module_with_linkage(target, symbols, module, Linkage::Local)
+    }
+
+    fn define_module_with_linkage<M: Module>(
+        &self,
+        target: &mut M,
+        symbols: &mut Symbols,
+        module: &core::Module,
+        linkage: Linkage,
+    ) -> Result<(FuncId, Vec<FunctionBuild>), CodegenError> {
         let mut builds = self.define_helpers(target, symbols, module)?;
         for (global, name) in &module.globals {
             let id = target
                 .declare_data(
                     &format!("nassau_global_{global}_{}", symbol_name(name)),
-                    Linkage::Local,
+                    linkage,
                     true,
                     false,
                 )
@@ -353,7 +373,7 @@ impl Codegen {
             let id = target
                 .declare_function(
                     &format!("nassau_f{}_{}", function.id, symbol_name(&function.name)),
-                    Linkage::Local,
+                    linkage,
                     &sml_signature(function.params.len()),
                 )
                 .map_err(backend)?;

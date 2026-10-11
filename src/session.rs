@@ -17,6 +17,9 @@ pub enum Execution<V> {
 pub trait Backend {
     type Value: ReplValue;
     fn execute(&mut self, module: core::Module) -> miette::Result<Execution<Self::Value>>;
+    fn execute_basis(&mut self, module: core::Module) -> miette::Result<Execution<Self::Value>> {
+        self.execute(module)
+    }
     fn global(&self, id: core::GlobalId) -> Option<Self::Value>;
     fn retain_globals(&mut self, roots: &[core::GlobalId]);
     fn reset(&mut self) -> miette::Result<()>;
@@ -70,7 +73,7 @@ impl<B: Backend> Session<B> {
             .unwrap_or_else(|(error, span)| {
                 panic!("the basis does not lower: {error} at {span:?}")
             });
-        let executed = self.backend.execute(module);
+        let executed = self.backend.execute_basis(module);
         assert!(
             matches!(executed, Ok(Execution::Returned(_))),
             "the basis does not run"

@@ -20,6 +20,7 @@ fn main() {
         return;
     }
     println!("cargo:rerun-if-changed=runtime");
+    println!("cargo:rerun-if-changed=src");
     println!("cargo:rerun-if-changed=src/lib.rs");
     println!("cargo:rerun-if-changed=src/value.rs");
     println!("cargo:rerun-if-changed=Cargo.toml");
@@ -73,8 +74,57 @@ fn main() {
         .expect("rustc reports native libraries for the runtime staticlib");
     println!("cargo:rustc-env=NASSAU_RUNTIME_NATIVE_LIBS={libraries}");
     std::fs::copy(
-        runtime_target.join(target).join("release/libnassau.a"),
+        runtime_target.join(&target).join("release/libnassau.a"),
         out.join("libnassau_runtime.a"),
     )
     .expect("embed the native runtime archive");
+    build_basis(&out, &target);
+}
+
+fn build_basis(out: &std::path::Path, target: &str) {
+    let architecture = target.split('-').next().expect("target architecture");
+    let backend = match architecture {
+        "x86_64" | "i686" | "i586" => "x86",
+        "aarch64" | "aarch64_be" => "arm64",
+        "s390x" => "s390x",
+        "riscv64" | "riscv64gc" => "riscv64",
+        _ => panic!("unsupported native Basis target: {target}"),
+    };
+    let features = format!("basis-bootstrap,cranelift-codegen/{backend}");
+    let mut command = Command::new(env::var_os("CARGO").expect("cargo sets CARGO"));
+    for (name, _) in env::vars_os() {
+        if name.to_string_lossy().starts_with("CARGO_FEATURE_") {
+            command.env_remove(name);
+        }
+    }
+    let result = command
+        .env_remove("CARGO_ENCODED_RUSTFLAGS")
+        .env_remove("RUSTC_WORKSPACE_WRAPPER")
+        .args([
+            "run",
+            "--bin",
+            "nassau-basis",
+            "--no-default-features",
+            "--features",
+        ])
+        .arg(features)
+        .args(["--release", "--locked", "--manifest-path"])
+        .arg(PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap()).join("Cargo.toml"))
+        .arg("--target")
+        .arg(env::var("HOST").expect("cargo sets HOST"))
+        .arg("--target-dir")
+        .arg(out.join("basis-target"))
+        .arg("--")
+        .arg(target)
+        .arg(out)
+        .output()
+        .expect("build the compiled Basis");
+    assert!(
+        result.status.success(),
+        "Basis build failed:\n{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    cc::Build::new()
+        .object(out.join("basis.o"))
+        .compile("nassau_basis");
 }

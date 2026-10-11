@@ -288,6 +288,14 @@ struct NativeBackend {
 
 impl Backend for NativeBackend {
     type Value = NativeValue;
+    fn execute_basis(&mut self, module: core::Module) -> miette::Result<Execution<NativeValue>> {
+        let status = Codegen::run_basis(&mut self.module, &mut self.symbols, &module)
+            .map_err(miette::Report::msg)?;
+        Ok(match runtime::take_uncaught() {
+            Some(exception) => Execution::Raised(NativeValue(exception)),
+            None => Execution::Returned(NativeValue(value::tagged(status as i64))),
+        })
+    }
     fn execute(&mut self, module: core::Module) -> miette::Result<Execution<NativeValue>> {
         let entry = self
             .codegen

@@ -55,7 +55,7 @@ whole session, including compiled code. Browsers display printed bytes as UTF-8.
 The Wasm API is a `BrowserRepl` with `submit(source)`, returning captured output
 bytes, diagnostics, an optional exit status and a display-clear flag. The worker runs this same
 frontend session with a Cranelift/Wasm execution backend. Native execution
-continues to use Cranelift JIT and the native MMTk runtime.
+continues to use Cranelift JIT and the native runtime.
 
 The automated session fixture runs the generated browser Wasm in Node, checks
 persistent bindings, exception recovery, direct and indirect tail calls, and

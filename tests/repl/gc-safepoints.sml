@@ -7,7 +7,7 @@ datatype node = End | Node of {next: node ref, text: string, weight: real};
 fun make n = let val cell = ref n in fn delta => (cell := !cell + delta; !cell) end;
 val counter = make 10;
 val link = ref End;
-val node = Node {next = link, text = "mmtk" ^ Int.toString (counter 1), weight = 1.0 + 1.5};
+val node = Node {next = link, text = "gc" ^ Int.toString (counter 1), weight = 1.0 + 1.5};
 val () = link := node;
 exception Saved of node;
 val saved = Saved node;
@@ -25,6 +25,6 @@ val result = ((raise saved) handle Saved (Node {next, text, weight}) =>
 val () = print (result ^ "\n");
 (* CHECK-REPL: val counter = fn : int -> int *)
 (* CHECK-REPL: val saved = Saved {{.*}} : exn *)
-(* CHECK-REPL: val result = "mmtk11:mmtk11:15" : string *)
-(* CHECK-REPL-NEXT: mmtk11:mmtk11:15 *)
-(* CHECK-STDOUT: mmtk11:mmtk11:15 *)
+(* CHECK-REPL: val result = "gc11:gc11:15" : string *)
+(* CHECK-REPL-NEXT: gc11:gc11:15 *)
+(* CHECK-STDOUT: gc11:gc11:15 *)

@@ -128,12 +128,12 @@ or `use`.
 
 ## Garbage collector
 
-Nassau’s native runtime wraps MMTk and is part of the `nassau` crate. The
-compiler and JIT call it directly. The build script builds the same package with
+Nassau’s native runtime is a small non-moving mark-sweep collector written in
+Rust, and is part of the `nassau` crate. The compiler and JIT call it directly. The build script builds the same package with
 only the `runtime-archive` feature as a staticlib, then embeds that archive for
 linking generated programs. It requires `std`. Only x86_64 Linux is tested.
 
-The default is non-moving MarkSweep with a 32 MiB heap. Set these environment
+The default is MarkSweep with a 32 MiB heap. Set these environment
 variables to change it:
 
 | Variable           | Effect                                             | Default   |
@@ -151,20 +151,19 @@ publishes, runtime `with_roots` scopes, visible REPL globals and structure
 exports, and the globals that live closures and functors depend on. Code
 generated for the JIT is kept for the process lifetime.
 
-Run the allocation and object-model fixtures:
+Run the allocation fixtures:
 
 ```sh
-cargo test --test fixtures mmtk-nogc
+cargo test --test fixtures gc-nogc
 cargo test --test repl
-cargo test -p nassau --test object-model
 ```
 
 The GC-specific fixtures:
 
-- `mmtk-nogc.sml`: the NoGC plan.
-- `mmtk-collecting.sml`, `mmtk-history.sml`, `mmtk-exhaustion.sml`: production
+- `gc-nogc.sml`: the NoGC plan.
+- `gc-collecting.sml`, `gc-history.sml`, `gc-exhaustion.sml`: production
   collection and exhaustion, each under its own small heap.
-- `mmtk-safepoints.sml`: forces a collection at every allocation.
+- `gc-safepoints.sml`: forces a collection at every allocation.
 
 Run the full suite with periodic forced collection:
 

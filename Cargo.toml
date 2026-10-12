@@ -1,7 +1,7 @@
 [package]
 name = "nassau"
 default-run = "nassau"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2024"
 rust-version = "1.88"
 description = "A Standard ML implementation with a Cranelift backend"
@@ -26,7 +26,7 @@ doctest = false
 
 [features]
 default = ["native"]
-runtime-archive = ["dep:mmtk"]
+runtime-archive = []
 basis-bootstrap = [
   "codegen",
   "cranelift-codegen/host-arch",
@@ -40,7 +40,6 @@ codegen = [
 ]
 native = [
   "codegen",
-  "dep:mmtk",
   "dep:clap",
   "cranelift-codegen/host-arch",
   "cranelift-codegen/unwind",
@@ -74,9 +73,6 @@ path = "src/bin/basis.rs"
 required-features = ["basis-bootstrap"]
 
 [dependencies]
-mmtk = { version = "=0.33.0", default-features = false, features = [
-  "vo_bit",
-], optional = true }
 clap = { version = "4", features = ["derive"], optional = true }
 miette = { version = "7", features = ["fancy-no-backtrace"] }
 thiserror = "2"
@@ -128,10 +124,4 @@ required-features = ["native"]
 
 [[test]]
 name = "repl"
-required-features = ["native"]
-
-[[test]]
-name = "object-model"
-path = "tests/fixtures/runtime/mmtk-object-model.rs"
-harness = false
 required-features = ["native"]

@@ -7,7 +7,7 @@ instantiates the resulting Wasm in the existing Web Worker. Execution needs
 no native REPL process or compiler service.
 
 The `codegen` feature contains the common emitter. `native` adds the JIT,
-object emitter and MMTk runtime; `web` adds clif2wasm and the browser bindings.
+object emitter and native runtime; `web` adds clif2wasm and the browser bindings.
 Cranelift 0.136.0 is shared with clif2wasm. Its x64 ISA only satisfies
 Cranelift's `Module` interface; `WasmModule::target_config()` supplies Wasm's
 32-bit pointers and System V convention. The browser path consumes CLIF before

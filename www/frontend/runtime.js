@@ -58,6 +58,20 @@ export class NassauRuntime {
         if (Number(address) !== this.frame) throw new Error('Unbalanced Nassau roots');
         this.frame = Number(this.read_word(this.frame));
       },
+      sin: Math.sin,
+      cos: Math.cos,
+      tan: Math.tan,
+      asin: Math.asin,
+      acos: Math.acos,
+      atan: Math.atan,
+      atan2: Math.atan2,
+      exp: Math.exp,
+      log: Math.log,
+      log10: Math.log10,
+      sinh: Math.sinh,
+      cosh: Math.cosh,
+      tanh: Math.tanh,
+      pow: (x, y) => (x === 1 || (x === -1 && !Number.isFinite(y) && !Number.isNaN(y)) ? 1 : Math.pow(x, y)),
       nassau_global_root: address => this.globals.add(Number(address)),
       nassau_code_global: (code, address) => {
         const key = Number(code);

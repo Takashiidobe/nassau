@@ -21,11 +21,14 @@ fn main() {
     }
     println!("cargo:rerun-if-changed=runtime");
     println!("cargo:rerun-if-changed=src");
-    println!("cargo:rerun-if-changed=src/lib.rs");
-    println!("cargo:rerun-if-changed=src/value.rs");
     println!("cargo:rerun-if-changed=Cargo.toml");
     println!("cargo:rerun-if-changed=Cargo.lock");
-    let runtime_target = out.join("runtime-target");
+    let profile_dir = out
+        .ancestors()
+        .find(|path| path.file_name().is_some_and(|name| name == "build"))
+        .and_then(std::path::Path::parent)
+        .expect("OUT_DIR sits under the profile directory");
+    let bootstrap_target = profile_dir.join("nassau-bootstrap");
     let target = env::var("TARGET").expect("cargo sets TARGET");
     let cargo = env::var_os("CARGO").expect("cargo sets CARGO");
     let mut command = Command::new(cargo);
@@ -58,7 +61,7 @@ fn main() {
             .join("Cargo.toml"),
         )
         .args(["--target", &target, "--target-dir"])
-        .arg(&runtime_target)
+        .arg(&bootstrap_target)
         .args(["--", "--print=native-static-libs", "-D", "warnings"])
         .env("CARGO_PROFILE_RELEASE_PANIC", "abort")
         .output()
@@ -74,14 +77,14 @@ fn main() {
         .expect("rustc reports native libraries for the runtime staticlib");
     println!("cargo:rustc-env=NASSAU_RUNTIME_NATIVE_LIBS={libraries}");
     std::fs::copy(
-        runtime_target.join(&target).join("release/libnassau.a"),
+        bootstrap_target.join(&target).join("release/libnassau.a"),
         out.join("libnassau_runtime.a"),
     )
     .expect("embed the native runtime archive");
-    build_basis(&out, &target);
+    build_basis(&out, &target, &bootstrap_target);
 }
 
-fn build_basis(out: &std::path::Path, target: &str) {
+fn build_basis(out: &std::path::Path, target: &str, bootstrap_target: &std::path::Path) {
     let architecture = target.split('-').next().expect("target architecture");
     let backend = match architecture {
         "x86_64" | "i686" | "i586" => "x86",
@@ -108,12 +111,12 @@ fn build_basis(out: &std::path::Path, target: &str) {
             "--features",
         ])
         .arg(features)
-        .args(["--release", "--locked", "--manifest-path"])
+        .args(["--profile", "bootstrap", "--locked", "--manifest-path"])
         .arg(PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap()).join("Cargo.toml"))
         .arg("--target")
         .arg(env::var("HOST").expect("cargo sets HOST"))
         .arg("--target-dir")
-        .arg(out.join("basis-target"))
+        .arg(bootstrap_target)
         .arg("--")
         .arg(target)
         .arg(out)

@@ -107,6 +107,14 @@ libtest-mimic = "0.8"
 [build-dependencies]
 cc = "1"
 
+[profile.bootstrap]
+inherits = "release"
+incremental = true
+codegen-units = 16
+
+[profile.bootstrap.package.nassau]
+opt-level = 1
+
 [lints.clippy]
 large_enum_variant = "allow"
 allow_attributes = "warn"

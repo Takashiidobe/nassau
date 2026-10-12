@@ -9,6 +9,7 @@ string.sml
 word8.sml
 byte.sml
 list.sml
+time.sml
 os.sml
 textio.sml
 substring.sml

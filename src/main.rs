@@ -137,10 +137,30 @@ fn run(cli: &Cli) -> miette::Result<Option<PathBuf>> {
         types: &checked.types,
         source: &source,
     };
+    let finish_source = lower::Source {
+        file: source.file.clone(),
+        text: "val _ = OS.Process.runAtExit ()\n".into(),
+        first_line: 1,
+    };
+    let finish_program = SmlParser::from_source(&finish_source.text, "exit")
+        .expect("the exit hook lexes")
+        .parse()
+        .expect("the exit hook parses");
+    let finish_checked = types
+        .check(&finish_program)
+        .map_err(|(error, _)| miette::miette!("{error}"))?;
     let parts = if cli.dump_core {
         vec![user]
     } else {
-        vec![basis.part(), user]
+        vec![
+            basis.part(),
+            user,
+            lower::Part {
+                program: &finish_program,
+                types: &finish_checked.types,
+                source: &finish_source,
+            },
+        ]
     };
     let module = lower::Session::new()
         .lower_parts(&parts, "main")

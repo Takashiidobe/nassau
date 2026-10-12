@@ -209,8 +209,11 @@ they export, such as `hd`, `map`, `@`, `ignore`, `o`, and `valOf`. Each
 structure has only the functions in its source file. `OS.Path` implements Unix
 path syntax. `OS.SysErr` and `OS.errorMsg` report the runtime's OS errors, and
 `OS.FileSys` has directory listing (`openDir`, `readDir`, `rewindDir`, `closeDir`), `isDir`, `fileSize`, `mkDir`, `rmDir`, `getDir`, `chDir` and `remove`; `OS.IO` needs more runtime support. `OS.Process`
-provides status constants, success checking, exit and `getEnv`; process
-execution, cleanup hooks, and sleep are not implemented. `PACK_REAL`, `PACK_WORD`, and the
+provides status constants, `isSuccess`, `system`, `atExit`, `exit`, `terminate`, `getEnv` and
+`sleep`. Exit hooks run in reverse order on `exit` and at the end of a compiled program, and
+`terminate` skips them; the REPL runs them only on `exit`. `system` raises `SysErr` in the
+browser, which cannot start processes. `Time` provides conversions, arithmetic, comparison and
+`now`, stored as real seconds, without `fmt`, `toString` or `scan`. `PACK_REAL`, `PACK_WORD`, and the
 optional POSIX structures are unavailable. POSIX filesystem, descriptor I/O,
 process, signal, and process-environment support is tracked in Beads. `Socket`
 is unavailable pending native socket support.

@@ -4,10 +4,10 @@ use crate::native_runtime::{
     nassau_alloc, nassau_array_new, nassau_code_global, nassau_exception, nassau_exit,
     nassau_global_root, nassau_os_chdir, nassau_os_close, nassau_os_error_message,
     nassau_os_file_size, nassau_os_get_dir, nassau_os_getenv, nassau_os_is_dir, nassau_os_mkdir,
-    nassau_os_open, nassau_os_open_dir, nassau_os_read, nassau_os_read_dir, nassau_os_remove,
-    nassau_os_rewind_dir, nassau_os_rmdir, nassau_os_write, nassau_print, nassau_raised,
-    nassau_repl, nassau_roots_pop, nassau_roots_push, nassau_take_uncaught, nassau_uncaught,
-    nassau_vector_from_array,
+    nassau_os_now, nassau_os_open, nassau_os_open_dir, nassau_os_read, nassau_os_read_dir,
+    nassau_os_remove, nassau_os_rewind_dir, nassau_os_rmdir, nassau_os_sleep, nassau_os_system,
+    nassau_os_write, nassau_print, nassau_raised, nassau_repl, nassau_roots_pop, nassau_roots_push,
+    nassau_take_uncaught, nassau_uncaught, nassau_vector_from_array,
 };
 
 /// The runtime archive, written next to the object file when linking.
@@ -16,7 +16,7 @@ pub const ARCHIVE: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/libnassau_r
 pub const NATIVE_LIBS: &str = env!("NASSAU_RUNTIME_NATIVE_LIBS");
 
 /// Runtime entry points called by generated code, for the JIT's symbol table.
-pub fn symbols() -> [(&'static str, *const u8); 28] {
+pub fn symbols() -> [(&'static str, *const u8); 31] {
     [
         ("nassau_alloc", nassau_alloc as *const u8),
         ("nassau_array_new", nassau_array_new as *const u8),
@@ -51,6 +51,9 @@ pub fn symbols() -> [(&'static str, *const u8); 28] {
         ("nassau_os_rmdir", nassau_os_rmdir as *const u8),
         ("nassau_os_get_dir", nassau_os_get_dir as *const u8),
         ("nassau_os_chdir", nassau_os_chdir as *const u8),
+        ("nassau_os_system", nassau_os_system as *const u8),
+        ("nassau_os_sleep", nassau_os_sleep as *const u8),
+        ("nassau_os_now", nassau_os_now as *const u8),
         ("nassau_os_getenv", nassau_os_getenv as *const u8),
     ]
 }

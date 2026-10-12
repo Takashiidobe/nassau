@@ -74,6 +74,21 @@ for (const name of ['textio-files', 'filesys']) {
   }
   files.free();
 }
+const processes = new BrowserRepl(host({}));
+const slept = processes.submit(`val started = Time.now ();
+val _ = OS.Process.sleep (Time.fromMilliseconds 150);
+val elapsed = Time.toMilliseconds (Time.- (Time.now (), started));
+val _ = print (Bool.toString (elapsed >= 100 andalso elapsed < 2000) ^ "\\n");
+val system = (OS.Process.system "echo hi"; "ran") handle OS.SysErr (message, _) => message;
+val _ = OS.Process.atExit (fn () => print "hook\\n");
+val _ = OS.Process.exit OS.Process.success;`);
+assert.equal(slept.diagnostics, '');
+assert.equal(slept.exit, 0);
+const sleptOutput = decoder.decode(Uint8Array.from(slept.output));
+assert.match(sleptOutput, /\ntrue\n/);
+assert.match(sleptOutput, /val system = "[^"]+" : string\nhook\n$/);
+assert.ok(!sleptOutput.includes('"ran"'));
+processes.free();
 const typed = ['first line\nsecond', ' half\n'];
 const input = new BrowserRepl({
   module,

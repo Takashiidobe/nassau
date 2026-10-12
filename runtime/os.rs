@@ -20,6 +20,7 @@ const READ: i64 = 0;
 const WRITE: i64 = 1;
 const APPEND: i64 = 2;
 const EIO: i64 = 5;
+const ENOSYS: i64 = if cfg!(target_os = "wasi") { 52 } else { 38 };
 
 fn streams() -> MutexGuard<'static, Vec<Option<Stream>>> {
     let mut streams = STREAMS
@@ -222,4 +223,33 @@ pub unsafe extern "C" fn nassau_os_chdir(path: i64) -> i64 {
         std::env::set_current_dir(unsafe { text(path) })
             .and_then(|()| std::env::set_current_dir(normalized_dir())),
     )
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nassau_os_system(command: i64) -> i64 {
+    let command = unsafe { text(command) };
+    unsafe { write_stdout(&[]) };
+    match std::process::Command::new("sh")
+        .arg("-c")
+        .arg(command)
+        .status()
+    {
+        Ok(status) => tagged(i64::from(status.code().unwrap_or(1))),
+        Err(error) if error.kind() == io::ErrorKind::Unsupported => tagged(-ENOSYS),
+        Err(error) => failure(&error),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn nassau_os_sleep(seconds: f64) {
+    if seconds > 0.0 {
+        std::thread::sleep(std::time::Duration::from_secs_f64(seconds));
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn nassau_os_now() -> f64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0.0, |elapsed| elapsed.as_secs_f64())
 }

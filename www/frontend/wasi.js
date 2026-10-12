@@ -5,6 +5,7 @@ const EINVAL = 28;
 const EISDIR = 31;
 const ENOENT = 44;
 const ENOTDIR = 54;
+const ENOSYS = 52;
 const ENOTEMPTY = 55;
 const ESPIPE = 70;
 
@@ -65,6 +66,15 @@ export class Wasi {
     for (const [path, contents] of Object.entries(files)) {
       this.writeFile(path, typeof contents === 'string' ? new TextEncoder().encode(contents) : contents);
     }
+  }
+
+  sleep(milliseconds) {
+    if (typeof SharedArrayBuffer === 'function') {
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
+      return;
+    }
+    const end = performance.now() + milliseconds;
+    while (performance.now() < end);
   }
 
   writeFile(path, bytes) {
@@ -348,6 +358,26 @@ export class Wasi {
       clock_time_get: (id, precision, out) => {
         const milliseconds = id === 0 ? Date.now() : performance.now();
         view().setBigUint64(out, BigInt(Math.round(milliseconds * 1e6)), true);
+        return SUCCESS;
+      },
+      poll_oneoff: (subscriptions, events, count, produced) => {
+        const data = view();
+        let wait = Infinity;
+        for (let index = 0; index < count; index++) {
+          const base = subscriptions + index * 48;
+          if (data.getUint8(base + 8) !== 0) return ENOSYS;
+          const timeout = Number(data.getBigUint64(base + 24, true));
+          const absolute = data.getUint16(base + 40, true) & 1;
+          const now = (data.getUint32(base + 16, true) === 0 ? Date.now() : performance.now()) * 1e6;
+          wait = Math.min(wait, absolute ? timeout - now : timeout);
+        }
+        this.sleep(Math.max(0, wait) / 1e6);
+        for (let index = 0; index < count; index++) {
+          const event = events + index * 32;
+          for (let offset = 0; offset < 32; offset += 8) data.setBigUint64(event + offset, 0n, true);
+          data.setBigUint64(event, data.getBigUint64(subscriptions + index * 48, true), true);
+        }
+        data.setUint32(produced, count, true);
         return SUCCESS;
       },
       random_get: (address, length) => {

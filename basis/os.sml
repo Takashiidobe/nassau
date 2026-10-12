@@ -88,11 +88,30 @@ struct
     val success: status
     val failure: status
     val isSuccess: status -> bool
+    val system: string -> status
+    val atExit: (unit -> unit) -> unit
     val exit: status -> 'a
+    val terminate: status -> 'a
     val getEnv: string -> string option
+    val sleep: Time.time -> unit
+    val runAtExit: unit -> unit
   end =
   struct
     type status = int
+
+    val hooks : (unit -> unit) list ref = ref []
+
+    fun atExit f = hooks := f :: !hooks
+
+    fun runAtExit () =
+      let
+        val pending = !hooks
+        fun run [] = ()
+          | run (f :: rest) = ((f ()) handle _ => (); run rest)
+      in
+        hooks := [];
+        run pending
+      end
 
     fun getEnv name =
       let val value = Prim.osGetenv name
@@ -104,7 +123,15 @@ struct
 
     fun isSuccess status = status = 0
 
-    fun exit status = Prim.exit status
+    fun system command =
+      let val status = Prim.osSystem command
+      in if status < 0 then raise SysErr (errorMsg (~status), SOME (~status)) else status end
+
+    fun exit status = (runAtExit (); Prim.exit status)
+
+    fun terminate status = Prim.exit status
+
+    fun sleep time = Prim.osSleep (Time.toReal time)
   end
 
   structure Path : OS_PATH =

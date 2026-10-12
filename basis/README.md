@@ -15,3 +15,9 @@ edits only rebuild the Nassau crate. The bootstrap compiler uses the
 
 Run `cargo package --allow-dirty` to verify that the published sources can build
 the bundled Basis without files from your checkout.
+
+The compiled Basis is cached under `target/<profile>/nassau-bootstrap/basis-<target>/`,
+keyed by a hash of `basis/`, `src/`, `runtime/`, `build.rs`, `Cargo.toml` and
+`Cargo.lock`. Edits to `src/repl.rs`, `main.rs`, `web.rs` and `ast_dump.rs` do
+not change the key, so they skip the Basis bootstrap. New files under `src/`
+count towards the key unless added to `NOT_IN_BASIS_KEY` in `build.rs`.

@@ -40,6 +40,7 @@ fn main() {
     let result = command
         .env_remove("CARGO_ENCODED_RUSTFLAGS")
         .env_remove("RUSTC_WORKSPACE_WRAPPER")
+        .env("CARGO_TERM_COLOR", "never")
         .args([
             "rustc",
             "--package",
@@ -151,6 +152,7 @@ fn build_basis(out: &Path, target: &str, bootstrap_target: &Path) {
     let result = command
         .env_remove("CARGO_ENCODED_RUSTFLAGS")
         .env_remove("RUSTC_WORKSPACE_WRAPPER")
+        .env("CARGO_TERM_COLOR", "never")
         .args([
             "run",
             "--bin",

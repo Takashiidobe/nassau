@@ -4,7 +4,6 @@ const EEXIST = 20;
 const EINVAL = 28;
 const EISDIR = 31;
 const ENOENT = 44;
-const ENOSYS = 52;
 const ENOTDIR = 54;
 const ENOTEMPTY = 55;
 const ESPIPE = 70;
@@ -246,7 +245,30 @@ export class Wasi {
         bytes().set(new TextEncoder().encode('/').subarray(0, length), path);
         return SUCCESS;
       },
-      fd_readdir: () => ENOSYS,
+      fd_readdir: (fd, buffer, length, cookie, used) => {
+        const open = entry(fd);
+        if (!open) return EBADF;
+        if (!(open.node instanceof Directory)) return ENOTDIR;
+        const names = ['.', '..', ...open.node.entries.keys()];
+        const out = new Uint8Array(length);
+        let written = 0;
+        for (let index = Number(cookie); index < names.length && written < length; index++) {
+          const name = new TextEncoder().encode(names[index]);
+          const record = new Uint8Array(24 + name.length);
+          const fields = new DataView(record.buffer);
+          fields.setBigUint64(0, BigInt(index + 1), true);
+          fields.setUint32(16, name.length, true);
+          const child = open.node.entries.get(names[index]);
+          fields.setUint8(20, child instanceof File ? FILETYPE_REGULAR_FILE : FILETYPE_DIRECTORY);
+          record.set(name, 24);
+          const part = record.subarray(0, Math.min(record.length, length - written));
+          out.set(part, written);
+          written += part.length;
+        }
+        bytes().set(out.subarray(0, written), buffer);
+        view().setUint32(used, written, true);
+        return SUCCESS;
+      },
       path_open: (dirfd, dirflags, pathAddress, pathLength, oflags, rightsBase, rightsInheriting, fdflags, opened) => {
         const directory = entry(dirfd);
         if (!directory || !(directory.node instanceof Directory)) return directory ? ENOTDIR : EBADF;

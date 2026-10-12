@@ -46,11 +46,36 @@ struct
 
   fun errorMsg code = Prim.osErrorMessage code
 
-  structure FileSys =
+  structure FileSys :>
+  sig
+    type dirstream
+    val openDir : string -> dirstream
+    val readDir : dirstream -> string option
+    val rewindDir : dirstream -> unit
+    val closeDir : dirstream -> unit
+    val isDir : string -> bool
+    val fileSize : string -> int
+    val mkDir : string -> unit
+    val rmDir : string -> unit
+    val remove : string -> unit
+  end =
   struct
-    fun remove path =
-      let val result = Prim.osRemove path
-      in if result < 0 then raise SysErr (errorMsg (~result), SOME (~result)) else () end
+    type dirstream = int
+
+    fun check result =
+      if result < 0 then raise SysErr (errorMsg (~result), SOME (~result)) else result
+
+    fun openDir path = check (Prim.osOpenDir path)
+    fun readDir stream =
+      let val name = Prim.osReadDir stream
+      in if size name = 0 then NONE else SOME name end
+    fun rewindDir stream = (check (Prim.osRewindDir stream); ())
+    fun closeDir stream = (Prim.osClose stream; ())
+    fun isDir path = check (Prim.osIsDir path) = 1
+    fun fileSize path = check (Prim.osFileSize path)
+    fun mkDir path = (check (Prim.osMkDir path); ())
+    fun rmDir path = (check (Prim.osRmDir path); ())
+    fun remove path = (check (Prim.osRemove path); ())
   end
 
   structure Process :>

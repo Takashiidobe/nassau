@@ -1,4 +1,4 @@
-use std::fs::{File, OpenOptions};
+use std::fs::{File, OpenOptions, ReadDir};
 use std::io::{self, Read, Write};
 use std::slice;
 use std::sync::{Mutex, MutexGuard};
@@ -11,6 +11,7 @@ enum Stream {
     Stdout,
     Stderr,
     File(File),
+    Dir { path: String, entries: ReadDir },
 }
 
 static STREAMS: Mutex<Vec<Option<Stream>>> = Mutex::new(Vec::new());
@@ -57,17 +58,78 @@ pub unsafe extern "C" fn nassau_os_open(path: i64, mode: i64) -> i64 {
         _ => return tagged(-EIO),
     };
     match options.open(path) {
-        Ok(file) => {
-            let mut streams = streams();
-            let handle = streams.iter().position(Option::is_none).unwrap_or_else(|| {
-                streams.push(None);
-                streams.len() - 1
-            });
-            streams[handle] = Some(Stream::File(file));
-            tagged(handle as i64)
-        }
+        Ok(file) => insert(Stream::File(file)),
         Err(error) => failure(&error),
     }
+}
+
+fn insert(stream: Stream) -> i64 {
+    let mut streams = streams();
+    let handle = streams.iter().position(Option::is_none).unwrap_or_else(|| {
+        streams.push(None);
+        streams.len() - 1
+    });
+    streams[handle] = Some(stream);
+    tagged(handle as i64)
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nassau_os_open_dir(path: i64) -> i64 {
+    let path = unsafe { text(path) };
+    match std::fs::read_dir(&path) {
+        Ok(entries) => insert(Stream::Dir { path, entries }),
+        Err(error) => failure(&error),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nassau_os_read_dir(handle: i64) -> i64 {
+    let name = match streams().get_mut((handle >> 1) as usize) {
+        Some(Some(Stream::Dir { entries, .. })) => entries
+            .next()
+            .and_then(Result::ok)
+            .map(|entry| entry.file_name().to_string_lossy().into_owned()),
+        _ => None,
+    };
+    unsafe { string(name.unwrap_or_default().as_bytes()) }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn nassau_os_rewind_dir(handle: i64) -> i64 {
+    match streams().get_mut((handle >> 1) as usize) {
+        Some(Some(Stream::Dir { path, entries })) => match std::fs::read_dir(&*path) {
+            Ok(fresh) => {
+                *entries = fresh;
+                tagged(0)
+            }
+            Err(error) => failure(&error),
+        },
+        _ => tagged(-EIO),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nassau_os_is_dir(path: i64) -> i64 {
+    std::fs::metadata(unsafe { text(path) }).map_or_else(
+        |error| failure(&error),
+        |meta| tagged(i64::from(meta.is_dir())),
+    )
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nassau_os_file_size(path: i64) -> i64 {
+    std::fs::metadata(unsafe { text(path) })
+        .map_or_else(|error| failure(&error), |meta| tagged(meta.len() as i64))
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nassau_os_mkdir(path: i64) -> i64 {
+    result(std::fs::create_dir(unsafe { text(path) }))
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nassau_os_rmdir(path: i64) -> i64 {
+    result(std::fs::remove_dir(unsafe { text(path) }))
 }
 
 #[unsafe(no_mangle)]

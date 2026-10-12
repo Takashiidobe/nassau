@@ -58,20 +58,22 @@ assert.equal(stress('case !link of Node next => next = link | End => false;'), '
 stress('reset;;');
 assert.notEqual(stressed.submit('historical ();').diagnostics, '');
 stressed.free();
-const textio = await readFile('tests/fixtures/basis/textio-files.sml', 'utf8');
-const expectedLines = [...textio.matchAll(/\(\* CHECK-STDOUT(?:-NEXT)?: (.*) \*\)/g)].map(match => match[1]);
-assert.ok(expectedLines.length > 10);
-const files = new BrowserRepl(host({ PATH: '/usr/bin' }));
-const filesResponse = files.submit(textio.replace(/\(\*[\s\S]*?\*\)/g, ''));
-assert.equal(filesResponse.diagnostics, '');
-const filesOutput = decoder.decode(Uint8Array.from(filesResponse.output)).split('\n');
-let cursor = 0;
-for (const line of expectedLines) {
-  const found = filesOutput.indexOf(line, cursor);
-  assert.notEqual(found, -1, `browser output is missing "${line}"`);
-  cursor = found + 1;
+for (const name of ['textio-files', 'filesys']) {
+  const fixture = await readFile(`tests/fixtures/basis/${name}.sml`, 'utf8');
+  const expectedLines = [...fixture.matchAll(/\(\* CHECK-STDOUT(?:-NEXT)?: (.*) \*\)/g)].map(match => match[1]);
+  assert.ok(expectedLines.length > 10);
+  const files = new BrowserRepl(host({ PATH: '/usr/bin' }));
+  const filesResponse = files.submit(fixture.replace(/\(\*[\s\S]*?\*\)/g, ''));
+  assert.equal(filesResponse.diagnostics, '');
+  const filesOutput = decoder.decode(Uint8Array.from(filesResponse.output)).split('\n');
+  let cursor = 0;
+  for (const line of expectedLines) {
+    const found = filesOutput.indexOf(line, cursor);
+    assert.notEqual(found, -1, `${name}: browser output is missing "${line}"`);
+    cursor = found + 1;
+  }
+  files.free();
 }
-files.free();
 const typed = ['first line\nsecond', ' half\n'];
 const input = new BrowserRepl({
   module,

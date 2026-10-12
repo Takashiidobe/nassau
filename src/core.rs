@@ -92,6 +92,13 @@ pub const EXTERN_FNS: &[ExternFn] = &[
         &[INT],
         STRING,
     ),
+    external("Prim.osOpenDir", "nassau_os_open_dir", &[STRING], INT),
+    external("Prim.osReadDir", "nassau_os_read_dir", &[INT], STRING),
+    external("Prim.osRewindDir", "nassau_os_rewind_dir", &[INT], INT),
+    external("Prim.osIsDir", "nassau_os_is_dir", &[STRING], INT),
+    external("Prim.osFileSize", "nassau_os_file_size", &[STRING], INT),
+    external("Prim.osMkDir", "nassau_os_mkdir", &[STRING], INT),
+    external("Prim.osRmDir", "nassau_os_rmdir", &[STRING], INT),
     external("Prim.osGetenv", "nassau_os_getenv", &[STRING], STRING),
 ];
 

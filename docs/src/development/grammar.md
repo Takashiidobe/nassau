@@ -208,7 +208,7 @@ plus the top-level names
 they export, such as `hd`, `map`, `@`, `ignore`, `o`, and `valOf`. Each
 structure has only the functions in its source file. `OS.Path` implements Unix
 path syntax. `OS.SysErr` and `OS.errorMsg` report the runtime's OS errors, and
-`OS.FileSys` has only `remove`; `OS.IO` needs more runtime support. `OS.Process`
+`OS.FileSys` has directory listing (`openDir`, `readDir`, `rewindDir`, `closeDir`), `isDir`, `fileSize`, `mkDir`, `rmDir` and `remove`; `OS.IO` needs more runtime support. `OS.Process`
 provides status constants, success checking, exit and `getEnv`; process
 execution, cleanup hooks, and sleep are not implemented. `PACK_REAL`, `PACK_WORD`, and the
 optional POSIX structures are unavailable. POSIX filesystem, descriptor I/O,

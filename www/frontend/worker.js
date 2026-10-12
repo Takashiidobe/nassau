@@ -1,9 +1,13 @@
 import init, { BrowserRepl } from './pkg/nassau.js';
+import { Wasi } from './wasi.js';
 
 let repl;
 try {
-  await init();
-  repl = new BrowserRepl();
+  const [, runtime] = await Promise.all([
+    init(),
+    WebAssembly.compileStreaming(fetch(new URL('./pkg/nassau_runtime.wasm', import.meta.url))),
+  ]);
+  repl = new BrowserRepl({ module: runtime, createWasi: () => new Wasi() });
   postMessage({ type: 'ready' });
 } catch (error) {
   postMessage({ type: 'fatal', message: `Could not load Nassau: ${error.message ?? error}` });

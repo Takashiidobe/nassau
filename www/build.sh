@@ -14,3 +14,12 @@ CARGO_PROFILE_RELEASE_STRIP=true \
     wasm-pack build "$root/.." --target web --out-dir "$out/pkg" \
     --out-name nassau --no-pack --no-typescript --no-opt \
     -- --no-default-features --features web --locked -p nassau
+RUSTFLAGS="-C link-arg=--global-base=1114112 -C link-arg=--no-stack-first" \
+CARGO_TARGET_DIR="$root/../target" \
+CARGO_PROFILE_RELEASE_LTO=true \
+CARGO_PROFILE_RELEASE_CODEGEN_UNITS=1 \
+CARGO_PROFILE_RELEASE_OPT_LEVEL=s \
+CARGO_PROFILE_RELEASE_STRIP=true \
+    cargo build --manifest-path "$root/../Cargo.toml" --lib --release --locked \
+    --target wasm32-wasip1 --no-default-features --features runtime-archive
+cp -f "$root/../target/wasm32-wasip1/release/nassau.wasm" "$out/pkg/nassau_runtime.wasm"

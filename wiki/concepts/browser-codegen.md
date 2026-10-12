@@ -31,21 +31,23 @@ until the generated module successfully instantiates.
 
 ## Runtime
 
-`www/frontend/runtime.js` owns the session memory and runtime imports. The
-shadow stack occupies the first megabyte above the null guard; statics and
-heap objects grow above it. The translator checks shadow-stack bounds before
-writing a frame. Proper tail calls restore the shadow stack before transfer.
-Waffle emits marker calls that a Wasm reencoder replaces with `return_call`
-or `return_call_indirect`; ordinary calls remain ordinary calls.
+The runtime is `runtime/`, the same Rust code native builds link, compiled for
+`wasm32-wasip1` as a reactor (`nassau_runtime.wasm`). It is linked with
+`--global-base=1114112 --no-stack-first` so its own data and stack sit above
+the 1 MiB shadow stack that clif2wasm hard-codes at `[4096, 1MiB)`. It owns
+linear memory: generated modules import its `memory` export, and static data
+comes from `nassau_static_alloc`. Every export takes and returns 64-bit words,
+matching the emitter's helper signatures, so the collector reads root frames
+and object fields as `u64` rather than `usize`.
 
-The runtime uses a nonmoving mark-and-sweep collector with a coalescing free
-list. Roots include active CLIF root frames, visible globals, exception state,
-builtin exception identities and host-side value formatting. Live closures
-also trace the historical globals their functions depend on. Strings and
-reals do not contain traced fields; closure code indices are not heap pointers.
-Static literals, global cells and compiled instances remain session-owned
-until reset. Output is captured as bytes. SML exceptions follow the existing
-status protocol; Wasm traps and unexpected host errors stop the worker.
+`www/frontend/runtime.js` instantiates it, owns the function table and the
+stack-pointer global, and maps the generated modules' `env` imports onto its
+exports (libm functions come from JS `Math`). `www/frontend/wasi.js` supplies
+the WASI imports. Output written to fd 1 and 2 is captured as bytes, `proc_exit`
+becomes the session's exit status, and `NASSAU_GC_*` settings arrive through the
+WASI environment. The collector, roots, exceptions and `Posix.Process.exit`
+behave exactly as on native. Wasm traps and unexpected host errors stop the
+worker.
 
 ## Dependency source
 

@@ -13,7 +13,7 @@ extern "C" {
     #[derive(Clone)]
     type Runtime;
     #[wasm_bindgen(constructor, js_class = NassauRuntime)]
-    fn new() -> Runtime;
+    fn new(host: &JsValue) -> Runtime;
     #[wasm_bindgen(method, catch)]
     fn allocate_static(this: &Runtime, size: u32, align: u32) -> Result<u32, JsValue>;
     #[wasm_bindgen(method, catch)]
@@ -100,6 +100,7 @@ impl ReplValue for WasmValue {
 }
 
 struct WasmBackend {
+    runtime_module: JsValue,
     codegen: Codegen,
     module: WasmModule,
     symbols: Symbols,
@@ -107,7 +108,7 @@ struct WasmBackend {
 }
 
 impl WasmBackend {
-    fn new() -> miette::Result<Self> {
+    fn new(runtime_module: JsValue) -> miette::Result<Self> {
         let mut module =
             WasmModule::new().map_err(|error| miette::Report::msg(error.to_string()))?;
         for name in [
@@ -126,11 +127,18 @@ impl WasmBackend {
         ] {
             module.allow_import(name);
         }
+        for function in core::MATH_FNS
+            .iter()
+            .filter(|function| function.libm != "sqrt")
+        {
+            module.allow_import(function.libm);
+        }
         Ok(Self {
             codegen: Codegen::new(CodegenOptions::default()),
             module,
             symbols: Symbols::default(),
-            runtime: Runtime::new(),
+            runtime: Runtime::new(&runtime_module),
+            runtime_module,
         })
     }
 
@@ -202,7 +210,7 @@ impl Backend for WasmBackend {
     }
 
     fn reset(&mut self) -> miette::Result<()> {
-        *self = Self::new()?;
+        *self = Self::new(self.runtime_module.clone())?;
         Ok(())
     }
 
@@ -219,8 +227,9 @@ pub struct BrowserRepl {
 #[wasm_bindgen]
 impl BrowserRepl {
     #[wasm_bindgen(constructor)]
-    pub fn new() -> Result<BrowserRepl, JsValue> {
-        let backend = WasmBackend::new().map_err(|error| JsValue::from_str(&error.to_string()))?;
+    pub fn new(runtime_module: JsValue) -> Result<BrowserRepl, JsValue> {
+        let backend = WasmBackend::new(runtime_module)
+            .map_err(|error| JsValue::from_str(&error.to_string()))?;
         Ok(Self {
             session: Session::new(backend),
         })

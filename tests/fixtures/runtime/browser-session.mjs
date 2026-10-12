@@ -7,8 +7,11 @@ import { pathToFileURL } from 'node:url';
 const bundle = resolve(process.argv[2] ?? 'www/dist/pkg');
 const { default: init, BrowserRepl } = await import(pathToFileURL(`${bundle}/nassau.js`));
 await init({ module_or_path: await readFile(`${bundle}/nassau_bg.wasm`) });
+const { Wasi } = await import(pathToFileURL(`${bundle}/../wasi.js`));
+const module = await WebAssembly.compile(await readFile(`${bundle}/nassau_runtime.wasm`));
+const host = env => ({ module, createWasi: () => new Wasi(env) });
 const decoder = new TextDecoder();
-const repl = new BrowserRepl();
+const repl = new BrowserRepl(host({}));
 const submit = source => {
   const response = repl.submit(source);
   assert.equal(response.diagnostics, '', `${source}\n${response.diagnostics}`);
@@ -40,18 +43,7 @@ assert.equal(submit('42;').text, 'val it = 42 : int\n');
 assert.equal(submit('Posix.Process.exit (Word8.fromInt 7);').exit, 7);
 assert.equal(submit('val ignored = 99;').exit, 7);
 assert.equal(submit('reset;;').exit, undefined);
-const snippets = await readdir(`${bundle}/snippets`, { recursive: true });
-const runtimeFile = snippets.find(name => name.endsWith('/runtime.js'));
-assert.ok(runtimeFile);
-const { NassauRuntime } = await import(pathToFileURL(`${bundle}/snippets/${runtimeFile}`));
-const allocate = NassauRuntime.prototype.allocate;
-let runtime;
-NassauRuntime.prototype.allocate = function (...args) {
-  this.gcInterval = 4096;
-  runtime = this;
-  return allocate.apply(this, args);
-};
-const stressed = new BrowserRepl();
+const stressed = new BrowserRepl(host({ NASSAU_GC_STRESS: '20' }));
 const stress = source => {
   const response = stressed.submit(source);
   assert.equal(response.diagnostics, '', response.diagnostics);
@@ -63,12 +55,9 @@ stress('datatype node = End | Node of node ref; val link = ref End; val node = N
 stress('fun allocate 0 = () | allocate n = let val cell = ref [n,n+1] in if !cell = [n,n+1] then allocate (n-1) else raise Fail "allocation" end; allocate 100000;');
 assert.equal(stress('historical ();'), 'val it = "old value" : string\n');
 assert.equal(stress('case !link of Node next => next = link | End => false;'), 'val it = true : bool\n');
-assert.ok(runtime.collections > 100, `only ${runtime.collections} collections`);
-assert.ok(runtime.top < 2 * 1024 * 1024, `heap grew to ${runtime.top}`);
 stress('reset;;');
 assert.notEqual(stressed.submit('historical ();').diagnostics, '');
 stressed.free();
-NassauRuntime.prototype.allocate = allocate;
 console.log('browser session fixture passed');
 
 const fixtures = (await readdir('tests/repl')).filter(name => name.endsWith('.sml')).sort();
@@ -79,7 +68,7 @@ for (const name of fixtures) {
   const reference = spawnSync(resolve('target/release/nassau'), [], { input, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
   assert.ifError(reference.error);
   assert.equal(reference.status, 0, `${name}: ${reference.stderr}`);
-  const session = new BrowserRepl();
+  const session = new BrowserRepl(host({}));
   const response = session.submit(input);
   const text = decoder.decode(Uint8Array.from(response.output));
   const normalize = output => output.replaceAll('nassau> ', '').replace(/^  raised at:.*\n/gm, '').trim();

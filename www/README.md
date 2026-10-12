@@ -4,16 +4,18 @@ A persistent Standard ML REPL running entirely in a Web Worker. The Rust
 frontend lowers SML to core IR and emits Cranelift IR using the same emitter as
 the native compiler. The `clif2wasm` bridge translates this through
 Waffle into Wasm modules, which the browser compiles and executes locally.
-A browser runtime supplies allocation, mark-and-sweep collection, output and
-exception state. All editor assets are local; no CDN or execution server is
+The runtime is the same Rust code the native compiler links
+(`runtime/`), built for `wasm32-wasip1`: it supplies allocation, mark-and-sweep
+collection, output and exception state, and `frontend/wasi.js` provides the
+WASI imports it needs (stdout, exit, environment, clock, random). All editor assets are local; no CDN or execution server is
 needed. The browser must support WebAssembly tail calls.
 
-Build from the repository root with Rust, the `wasm32-unknown-unknown` target
-and `wasm-pack` available. Cargo fetches `clif2wasm` from its pinned
+Build from the repository root with Rust, the `wasm32-unknown-unknown` and
+`wasm32-wasip1` targets and `wasm-pack` available. Cargo fetches `clif2wasm` from its pinned
 [GitHub revision](https://github.com/Takashiidobe/clif2wasm/tree/edf08ece9bd24991c1325cb3e99ee94a026be42d):
 
 ```sh
-rustup target add wasm32-unknown-unknown
+rustup target add wasm32-unknown-unknown wasm32-wasip1
 ./www/build.sh
 python3 -m http.server 8000 --directory www/dist
 ```

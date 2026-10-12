@@ -137,6 +137,10 @@ pub fn allocate(bytes: usize, header: i64) -> *mut i64 {
     address
 }
 
+unsafe fn read_word(address: usize) -> usize {
+    unsafe { (address as *const u64).read() as usize }
+}
+
 fn object_header(object: usize) -> i64 {
     unsafe { (object as *const i64).read() }
 }
@@ -145,7 +149,10 @@ impl Heap {
     fn collect(&mut self) {
         let mut pending = Vec::new();
         for slot in frame_roots().into_iter().chain(vm_roots()) {
-            self.mark(unsafe { (slot as *const usize).read() }, &mut pending);
+            self.mark(unsafe { read_word(slot) }, &mut pending);
+        }
+        for &root in HOST_ROOTS.lock().unwrap().iter() {
+            self.mark(root as usize, &mut pending);
         }
         while let Some(object) = pending.pop() {
             let header = object_header(object);
@@ -153,9 +160,9 @@ impl Heap {
             let first = match header & 0x7f {
                 KIND_RECORD | KIND_ARRAY | KIND_REF | KIND_VECTOR => 0,
                 KIND_CLOSURE => {
-                    let code = unsafe { (object as *const usize).add(1).read() };
+                    let code = unsafe { read_word(object + 8) };
                     for slot in code_roots(code) {
-                        self.mark(unsafe { (slot as *const usize).read() }, &mut pending);
+                        self.mark(unsafe { read_word(slot) }, &mut pending);
                     }
                     1
                 }
@@ -163,7 +170,7 @@ impl Heap {
                 _ => unreachable!("valid Nassau object kind"),
             };
             for field in first..length {
-                let word = unsafe { (object as *const usize).add(field + 1).read() };
+                let word = unsafe { read_word(object + (field + 1) * 8) };
                 self.mark(word, &mut pending);
             }
         }
@@ -215,31 +222,35 @@ fn vm_roots() -> Vec<usize> {
 
 static ROOT_FRAME: AtomicUsize = AtomicUsize::new(0);
 
-pub unsafe fn push_roots(frame: *mut usize, count: usize, code: usize) {
+pub unsafe fn push_roots(frame: *mut u64, count: u64, code: u64) {
     unsafe {
-        frame.write(ROOT_FRAME.load(Ordering::Relaxed));
+        frame.write(ROOT_FRAME.load(Ordering::Relaxed) as u64);
         frame.add(1).write(count);
         frame.add(2).write(code);
     }
     ROOT_FRAME.store(frame as usize, Ordering::Release);
 }
 
-pub unsafe fn pop_roots(frame: *mut usize) {
+pub fn reset_frames() {
+    ROOT_FRAME.store(0, Ordering::Release);
+}
+
+pub unsafe fn pop_roots(frame: *mut u64) {
     assert_eq!(ROOT_FRAME.load(Ordering::Relaxed), frame as usize);
-    ROOT_FRAME.store(unsafe { frame.read() }, Ordering::Release);
+    ROOT_FRAME.store(unsafe { frame.read() } as usize, Ordering::Release);
 }
 
 fn frame_roots() -> Vec<usize> {
-    let mut frame = ROOT_FRAME.load(Ordering::Acquire) as *mut usize;
+    let mut frame = ROOT_FRAME.load(Ordering::Acquire) as *mut u64;
     let mut slots = Vec::new();
     while !frame.is_null() {
         unsafe {
-            let count = frame.add(1).read();
-            slots.extend(code_roots(frame.add(2).read()));
+            let count = frame.add(1).read() as usize;
+            slots.extend(code_roots(frame.add(2).read() as usize));
             for index in 0..count {
                 slots.push(frame.add(index + 3) as usize);
             }
-            frame = frame.read() as *mut usize;
+            frame = frame.read() as usize as *mut u64;
         }
     }
     slots
@@ -247,13 +258,13 @@ fn frame_roots() -> Vec<usize> {
 
 #[repr(C)]
 struct HostRoots<const N: usize> {
-    previous: usize,
-    count: usize,
-    code: usize,
-    values: [usize; N],
+    previous: u64,
+    count: u64,
+    code: u64,
+    values: [u64; N],
 }
 
-struct RootScope(*mut usize);
+struct RootScope(*mut u64);
 
 impl Drop for RootScope {
     fn drop(&mut self) {
@@ -261,17 +272,31 @@ impl Drop for RootScope {
     }
 }
 
-pub fn with_roots<const N: usize, T>(values: [usize; N], f: impl FnOnce() -> T) -> T {
+pub fn with_roots<const N: usize, T>(values: [u64; N], f: impl FnOnce() -> T) -> T {
     let mut frame = HostRoots {
         previous: 0,
-        count: N,
+        count: N as u64,
         code: 0,
         values,
     };
-    let pointer = (&raw mut frame).cast::<usize>();
-    unsafe { push_roots(pointer, N, 0) };
+    let pointer = (&raw mut frame).cast::<u64>();
+    unsafe { push_roots(pointer, N as u64, 0) };
     let _scope = RootScope(pointer);
     f()
+}
+
+static HOST_ROOTS: Mutex<Vec<u64>> = Mutex::new(Vec::new());
+
+pub fn push_host_root(value: u64) {
+    HOST_ROOTS.lock().unwrap().push(value);
+}
+
+pub fn pop_host_root() {
+    HOST_ROOTS.lock().unwrap().pop();
+}
+
+pub fn clear_globals() {
+    GLOBAL_ROOTS.lock().unwrap().clear();
 }
 
 static GLOBAL_ROOTS: Mutex<BTreeSet<usize>> = Mutex::new(BTreeSet::new());

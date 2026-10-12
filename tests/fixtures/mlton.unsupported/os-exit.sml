@@ -1,5 +1,0 @@
-(* mlton regression/os-exit.sml @5fe943391; HPND licence in tests/fixtures/mlton/LICENSE *)
-val _ = (TextIO.output (TextIO.stdOut, "hello\n")
-         ; OS.Process.exit OS.Process.success)
-(* CHECK-EXIT: 0 *)
-(* CHECK-STDOUT: hello *)

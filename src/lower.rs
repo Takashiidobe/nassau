@@ -10,8 +10,8 @@ use miette::SourceSpan;
 use std::rc::Rc;
 
 use crate::core::{
-    Atom, Block, BlockId, Callee, Closure, FnId, Function, GlobalId, Module, Op, Prim, Stmt, Term,
-    Var,
+    Atom, Block, BlockId, Callee, Closure, FnId, Function, GlobalId, MATH_FNS, Module, Op, Prim,
+    Stmt, Term, Var,
 };
 use crate::error::ThisError;
 use crate::infer::{Ty, TypeTable};
@@ -395,6 +395,7 @@ enum Builtin {
     Exit,
     IntToReal,
     RealFloor,
+    Math(usize),
     CharToString,
     StringSub,
     /// A conversion between types of the same representation.
@@ -419,6 +420,9 @@ enum Builtin {
 }
 
 fn builtin(name: &str) -> Option<Builtin> {
+    if let Some(index) = MATH_FNS.iter().position(|function| function.sml == name) {
+        return Some(Builtin::Math(index));
+    }
     Some(match name {
         "print" => Builtin::Print,
         "Prim.intToString" => Builtin::IntToString,
@@ -1764,6 +1768,17 @@ impl Lowerer<'_> {
             Builtin::Exit => self.bind("", Op::Prim(Prim::Exit, vec![argument])),
             Builtin::IntToReal => self.bind("", Op::Prim(Prim::IntToReal, vec![argument])),
             Builtin::RealFloor => self.bind("", Op::Prim(Prim::RealFloor, vec![argument])),
+            Builtin::Math(index) => {
+                let args = if MATH_FNS[index].arity == 2 {
+                    vec![
+                        self.bind("", Op::Select(argument.clone(), 0)),
+                        self.bind("", Op::Select(argument, 1)),
+                    ]
+                } else {
+                    vec![argument]
+                };
+                self.bind("", Op::Prim(Prim::Math(index), args))
+            }
             Builtin::CharToString => self.bind("", Op::Prim(Prim::CharToString, vec![argument])),
             Builtin::StringSub => {
                 let string = self.bind("", Op::Select(argument.clone(), 0));

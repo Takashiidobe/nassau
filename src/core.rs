@@ -28,6 +28,36 @@ pub enum Atom {
     String(String),
 }
 
+/// A libm function exposed to the Basis as `Prim.<sml>`. `sqrt` is compiled
+/// inline rather than called.
+pub struct MathFn {
+    pub sml: &'static str,
+    pub libm: &'static str,
+    pub arity: usize,
+}
+
+const fn math(sml: &'static str, libm: &'static str, arity: usize) -> MathFn {
+    MathFn { sml, libm, arity }
+}
+
+pub const MATH_FNS: &[MathFn] = &[
+    math("Prim.mathSqrt", "sqrt", 1),
+    math("Prim.mathSin", "sin", 1),
+    math("Prim.mathCos", "cos", 1),
+    math("Prim.mathTan", "tan", 1),
+    math("Prim.mathAsin", "asin", 1),
+    math("Prim.mathAcos", "acos", 1),
+    math("Prim.mathAtan", "atan", 1),
+    math("Prim.mathAtan2", "atan2", 2),
+    math("Prim.mathExp", "exp", 1),
+    math("Prim.mathPow", "pow", 2),
+    math("Prim.mathLn", "log", 1),
+    math("Prim.mathLog10", "log10", 1),
+    math("Prim.mathSinh", "sinh", 1),
+    math("Prim.mathCosh", "cosh", 1),
+    math("Prim.mathTanh", "tanh", 1),
+];
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Prim {
     IntAdd,
@@ -83,6 +113,8 @@ pub enum Prim {
     IntToReal,
     /// The floor of a real known to fit an int.
     RealFloor,
+    /// A function of reals from `MATH_FNS`, by index.
+    Math(usize),
     /// The one-character string of a char.
     CharToString,
     /// The char at an index known to be in range of a string.
@@ -141,6 +173,7 @@ impl Prim {
             Prim::IntToString => "int.to_string",
             Prim::IntToReal => "int.to_real",
             Prim::RealFloor => "real.floor",
+            Prim::Math(index) => MATH_FNS[index].libm,
             Prim::CharToString => "char.to_string",
             Prim::StringSub => "string.sub",
             Prim::Size => "size",

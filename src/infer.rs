@@ -565,6 +565,17 @@ impl Infer {
         self.builtin("Prim.intToString", false, 0, |_| arrow(int(), string()));
         self.builtin("Prim.intToReal", false, 0, |_| arrow(int(), real()));
         self.builtin("Prim.realFloor", false, 0, |_| arrow(real(), int()));
+        for function in crate::core::MATH_FNS {
+            let arity = function.arity;
+            self.builtin(function.sml, false, 0, |_| {
+                let argument = if arity == 2 {
+                    tuple(vec![real(), real()])
+                } else {
+                    real()
+                };
+                arrow(argument, real())
+            });
+        }
         self.builtin("Prim.ord", false, 0, |_| arrow(con("char"), int()));
         self.builtin("Prim.chr", false, 0, |_| arrow(int(), con("char")));
         self.builtin("Prim.charToString", false, 0, |_| {

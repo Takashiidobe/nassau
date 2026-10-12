@@ -46,7 +46,7 @@ use cranelift_module::{DataDescription, DataId, FuncId, Linkage, Module};
 #[cfg(any(feature = "native", feature = "basis-bootstrap"))]
 use cranelift_object::{ObjectBuilder, ObjectModule};
 
-use crate::core::{self, Atom, Callee, Failure, FnId, GlobalId, Op, Prim, Stmt, Term};
+use crate::core::{self, Atom, Callee, Failure, FnId, GlobalId, MATH_FNS, Op, Prim, Stmt, Term};
 use crate::error::CodegenError;
 #[cfg(feature = "native")]
 use crate::runtime;
@@ -1100,6 +1100,18 @@ impl<M: Module> Translator<'_, M> {
                 let floor = self.builder.ins().floor(real);
                 let integer = self.builder.ins().fcvt_to_sint_sat(types::I64, floor);
                 self.tag(integer)
+            }
+            Prim::Math(index) => {
+                let function = &MATH_FNS[index];
+                let operands: Vec<Value> = args.iter().map(|arg| self.real(*arg)).collect();
+                let result = if function.libm == "sqrt" {
+                    self.builder.ins().sqrt(operands[0])
+                } else {
+                    let params = vec![types::F64; function.arity];
+                    self.call_c(function.libm, &params, Some(types::F64), &operands)?
+                        .expect("libm functions return a real")
+                };
+                self.box_real(result)?
             }
             Prim::CharToString => {
                 let string = self.allocate(1, value::KIND_STRING)?;

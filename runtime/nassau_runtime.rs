@@ -12,7 +12,9 @@ unsafe extern "C" {
     fn fflush(stream: *mut c_void) -> c_int;
     fn fprintf(stream: *mut c_void, format: *const c_char, ...) -> c_int;
     fn exit(status: c_int) -> !;
+    #[cfg_attr(target_vendor = "apple", link_name = "__stdoutp")]
     static mut stdout: *mut c_void;
+    #[cfg_attr(target_vendor = "apple", link_name = "__stderrp")]
     static mut stderr: *mut c_void;
 }
 

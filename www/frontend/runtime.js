@@ -27,6 +27,8 @@ export class NassauRuntime {
       table: this.table,
       stack_pointer: this.stack_pointer,
       nassau_alloc: (length, kind) => this.allocate(length, kind),
+      nassau_array_new: (length, initial) => this.arrayNew(length >> 1n, initial),
+      nassau_vector_from_array: array => this.vectorFromArray(array),
       nassau_print: string => {
         this.output.push(this.read_bytes(Number(string) + 8, this.length(string)));
         return NIL;
@@ -101,7 +103,7 @@ export class NassauRuntime {
   allocate(length, kind) {
     const count = Number(length);
     const tag = Number(kind);
-    if (!Number.isSafeInteger(count) || count < 0 || ![0, 1, 2, 3, 4].includes(tag)) {
+    if (!Number.isSafeInteger(count) || count < 0 || ![0, 1, 2, 3, 4, 5, 6].includes(tag)) {
       throw new Error('Invalid Nassau object');
     }
     const size = Math.ceil((8 + (tag === 2 ? count + 1 : count * 8)) / 8) * 8;
@@ -121,6 +123,29 @@ export class NassauRuntime {
     this.blocks.set(address, size);
     this.allocated += size;
     return BigInt(address);
+  }
+
+  arrayNew(length, initial) {
+    this.hostRoots.push(initial);
+    try {
+      const array = this.allocate(length, 5n);
+      for (let i = 0; i < Number(length); i++) this.writeWord(Number(array) + 8 + i * 8, initial);
+      return array;
+    } finally {
+      this.hostRoots.pop();
+    }
+  }
+
+  vectorFromArray(array) {
+    this.hostRoots.push(array);
+    try {
+      const length = this.read_word(Number(array)) >> 8n;
+      const vector = this.allocate(length, 6n);
+      new Uint8Array(this.memory.buffer).copyWithin(Number(vector) + 8, Number(array) + 8, Number(array) + 8 + Number(length) * 8);
+      return vector;
+    } finally {
+      this.hostRoots.pop();
+    }
   }
 
   builtin(index) {
@@ -165,7 +190,7 @@ export class NassauRuntime {
       const kind = Number(header & 255n);
       const length = Number(header >> 8n);
       if (kind === 1) traceCode(Number(this.read_word(address + 8)));
-      if (kind === 0 || kind === 1 || kind === 4) {
+      if (kind === 0 || kind === 1 || kind === 4 || kind === 5 || kind === 6) {
         for (let i = kind === 1 ? 1 : 0; i < length; i++) {
           pending.push(this.read_word(address + 8 + i * 8));
         }

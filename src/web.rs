@@ -112,6 +112,8 @@ impl WasmBackend {
             WasmModule::new().map_err(|error| miette::Report::msg(error.to_string()))?;
         for name in [
             "nassau_alloc",
+            "nassau_array_new",
+            "nassau_vector_from_array",
             "nassau_print",
             "nassau_exception",
             "nassau_raised",

@@ -1,2 +1,8 @@
 [build]
+command = "bash build.sh"
 publish = "dist/"
+
+[[headers]]
+for = "/*"
+[headers.values]
+Cache-Control = "no-cache"

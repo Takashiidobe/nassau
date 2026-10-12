@@ -48,6 +48,21 @@ val _ = attempt "size missing" (fn () => ignore (OS.FileSys.fileSize (root ^ "/m
 val _ = attempt "rmdir full" (fn () => OS.FileSys.rmDir root)
 val _ = attempt "mkdir twice" (fn () => OS.FileSys.mkDir root)
 
+val start = OS.FileSys.getDir ()
+val _ = OS.FileSys.chDir root
+val _ = show "inside" (OS.Path.file (OS.FileSys.getDir ()))
+val _ = write ("c.txt", "relative")
+val _ = OS.FileSys.chDir "sub"
+val _ = show "nested" (OS.Path.file (OS.FileSys.getDir ()))
+val inner = TextIO.openIn "../c.txt"
+val _ = show "parent file" (TextIO.inputAll inner)
+val _ = TextIO.closeIn inner
+val _ = OS.FileSys.chDir ".."
+val _ = show "up" (OS.Path.file (OS.FileSys.getDir ()))
+val _ = OS.FileSys.chDir ".."
+val _ = show "back" (bool (OS.FileSys.getDir () = start))
+val _ = attempt "chdir missing" (fn () => OS.FileSys.chDir (root ^ "/missing"))
+val _ = OS.FileSys.remove (root ^ "/c.txt")
 val _ = OS.FileSys.remove (root ^ "/a.txt")
 val _ = OS.FileSys.remove (root ^ "/b.txt")
 val _ = OS.FileSys.rmDir (root ^ "/sub")
@@ -66,4 +81,10 @@ val _ = show "removed" (bool (not (OS.FileSys.isDir root) handle OS.SysErr _ => 
 (* CHECK-STDOUT-NEXT: size missing: No such file or directory *)
 (* CHECK-STDOUT-NEXT: rmdir full: Directory not empty *)
 (* CHECK-STDOUT-NEXT: mkdir twice: File exists *)
+(* CHECK-STDOUT-NEXT: inside: nassau-filesys.tmp *)
+(* CHECK-STDOUT-NEXT: nested: sub *)
+(* CHECK-STDOUT-NEXT: parent file: relative *)
+(* CHECK-STDOUT-NEXT: up: nassau-filesys.tmp *)
+(* CHECK-STDOUT-NEXT: back: true *)
+(* CHECK-STDOUT-NEXT: chdir missing: No such file or directory *)
 (* CHECK-STDOUT-NEXT: removed: true *)

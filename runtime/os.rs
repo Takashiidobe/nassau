@@ -195,3 +195,31 @@ pub unsafe extern "C" fn nassau_os_getenv(name: i64) -> i64 {
     }
     unsafe { string(&found) }
 }
+
+fn normalized_dir() -> String {
+    let mut parts: Vec<String> = Vec::new();
+    let directory = std::env::current_dir().unwrap_or_else(|_| "/".into());
+    for part in directory.to_string_lossy().split('/') {
+        match part {
+            "" | "." => {}
+            ".." => {
+                parts.pop();
+            }
+            part => parts.push(part.to_owned()),
+        }
+    }
+    format!("/{}", parts.join("/"))
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nassau_os_get_dir() -> i64 {
+    unsafe { string(normalized_dir().as_bytes()) }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nassau_os_chdir(path: i64) -> i64 {
+    result(
+        std::env::set_current_dir(unsafe { text(path) })
+            .and_then(|()| std::env::set_current_dir(normalized_dir())),
+    )
+}

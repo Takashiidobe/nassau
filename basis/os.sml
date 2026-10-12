@@ -58,6 +58,8 @@ struct
     val mkDir : string -> unit
     val rmDir : string -> unit
     val remove : string -> unit
+    val getDir : unit -> string
+    val chDir : string -> unit
   end =
   struct
     type dirstream = int
@@ -76,6 +78,8 @@ struct
     fun mkDir path = (check (Prim.osMkDir path); ())
     fun rmDir path = (check (Prim.osRmDir path); ())
     fun remove path = (check (Prim.osRemove path); ())
+    fun getDir () = Prim.osGetDir ()
+    fun chDir path = (check (Prim.osChDir path); ())
   end
 
   structure Process :>

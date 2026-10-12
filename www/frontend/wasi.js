@@ -21,8 +21,9 @@ const FDFLAGS_APPEND = 1;
 const ROOT_FD = 3;
 
 class Directory {
-  constructor() {
+  constructor(parent) {
     this.entries = new Map();
+    this.parent = parent ?? this;
   }
 }
 
@@ -71,7 +72,7 @@ export class Wasi {
     const name = parts.pop();
     let directory = this.root;
     for (const part of parts) {
-      if (!directory.entries.has(part)) directory.entries.set(part, new Directory());
+      if (!directory.entries.has(part)) directory.entries.set(part, new Directory(directory));
       directory = directory.entries.get(part);
     }
     directory.entries.set(name, new File(bytes.slice()));
@@ -87,7 +88,7 @@ export class Wasi {
     for (const part of path.split('/')) {
       if (part === '' || part === '.') continue;
       if (!(node instanceof Directory)) return undefined;
-      if (part === '..') continue;
+      if (part === '..') { node = node.parent; continue; }
       node = node.entries.get(part);
       if (!node) return undefined;
     }
@@ -315,7 +316,7 @@ export class Wasi {
         const { directory: parent, name } = this.parent(directory.node, text(pathAddress, pathLength));
         if (!(parent instanceof Directory) || !name) return ENOENT;
         if (parent.entries.has(name)) return EEXIST;
-        parent.entries.set(name, new Directory());
+        parent.entries.set(name, new Directory(parent));
         return SUCCESS;
       },
       path_remove_directory: (dirfd, pathAddress, pathLength) => {

@@ -99,6 +99,8 @@ pub const EXTERN_FNS: &[ExternFn] = &[
     external("Prim.osFileSize", "nassau_os_file_size", &[STRING], INT),
     external("Prim.osMkDir", "nassau_os_mkdir", &[STRING], INT),
     external("Prim.osRmDir", "nassau_os_rmdir", &[STRING], INT),
+    external("Prim.osGetDir", "nassau_os_get_dir", &[], STRING),
+    external("Prim.osChDir", "nassau_os_chdir", &[STRING], INT),
     external("Prim.osGetenv", "nassau_os_getenv", &[STRING], STRING),
 ];
 

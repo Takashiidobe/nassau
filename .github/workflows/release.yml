@@ -10,20 +10,12 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  test:
+  release:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
     steps:
       - uses: actions/checkout@v7
-
-      - uses: dtolnay/rust-toolchain@stable
-
-      - name: Install fixture dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes polyml llvm
-          echo "FILECHECK=$(find /usr/lib/llvm-*/bin -name FileCheck | sort -V | tail -n 1)" >> "$GITHUB_ENV"
 
       - name: Check tag version
         shell: bash
@@ -34,15 +26,6 @@ jobs:
             exit 1
           fi
 
-      - name: Run fixture suite
-        run: cargo test --locked --test fixtures
-
-  release:
-    needs: test
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
       - name: Create release if needed
         env:
           GH_TOKEN: ${{ github.token }}

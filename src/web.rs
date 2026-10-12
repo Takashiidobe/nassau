@@ -37,6 +37,8 @@ extern "C" {
     #[wasm_bindgen(method)]
     fn take_output(this: &Runtime) -> Vec<u8>;
     #[wasm_bindgen(method)]
+    fn push_output(this: &Runtime, bytes: &[u8]);
+    #[wasm_bindgen(method)]
     fn push_host(this: &Runtime, value: i64);
     #[wasm_bindgen(method)]
     fn pop_host(this: &Runtime);
@@ -216,6 +218,11 @@ impl Backend for WasmBackend {
 
     fn take_output(&mut self) -> Vec<u8> {
         self.runtime.take_output()
+    }
+
+    fn write_output(&mut self, bytes: &[u8]) -> bool {
+        self.runtime.push_output(bytes);
+        true
     }
 }
 

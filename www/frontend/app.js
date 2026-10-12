@@ -4,6 +4,8 @@ const decoder = new TextDecoder();
 const history = [];
 let editor, inputRow, worker, ready = false, busy = false, exited = false, activeEntry;
 let completionMenu;
+let stdinControl, stdinData, stdinQueue = new Uint8Array(0), stdinClosed = false, stdinRow;
+const encoder = new TextEncoder();
 let historyIndex = 0, draft = '', exampleRequest = 0, promptId = 0;
 let completionRequestId = 0, completionCycle = null;
 const completionRequests = new Map();
@@ -180,9 +182,18 @@ function startWorker() {
   try { worker = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' }); }
   catch (error) { fail(`Could not start Nassau: ${error.message}`); return; }
   const currentWorker = worker;
+  stdinControl = stdinData = stdinRow = null;
   worker.onmessage = ({ data }) => {
     if (worker !== currentWorker) return;
-    if (data.type === 'ready') { ready = true; status(''); }
+    if (data.type === 'ready') {
+      ready = true; status('');
+      if (data.stdin) { stdinControl = new Int32Array(data.stdin, 0, 2); stdinData = new Uint8Array(data.stdin, 8); }
+    }
+    else if (data.type === 'output') {
+      if (activeEntry) append(activeEntry, decoder.decode(data.bytes), 'output');
+      return;
+    }
+    else if (data.type === 'stdin') { requestStdin(); return; }
     else if (data.type === 'fatal') { fail(data.message); return; }
     else if (data.type === 'completions') { receiveCompletions(data); return; }
     else if (data.type === 'result') {
@@ -205,6 +216,41 @@ function startWorker() {
   };
   worker.onmessageerror = () => { if (worker === currentWorker) fail('Could not read worker response. Reset to retry.'); };
 }
+function deliverStdin(bytes) {
+  const chunk = bytes.subarray(0, stdinData.length);
+  stdinQueue = bytes.subarray(chunk.length);
+  stdinData.set(chunk);
+  Atomics.store(stdinControl, 1, chunk.length);
+  Atomics.store(stdinControl, 0, 1);
+  Atomics.notify(stdinControl, 0);
+  status('Running…');
+}
+function requestStdin() {
+  if (!activeEntry || !stdinControl) return;
+  if (stdinQueue.length) { deliverStdin(stdinQueue); return; }
+  if (stdinClosed) { deliverStdin(new Uint8Array(0)); return; }
+  stdinRow = document.createElement('div'); stdinRow.className = 'input-row';
+  const label = document.createElement('label'); label.className = 'prompt'; label.textContent = 'stdin>';
+  const field = document.createElement('input');
+  field.type = 'text'; field.className = 'stdin'; field.spellcheck = false;
+  field.setAttribute('aria-label', 'Standard input');
+  field.title = 'Enter sends a line · Ctrl+D sends end of file';
+  label.htmlFor = field.id = `stdin-${++promptId}`;
+  stdinRow.append(label, field); activeEntry.append(stdinRow);
+  const finish = (text, eof) => {
+    if (stdinRow?.contains(field) === false) return;
+    const echoed = document.createElement('pre'); echoed.className = 'submitted';
+    echoed.textContent = eof && !text ? '^D' : text;
+    stdinRow.replaceChildren(Object.assign(document.createElement('span'), { className: 'prompt', textContent: 'stdin>' }), echoed);
+    stdinRow = null; stdinClosed = eof;
+    deliverStdin(encoder.encode(eof ? text : text + '\n'));
+  };
+  field.onkeydown = event => {
+    if (event.key === 'Enter') { event.preventDefault(); finish(field.value, false); }
+    else if (event.key === 'd' && event.ctrlKey) { event.preventDefault(); finish(field.value, true); }
+  };
+  status('Waiting for input', 'ok'); scroll(); field.focus();
+}
 function run() {
   const source = editor.getValue();
   if (!ready || busy || (exited && !/^\s*(?:clear|reset)\s*;;\s*$/.test(source))) return;
@@ -219,6 +265,7 @@ function run() {
   inputRow.querySelector('.prompt').removeAttribute('for');
   activeEntry = document.createElement('div'); activeEntry.className = 'entry';
   inputRow.replaceWith(activeEntry); activeEntry.append(inputRow);
+  stdinQueue = new Uint8Array(0); stdinClosed = false;
   busy = true; status('Running…'); controls();
   worker.postMessage({ type: 'submit', source: source + '\n' });
 }

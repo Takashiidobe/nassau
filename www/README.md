@@ -17,10 +17,14 @@ Build from the repository root with Rust, the `wasm32-unknown-unknown` and
 ```sh
 rustup target add wasm32-unknown-unknown wasm32-wasip1
 ./www/build.sh
-python3 -m http.server 8000 --directory www/dist
+python3 www/serve.py 8000
 ```
 
-Open <http://localhost:8000>. `./www/build.sh /absolute/output/path` selects a
+Open <http://localhost:8000>. `serve.py` sends the `Cross-Origin-Opener-Policy` and
+`Cross-Origin-Embedder-Policy` headers (as `netlify.toml` does in production), which make
+the page cross-origin isolated. A program that reads `TextIO.stdIn` then blocks the worker in
+`Atomics.wait`, and the page switches to a `stdin>` prompt: Enter sends a line, Ctrl+D sends
+the typed text and then end of file. Without isolation, stdin reads return end of file. `./www/build.sh /absolute/output/path` selects a
 custom output directory. The build uses `wasm-pack` without wasm-opt and does
 not require npm packages. CodeMirror is vendored from the Slate reference
 website with its license in `frontend/assets/CODEMIRROR-LICENSE`. The matching

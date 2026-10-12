@@ -72,6 +72,20 @@ for (const line of expectedLines) {
   cursor = found + 1;
 }
 files.free();
+const typed = ['first line\nsecond', ' half\n'];
+const input = new BrowserRepl({
+  module,
+  createWasi: () => Object.assign(new Wasi(), {
+    stdin: () => (typed.length ? new TextEncoder().encode(typed.shift()) : new Uint8Array(0)),
+  }),
+});
+const read = input.submit(`val a = TextIO.inputLine TextIO.stdIn;
+val b = TextIO.inputLine TextIO.stdIn;
+val c = TextIO.inputLine TextIO.stdIn;`);
+assert.equal(read.diagnostics, '');
+assert.equal(decoder.decode(Uint8Array.from(read.output)),
+  'val a = SOME "first line\\n" : string option\nval b = SOME "second half\\n" : string option\nval c = NONE : string option\n');
+input.free();
 console.log('browser session fixture passed');
 
 const fixtures = (await readdir('tests/repl')).filter(name => name.endsWith('.sml')).sort();

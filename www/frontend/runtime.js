@@ -99,6 +99,10 @@ export class NassauRuntime {
     return this.wasi.takeOutput();
   }
 
+  push_output(bytes) {
+    this.wasi.output.push(bytes.slice());
+  }
+
   push_host(value) { this.exports.nassau_host_root_push(value); }
   pop_host() { this.exports.nassau_host_root_pop(); }
 }

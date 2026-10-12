@@ -56,6 +56,7 @@ export class Wasi {
     this.environment = Object.entries(env).map(([name, value]) =>
       new TextEncoder().encode(`${name}=${value}\0`));
     this.output = [];
+    this.stdin = () => new Uint8Array(0);
     this.exit = undefined;
     this.exitSignal = {};
     this.root = new Directory();
@@ -158,7 +159,17 @@ export class Wasi {
       },
       fd_read: (fd, iovs, count, read) => {
         let total = 0;
-        if (fd !== 0) {
+        if (fd === 0) {
+          const parts = gather(iovs, count);
+          const wanted = parts.reduce((length, part) => length + part.length, 0);
+          let chunk = wanted ? this.stdin(wanted).subarray(0, wanted) : new Uint8Array(0);
+          for (const part of parts) {
+            const length = Math.min(part.length, chunk.length);
+            part.set(chunk.subarray(0, length));
+            chunk = chunk.subarray(length);
+            total += length;
+          }
+        } else {
           const open = entry(fd);
           if (!open || !(open.node instanceof File)) return open ? EISDIR : EBADF;
           for (const part of gather(iovs, count)) {

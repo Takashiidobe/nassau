@@ -26,6 +26,9 @@ pub trait Backend {
     fn take_output(&mut self) -> Vec<u8> {
         vec![]
     }
+    fn write_output(&mut self, _bytes: &[u8]) -> bool {
+        false
+    }
 }
 
 #[derive(Default)]
@@ -121,6 +124,7 @@ impl<B: Backend> Session<B> {
         if let Err(error) = self.execute(source, first_line, &mut response) {
             writeln!(response.diagnostics, "{error:?}").unwrap();
         }
+        response.output.extend(self.backend.take_output());
         response
     }
 
@@ -181,7 +185,6 @@ impl<B: Backend> Session<B> {
             )
             .map_err(|(error, span)| report(error, span, &named_source))?;
         let execution = self.backend.execute(module)?;
-        response.output.extend(self.backend.take_output());
         let earlier_types = std::mem::replace(&mut self.types, types);
         let earlier_lowering = std::mem::replace(&mut self.lowering, lowering);
         let mut transcript = String::new();
@@ -238,7 +241,10 @@ impl<B: Backend> Session<B> {
                 }
             }
         }
-        response.output.extend(transcript.into_bytes());
+        let transcript = transcript.into_bytes();
+        if !self.backend.write_output(&transcript) {
+            response.output.extend(transcript);
+        }
         self.backend
             .retain_globals(&self.lowering.root_globals().into_iter().collect::<Vec<_>>());
         Ok(())

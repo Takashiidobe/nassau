@@ -20,6 +20,7 @@ button:focus-visible, select:focus-visible { outline: 1px solid var(--bright); o
 .notice { color: var(--muted); }
 .entry { margin: 0; }
 .input-row { display: flex; align-items: flex-start; padding: 0; }
+.stdin { flex: 1; min-width: 0; padding: 0; border: 0; outline: 0; background: transparent; color: inherit; font: inherit; }
 .prompt { flex-shrink: 0; padding: 0 8px 0 0; color: #9fb8d0; font: inherit; }
 .editor-shell { position: relative; flex: 1; min-width: 0; }
 .completion-menu { position: absolute; z-index: 5; display: grid; grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr)); gap: 2px; width: min(38rem, calc(100% - 1rem)); max-height: 9rem; overflow: auto; padding: 4px; border: 1px solid var(--border); border-radius: 3px; background: #202529; box-shadow: 0 4px 12px #0009; scrollbar-color: #495160 #202529; }

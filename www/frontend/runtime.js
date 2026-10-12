@@ -32,21 +32,8 @@ export class NassauRuntime {
       tanh: Math.tanh,
       pow: (x, y) => (x === 1 || (x === -1 && !Number.isFinite(y) && !Number.isNaN(y)) ? 1 : Math.pow(x, y)),
     };
-    for (const name of [
-      'nassau_alloc',
-      'nassau_array_new',
-      'nassau_vector_from_array',
-      'nassau_print',
-      'nassau_exception',
-      'nassau_raised',
-      'nassau_uncaught',
-      'nassau_exit',
-      'nassau_roots_push',
-      'nassau_roots_pop',
-      'nassau_global_root',
-      'nassau_code_global',
-    ]) {
-      this.env[name] = exports[name];
+    for (const [name, value] of Object.entries(exports)) {
+      if (name.startsWith('nassau_')) this.env[name] = value;
     }
   }
 

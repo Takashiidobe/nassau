@@ -28,34 +28,71 @@ pub enum Atom {
     String(String),
 }
 
-/// A libm function exposed to the Basis as `Prim.<sml>`. `sqrt` is compiled
-/// inline rather than called.
-pub struct MathFn {
+/// The SML type of an external function's parameter or result. `Real` is
+/// passed unboxed as an `f64`; everything else is a 64-bit word.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ExternTy {
+    Int,
+    String,
+    Real,
+    Unit,
+}
+
+/// A C-ABI function exposed to the Basis as `Prim.<sml>`: libm, or an entry
+/// point of the runtime. `sqrt` is compiled inline rather than called.
+pub struct ExternFn {
     pub sml: &'static str,
-    pub libm: &'static str,
-    pub arity: usize,
+    pub symbol: &'static str,
+    pub params: &'static [ExternTy],
+    pub result: ExternTy,
 }
 
-const fn math(sml: &'static str, libm: &'static str, arity: usize) -> MathFn {
-    MathFn { sml, libm, arity }
+const fn external(
+    sml: &'static str,
+    symbol: &'static str,
+    params: &'static [ExternTy],
+    result: ExternTy,
+) -> ExternFn {
+    ExternFn {
+        sml,
+        symbol,
+        params,
+        result,
+    }
 }
 
-pub const MATH_FNS: &[MathFn] = &[
-    math("Prim.mathSqrt", "sqrt", 1),
-    math("Prim.mathSin", "sin", 1),
-    math("Prim.mathCos", "cos", 1),
-    math("Prim.mathTan", "tan", 1),
-    math("Prim.mathAsin", "asin", 1),
-    math("Prim.mathAcos", "acos", 1),
-    math("Prim.mathAtan", "atan", 1),
-    math("Prim.mathAtan2", "atan2", 2),
-    math("Prim.mathExp", "exp", 1),
-    math("Prim.mathPow", "pow", 2),
-    math("Prim.mathLn", "log", 1),
-    math("Prim.mathLog10", "log10", 1),
-    math("Prim.mathSinh", "sinh", 1),
-    math("Prim.mathCosh", "cosh", 1),
-    math("Prim.mathTanh", "tanh", 1),
+const REAL: ExternTy = ExternTy::Real;
+const INT: ExternTy = ExternTy::Int;
+const STRING: ExternTy = ExternTy::String;
+
+pub const EXTERN_FNS: &[ExternFn] = &[
+    external("Prim.mathSqrt", "sqrt", &[REAL], REAL),
+    external("Prim.mathSin", "sin", &[REAL], REAL),
+    external("Prim.mathCos", "cos", &[REAL], REAL),
+    external("Prim.mathTan", "tan", &[REAL], REAL),
+    external("Prim.mathAsin", "asin", &[REAL], REAL),
+    external("Prim.mathAcos", "acos", &[REAL], REAL),
+    external("Prim.mathAtan", "atan", &[REAL], REAL),
+    external("Prim.mathAtan2", "atan2", &[REAL, REAL], REAL),
+    external("Prim.mathExp", "exp", &[REAL], REAL),
+    external("Prim.mathPow", "pow", &[REAL, REAL], REAL),
+    external("Prim.mathLn", "log", &[REAL], REAL),
+    external("Prim.mathLog10", "log10", &[REAL], REAL),
+    external("Prim.mathSinh", "sinh", &[REAL], REAL),
+    external("Prim.mathCosh", "cosh", &[REAL], REAL),
+    external("Prim.mathTanh", "tanh", &[REAL], REAL),
+    external("Prim.osOpen", "nassau_os_open", &[STRING, INT], INT),
+    external("Prim.osRead", "nassau_os_read", &[INT, INT], STRING),
+    external("Prim.osWrite", "nassau_os_write", &[INT, STRING], INT),
+    external("Prim.osClose", "nassau_os_close", &[INT], INT),
+    external("Prim.osRemove", "nassau_os_remove", &[STRING], INT),
+    external(
+        "Prim.osErrorMessage",
+        "nassau_os_error_message",
+        &[INT],
+        STRING,
+    ),
+    external("Prim.osGetenv", "nassau_os_getenv", &[STRING], STRING),
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -113,8 +150,8 @@ pub enum Prim {
     IntToReal,
     /// The floor of a real known to fit an int.
     RealFloor,
-    /// A function of reals from `MATH_FNS`, by index.
-    Math(usize),
+    /// A call to a function from `EXTERN_FNS`, by index.
+    Extern(usize),
     /// The one-character string of a char.
     CharToString,
     /// The char at an index known to be in range of a string.
@@ -173,7 +210,7 @@ impl Prim {
             Prim::IntToString => "int.to_string",
             Prim::IntToReal => "int.to_real",
             Prim::RealFloor => "real.floor",
-            Prim::Math(index) => MATH_FNS[index].libm,
+            Prim::Extern(index) => EXTERN_FNS[index].symbol,
             Prim::CharToString => "char.to_string",
             Prim::StringSub => "string.sub",
             Prim::Size => "size",

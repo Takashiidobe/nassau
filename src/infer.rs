@@ -8,6 +8,7 @@
 //! candidate types; it is never generalised and defaults to the first
 //! candidate (`int`) when the enclosing top-level declaration ends.
 
+use crate::core::ExternTy;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 
@@ -565,16 +566,20 @@ impl Infer {
         self.builtin("Prim.intToString", false, 0, |_| arrow(int(), string()));
         self.builtin("Prim.intToReal", false, 0, |_| arrow(int(), real()));
         self.builtin("Prim.realFloor", false, 0, |_| arrow(real(), int()));
-        for function in crate::core::MATH_FNS {
-            let arity = function.arity;
-            self.builtin(function.sml, false, 0, |_| {
-                let argument = if arity == 2 {
-                    tuple(vec![real(), real()])
-                } else {
-                    real()
-                };
-                arrow(argument, real())
-            });
+        for function in crate::core::EXTERN_FNS {
+            let ty = |ty: &ExternTy| match ty {
+                ExternTy::Int => int(),
+                ExternTy::String => string(),
+                ExternTy::Real => real(),
+                ExternTy::Unit => con("unit"),
+            };
+            let argument = match function.params {
+                [] => con("unit"),
+                [only] => ty(only),
+                many => tuple(many.iter().map(ty).collect()),
+            };
+            let result = ty(&function.result);
+            self.builtin(function.sml, false, 0, |_| arrow(argument, result));
         }
         self.builtin("Prim.ord", false, 0, |_| arrow(con("char"), int()));
         self.builtin("Prim.chr", false, 0, |_| arrow(int(), con("char")));

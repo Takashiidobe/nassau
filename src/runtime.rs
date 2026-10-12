@@ -2,8 +2,10 @@
 
 use crate::native_runtime::{
     nassau_alloc, nassau_array_new, nassau_code_global, nassau_exception, nassau_exit,
-    nassau_global_root, nassau_print, nassau_raised, nassau_repl, nassau_roots_pop,
-    nassau_roots_push, nassau_take_uncaught, nassau_uncaught, nassau_vector_from_array,
+    nassau_global_root, nassau_os_close, nassau_os_error_message, nassau_os_getenv, nassau_os_open,
+    nassau_os_read, nassau_os_remove, nassau_os_write, nassau_print, nassau_raised, nassau_repl,
+    nassau_roots_pop, nassau_roots_push, nassau_take_uncaught, nassau_uncaught,
+    nassau_vector_from_array,
 };
 
 /// The runtime archive, written next to the object file when linking.
@@ -12,7 +14,7 @@ pub const ARCHIVE: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/libnassau_r
 pub const NATIVE_LIBS: &str = env!("NASSAU_RUNTIME_NATIVE_LIBS");
 
 /// Runtime entry points called by generated code, for the JIT's symbol table.
-pub fn symbols() -> [(&'static str, *const u8); 12] {
+pub fn symbols() -> [(&'static str, *const u8); 19] {
     [
         ("nassau_alloc", nassau_alloc as *const u8),
         ("nassau_array_new", nassau_array_new as *const u8),
@@ -29,6 +31,16 @@ pub fn symbols() -> [(&'static str, *const u8); 12] {
         ("nassau_exception", nassau_exception as *const u8),
         ("nassau_raised", nassau_raised as *const u8),
         ("nassau_uncaught", nassau_uncaught as *const u8),
+        ("nassau_os_open", nassau_os_open as *const u8),
+        ("nassau_os_read", nassau_os_read as *const u8),
+        ("nassau_os_write", nassau_os_write as *const u8),
+        ("nassau_os_close", nassau_os_close as *const u8),
+        ("nassau_os_remove", nassau_os_remove as *const u8),
+        (
+            "nassau_os_error_message",
+            nassau_os_error_message as *const u8,
+        ),
+        ("nassau_os_getenv", nassau_os_getenv as *const u8),
     ]
 }
 

@@ -61,3 +61,23 @@ The former core-IR interpreter and native `--interpret` mode are removed.
 Browser execution uses generated Wasm; native REPL execution uses Cranelift
 JIT, and native file compilation uses Cranelift's object backend. The shared
 session, lowering, CLIF emitter and value printer serve both REPL hosts.
+
+## OS services
+
+Basis functions that reach the OS are table-driven externs. `EXTERN_FNS` in
+`src/core.rs` lists each as `Prim.<name>`, its C symbol, parameter types
+(`Int`, `String`, `Real`, `Unit`) and result type; one `Prim::Extern` serves
+them all. libm functions use it (`sqrt` is inline), as do the `nassau_os_*`
+entry points in `runtime/os.rs`: file open/read/write/close/remove,
+`getenv` and error messages. `runtime/os.rs` uses plain `std::fs` and
+`std::env`, so the same code runs natively and, built for `wasm32-wasip1`,
+in the browser.
+
+In the browser `www/frontend/wasi.js` implements the WASI imports over an
+in-memory filesystem preopened at `/`: open, read, write, seek, stat, unlink and
+directories. Output on fd 1 and 2 is captured; the environment starts empty.
+The `Wasi` constructor takes the environment and initial files. Adding an OS
+service means a row in `EXTERN_FNS`, a function in `runtime/os.rs`, and an entry
+in `runtime::symbols()` for the JIT; the browser picks up every `nassau_*`
+export automatically. Native paths and the browser's virtual files are covered
+by `tests/fixtures/basis/textio-files.sml`, which `browser-session.mjs` also runs.

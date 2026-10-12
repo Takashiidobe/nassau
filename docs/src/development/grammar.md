@@ -207,20 +207,22 @@ covers `General`, `Bool`, `Int`, `LargeInt`, `Position`, `IO`, `Char`, `Real`,
 plus the top-level names
 they export, such as `hd`, `map`, `@`, `ignore`, `o`, and `valOf`. Each
 structure has only the functions in its source file. `OS.Path` implements Unix
-path syntax; `OS.FileSys`, `OS.IO`, and the OS error interface need runtime
-support. `OS.Process` currently provides status constants, success checking,
-and exit; process execution, environment lookup, cleanup hooks, and sleep are
-not implemented. `PACK_REAL`, `PACK_WORD`, and the
+path syntax. `OS.SysErr` and `OS.errorMsg` report the runtime's OS errors, and
+`OS.FileSys` has only `remove`; `OS.IO` needs more runtime support. `OS.Process`
+provides status constants, success checking, exit and `getEnv`; process
+execution, cleanup hooks, and sleep are not implemented. `PACK_REAL`, `PACK_WORD`, and the
 optional POSIX structures are unavailable. POSIX filesystem, descriptor I/O,
 process, signal, and process-environment support is tracked in Beads. `Socket`
 is unavailable pending native socket support.
 
 Arrays, vectors, general file/stream I/O, `IntInf`, `Real.toString`, and most
-other structures are not implemented. `TextIO` currently only exposes
-`print`; `Time` needs runtime time services. `TEXT` needs the missing
+other structures are not implemented. `TextIO` supports file and standard
+streams (open, close, input, `input1`, `inputN`, `inputAll`, `inputLine`,
+`lookahead`, `endOfStream`, output, `print`) but not `openString`, buffering
+modes or `StreamIO`; `Time` needs runtime time services. `TEXT` needs the missing
 array/vector structures. `Real` exposes its primitive
 arithmetic, radix and precision, and a few classification and ordering
-operations. `Math` currently has only `pi` and `e`; the monomorphic array and
+operations. `Math` has the full `MATH` interface; the monomorphic array and
 vector signatures are defined without their structures. The polymorphic
 `VECTOR` signature is also defined without its structure. `WORD`, `Windows`,
 and network database structures are unavailable.

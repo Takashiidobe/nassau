@@ -40,6 +40,19 @@ end
 
 structure OS =
 struct
+  type syserror = int
+
+  exception SysErr of string * syserror option
+
+  fun errorMsg code = Prim.osErrorMessage code
+
+  structure FileSys =
+  struct
+    fun remove path =
+      let val result = Prim.osRemove path
+      in if result < 0 then raise SysErr (errorMsg (~result), SOME (~result)) else () end
+  end
+
   structure Process :>
   sig
     type status
@@ -47,9 +60,14 @@ struct
     val failure: status
     val isSuccess: status -> bool
     val exit: status -> 'a
+    val getEnv: string -> string option
   end =
   struct
     type status = int
+
+    fun getEnv name =
+      let val value = Prim.osGetenv name
+      in if size value = 0 then NONE else SOME (String.extract (value, 1, NONE)) end
 
     val success = 0
 

@@ -2,6 +2,8 @@ use core::ffi::{c_char, c_int, c_void};
 use core::ptr;
 
 mod gc;
+mod os;
+pub use os::*;
 
 use crate::value;
 
@@ -81,12 +83,28 @@ unsafe fn string_length(string: i64) -> usize {
     unsafe { ((string as *const i64).read() >> 8) as usize }
 }
 
+unsafe fn write_stdout(bytes: &[u8]) {
+    unsafe {
+        fwrite(bytes.as_ptr(), 1, bytes.len(), stdout);
+        fflush(stdout);
+    }
+}
+
+unsafe fn write_stderr(bytes: &[u8]) {
+    unsafe {
+        fwrite(bytes.as_ptr(), 1, bytes.len(), stderr);
+        fflush(stderr);
+    }
+}
+
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn nassau_print(string: i64) -> i64 {
     unsafe {
-        fwrite(string_bytes(string), 1, string_length(string), stdout);
-        fflush(stdout);
-    }
+        write_stdout(core::slice::from_raw_parts(
+            string_bytes(string),
+            string_length(string),
+        ))
+    };
     NIL
 }
 

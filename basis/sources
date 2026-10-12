@@ -6,11 +6,11 @@ string-cvt.sml
 int.sml
 option.sml
 string.sml
-textio.sml
 word8.sml
 byte.sml
 list.sml
 os.sml
+textio.sml
 substring.sml
 ieee-real.sml
 real.sml

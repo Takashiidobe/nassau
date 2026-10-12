@@ -127,11 +127,11 @@ impl WasmBackend {
         ] {
             module.allow_import(name);
         }
-        for function in core::MATH_FNS
+        for function in core::EXTERN_FNS
             .iter()
-            .filter(|function| function.libm != "sqrt")
+            .filter(|function| function.symbol != "sqrt")
         {
-            module.allow_import(function.libm);
+            module.allow_import(function.symbol);
         }
         Ok(Self {
             codegen: Codegen::new(CodegenOptions::default()),

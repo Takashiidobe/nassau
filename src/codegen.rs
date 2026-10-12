@@ -46,7 +46,9 @@ use cranelift_module::{DataDescription, DataId, FuncId, Linkage, Module};
 #[cfg(any(feature = "native", feature = "basis-bootstrap"))]
 use cranelift_object::{ObjectBuilder, ObjectModule};
 
-use crate::core::{self, Atom, Callee, Failure, FnId, GlobalId, MATH_FNS, Op, Prim, Stmt, Term};
+use crate::core::{
+    self, Atom, Callee, EXTERN_FNS, ExternTy, Failure, FnId, GlobalId, Op, Prim, Stmt, Term,
+};
 use crate::error::CodegenError;
 #[cfg(feature = "native")]
 use crate::runtime;
@@ -1101,17 +1103,33 @@ impl<M: Module> Translator<'_, M> {
                 let integer = self.builder.ins().fcvt_to_sint_sat(types::I64, floor);
                 self.tag(integer)
             }
-            Prim::Math(index) => {
-                let function = &MATH_FNS[index];
-                let operands: Vec<Value> = args.iter().map(|arg| self.real(*arg)).collect();
-                let result = if function.libm == "sqrt" {
-                    self.builder.ins().sqrt(operands[0])
-                } else {
-                    let params = vec![types::F64; function.arity];
-                    self.call_c(function.libm, &params, Some(types::F64), &operands)?
-                        .expect("libm functions return a real")
+            Prim::Extern(index) => {
+                let function = &EXTERN_FNS[index];
+                let operands: Vec<Value> = function
+                    .params
+                    .iter()
+                    .zip(args)
+                    .map(|(ty, arg)| match ty {
+                        ExternTy::Real => self.real(*arg),
+                        _ => *arg,
+                    })
+                    .collect();
+                if function.symbol == "sqrt" {
+                    let root = self.builder.ins().sqrt(operands[0]);
+                    return self.box_real(root);
+                }
+                let params: Vec<_> = function.params.iter().map(extern_type).collect();
+                let returns = match function.result {
+                    ExternTy::Unit => None,
+                    ty => Some(extern_type(&ty)),
                 };
-                self.box_real(result)?
+                let result = self.call_c(function.symbol, &params, returns, &operands)?;
+                match (function.result, result) {
+                    (ExternTy::Real, Some(real)) => self.box_real(real)?,
+                    (ExternTy::Unit, _) => self.word(value::tagged(0)),
+                    (_, Some(word)) => word,
+                    (_, None) => unreachable!("external functions with results return one"),
+                }
             }
             Prim::CharToString => {
                 let string = self.allocate(1, value::KIND_STRING)?;
@@ -1446,4 +1464,11 @@ enum CallTarget {
 struct Call {
     target: CallTarget,
     values: Vec<Value>,
+}
+
+fn extern_type(ty: &ExternTy) -> types::Type {
+    match ty {
+        ExternTy::Real => types::F64,
+        _ => types::I64,
+    }
 }

@@ -122,6 +122,7 @@ impl WasmBackend {
             "nassau_raised",
             "nassau_uncaught",
             "nassau_exit",
+            "nassau_terminate",
             "nassau_roots_push",
             "nassau_roots_pop",
             "nassau_global_root",

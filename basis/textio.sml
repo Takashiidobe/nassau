@@ -34,6 +34,9 @@ struct
 
   datatype outstream = Outstream of {name : string, fd : int, closed : bool ref}
 
+  val inputs : instream list ref = ref []
+  val outputs : outstream list ref = ref []
+
   fun failure (name, function, code) =
     IO.Io {name = name, function = function, cause = OS.SysErr (OS.errorMsg (~code), SOME (~code))}
 
@@ -52,20 +55,34 @@ struct
 
   fun openIn path =
     let val fd = Prim.osOpen (path, 0)
-    in if fd < 0 then raise failure (path, "TextIO.openIn", fd) else instream (path, fd) end
+    in
+      if fd < 0 then raise failure (path, "TextIO.openIn", fd)
+      else let val stream = instream (path, fd)
+           in inputs := stream :: !inputs; stream end
+    end
 
   fun openFor (function, mode) path =
     let val fd = Prim.osOpen (path, mode)
-    in if fd < 0 then raise failure (path, function, fd) else outstream (path, fd) end
+    in
+      if fd < 0 then raise failure (path, function, fd)
+      else let val stream = outstream (path, fd)
+           in outputs := stream :: !outputs; stream end
+    end
 
   val openOut = openFor ("TextIO.openOut", 1)
   val openAppend = openFor ("TextIO.openAppend", 2)
 
   fun closeIn (Instream {fd, closed, ...}) =
-    if !closed then () else (closed := true; ignore (Prim.osClose fd))
+    if !closed then ()
+    else (closed := true;
+          inputs := List.filter (fn Instream {closed = other, ...} => closed <> other) (!inputs);
+          ignore (Prim.osClose fd))
 
   fun closeOut (Outstream {fd, closed, ...}) =
-    if !closed then () else (closed := true; ignore (Prim.osClose fd))
+    if !closed then ()
+    else (closed := true;
+          outputs := List.filter (fn Outstream {closed = other, ...} => closed <> other) (!outputs);
+          ignore (Prim.osClose fd))
 
   fun fill (Instream {fd, buffer, position, closed, ...}) =
     if !position < size (!buffer) then true
@@ -143,6 +160,19 @@ struct
   fun output1 (stream, c) = output (stream, Prim.charToString c)
 
   fun flushOut _ = ()
+
+  val _ = OS.Process.addCleanup (fn () =>
+    let
+      val pendingInputs = !inputs
+      val pendingOutputs = !outputs
+    in
+      inputs := [];
+      outputs := [];
+      List.app (fn stream => ((flushOut stream; closeOut stream) handle _ => ())) pendingOutputs;
+      List.app (fn stream => (closeIn stream handle _ => ())) pendingInputs;
+      flushOut stdOut;
+      flushOut stdErr
+    end)
 
   val print = print
 end

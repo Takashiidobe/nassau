@@ -89,6 +89,27 @@ assert.match(sleptOutput, /\ntrue\n/);
 assert.match(sleptOutput, /val system = "[^"]+" : string\nhook\n$/);
 assert.ok(!sleptOutput.includes('"ran"'));
 processes.free();
+for (const name of ['os-process-signature', 'os-process-nested-exit', 'os-process-hook-terminate', 'os-process-cleanup']) {
+  const fixture = await readFile(`tests/fixtures/runtime/${name}.sml`, 'utf8');
+  const session = new BrowserRepl(host({}));
+  const response = session.submit(fixture.replace(/\(\*[\s\S]*?\*\)/g, '') + '\nval _ = OS.Process.exit OS.Process.success;');
+  assert.equal(response.diagnostics, '', name);
+  if (name !== 'os-process-signature' && name !== 'os-process-cleanup') {
+    assert.equal(response.exit, 1, name);
+  }
+  const output = decoder.decode(Uint8Array.from(response.output));
+  const lines = output.split('\n');
+  let cursor = 0;
+  for (const match of fixture.matchAll(/\(\* CHECK-STDOUT(?:-NEXT)?: (.*) \*\)/g)) {
+    const found = lines.indexOf(match[1], cursor);
+    assert.notEqual(found, -1, `${name}: missing "${match[1]}"`);
+    cursor = found + 1;
+  }
+  assert.ok(!output.includes('new hook\n'), name);
+  assert.ok(!output.includes('skipped\n'), name);
+  assert.ok(!output.includes('returned from'), name);
+  session.free();
+}
 const typed = ['first line\nsecond', ' half\n'];
 const input = new BrowserRepl({
   module,

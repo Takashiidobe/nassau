@@ -172,6 +172,7 @@ pub enum Prim {
     Size,
     /// Ends the program with the status given.
     Exit,
+    Terminate,
     /// The identity of a built-in exception, by its index in
     /// `value::BUILTIN_EXCEPTIONS`.
     BuiltinException,
@@ -227,6 +228,7 @@ impl Prim {
             Prim::StringSub => "string.sub",
             Prim::Size => "size",
             Prim::Exit => "exit",
+            Prim::Terminate => "terminate",
             Prim::BuiltinException => "exception.builtin",
         }
     }

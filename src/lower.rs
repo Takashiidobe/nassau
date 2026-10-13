@@ -393,6 +393,7 @@ enum Builtin {
     Print,
     IntToString,
     Exit,
+    Terminate,
     IntToReal,
     RealFloor,
     Extern(usize),
@@ -427,6 +428,7 @@ fn builtin(name: &str) -> Option<Builtin> {
         "print" => Builtin::Print,
         "Prim.intToString" => Builtin::IntToString,
         "Prim.exit" => Builtin::Exit,
+        "Prim.terminate" => Builtin::Terminate,
         "Prim.intToReal" => Builtin::IntToReal,
         "Prim.realFloor" => Builtin::RealFloor,
         "Prim.charToString" => Builtin::CharToString,
@@ -1766,6 +1768,7 @@ impl Lowerer<'_> {
             Builtin::Print => self.bind("", Op::Prim(Prim::Print, vec![argument])),
             Builtin::IntToString => self.bind("", Op::Prim(Prim::IntToString, vec![argument])),
             Builtin::Exit => self.bind("", Op::Prim(Prim::Exit, vec![argument])),
+            Builtin::Terminate => self.bind("", Op::Prim(Prim::Terminate, vec![argument])),
             Builtin::IntToReal => self.bind("", Op::Prim(Prim::IntToReal, vec![argument])),
             Builtin::RealFloor => self.bind("", Op::Prim(Prim::RealFloor, vec![argument])),
             Builtin::Extern(index) => {

@@ -14,6 +14,7 @@ unsafe extern "C" {
     fn fflush(stream: *mut c_void) -> c_int;
     fn fprintf(stream: *mut c_void, format: *const c_char, ...) -> c_int;
     fn exit(status: c_int) -> !;
+    fn _Exit(status: c_int) -> !;
     #[cfg_attr(target_vendor = "apple", link_name = "__stdoutp")]
     static mut stdout: *mut c_void;
     #[cfg_attr(target_vendor = "apple", link_name = "__stderrp")]
@@ -199,6 +200,11 @@ pub unsafe extern "C" fn nassau_exit(status: i64) {
         fflush(stdout);
         exit(((status >> 1) & 0xff) as c_int);
     }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nassau_terminate(status: i64) {
+    unsafe { _Exit(((status >> 1) & 0xff) as c_int) }
 }
 
 #[unsafe(no_mangle)]

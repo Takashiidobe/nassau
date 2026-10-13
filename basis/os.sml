@@ -38,6 +38,20 @@ sig
   val toUnixPath : string -> string
 end
 
+signature OS_PROCESS =
+sig
+  type status
+  val success : status
+  val failure : status
+  val isSuccess : status -> bool
+  val system : string -> status
+  val atExit : (unit -> unit) -> unit
+  val exit : status -> 'a
+  val terminate : status -> 'a
+  val getEnv : string -> string option
+  val sleep : Time.time -> unit
+end
+
 structure OS =
 struct
   type syserror = int
@@ -84,34 +98,28 @@ struct
 
   structure Process :>
   sig
-    type status
-    val success: status
-    val failure: status
-    val isSuccess: status -> bool
-    val system: string -> status
-    val atExit: (unit -> unit) -> unit
-    val exit: status -> 'a
-    val terminate: status -> 'a
-    val getEnv: string -> string option
-    val sleep: Time.time -> unit
+    include OS_PROCESS
     val runAtExit: unit -> unit
+    val addCleanup: (unit -> unit) -> unit
   end =
   struct
     type status = int
 
     val hooks : (unit -> unit) list ref = ref []
+    val cleanups : (unit -> unit) list ref = ref []
+    val exiting = ref false
 
-    fun atExit f = hooks := f :: !hooks
+    fun atExit f = if !exiting then () else hooks := f :: !hooks
 
-    fun runAtExit () =
-      let
-        val pending = !hooks
-        fun run [] = ()
-          | run (f :: rest) = ((f ()) handle _ => (); run rest)
-      in
-        hooks := [];
-        run pending
-      end
+    fun addCleanup f = cleanups := f :: !cleanups
+
+    fun drain actions =
+      case !actions of
+        [] => ()
+      | f :: rest =>
+          (actions := rest; (f () handle _ => ()); drain actions)
+
+    fun runAtExit () = (exiting := true; drain hooks; drain cleanups)
 
     fun getEnv name =
       let val value = Prim.osGetenv name
@@ -129,7 +137,7 @@ struct
 
     fun exit status = (runAtExit (); Prim.exit status)
 
-    fun terminate status = Prim.exit status
+    fun terminate status = Prim.terminate status
 
     fun sleep time = Prim.osSleep (Time.toReal time)
   end

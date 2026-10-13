@@ -619,6 +619,7 @@ impl Infer {
             arrow(tuple(vec![vector(v[0].clone()), int()]), v[0].clone())
         });
         self.builtin("Prim.exit", false, 1, |v| arrow(int(), v[0].clone()));
+        self.builtin("Prim.terminate", false, 1, |v| arrow(int(), v[0].clone()));
         for (name, arity) in [("order", 0), ("list", 1), ("option", 1), ("ref", 1)] {
             self.types.push((
                 name.to_string(),

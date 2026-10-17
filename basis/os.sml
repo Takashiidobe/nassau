@@ -332,6 +332,9 @@ struct
     val fullPath : string -> string
     val realPath : string -> string
     val tmpName : unit -> string
+    eqtype file_id
+    val fileId : string -> file_id
+    val compare : file_id * file_id -> order
   end =
   struct
     type dirstream = int
@@ -381,6 +384,10 @@ struct
     fun fullPath path = textResult (Prim.osFullPath path)
     fun tmpName () = textResult (Prim.osTmpName ())
 
+    type file_id = string
+
+    fun fileId path = textResult (Prim.osFileId path)
+    fun compare (a, b) = String.compare (a, b)
     fun realPath path =
       let val full = fullPath path
       in

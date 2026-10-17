@@ -305,6 +305,26 @@ fn canonical(path: &str) -> io::Result<String> {
     Ok(format!("/{}", parts.join("/")))
 }
 
+#[cfg(unix)]
+fn identity(meta: &std::fs::Metadata) -> (u64, u64) {
+    use std::os::unix::fs::MetadataExt;
+    (meta.dev(), meta.ino())
+}
+
+#[cfg(target_os = "wasi")]
+fn identity(meta: &std::fs::Metadata) -> (u64, u64) {
+    use std::os::wasi::fs::MetadataExt;
+    (meta.dev(), meta.ino())
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nassau_os_file_id(path: i64) -> i64 {
+    text_result(std::fs::metadata(unsafe { text(path) }).map(|meta| {
+        let (device, inode) = identity(&meta);
+        format!("{device:016x}{inode:016x}")
+    }))
+}
+
 static TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[unsafe(no_mangle)]

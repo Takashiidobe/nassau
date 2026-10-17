@@ -21,6 +21,7 @@ const FDFLAGS_APPEND = 1;
 
 const ROOT_FD = 3;
 
+let nextNodeId = 1n;
 const nowNanoseconds = () => BigInt(Math.round(Date.now() * 1e6));
 const FSTFLAGS_MTIM = 4;
 const FSTFLAGS_MTIM_NOW = 8;
@@ -30,6 +31,7 @@ class Directory {
     this.entries = new Map();
     this.parent = parent ?? this;
     this.mtime = nowNanoseconds();
+    this.id = nextNodeId++;
   }
 }
 
@@ -38,6 +40,7 @@ class File {
     this.data = data;
     this.size = data.length;
     this.mtime = nowNanoseconds();
+    this.id = nextNodeId++;
   }
 
   write(offset, bytes) {
@@ -136,6 +139,7 @@ export class Wasi {
     const filestat = (address, node) => {
       const data = view();
       for (let offset = 0; offset < 64; offset += 8) data.setBigUint64(address + offset, 0n, true);
+      data.setBigUint64(address + 8, node.id, true);
       data.setUint8(address + 16, node instanceof Directory ? FILETYPE_DIRECTORY : FILETYPE_REGULAR_FILE);
       data.setBigUint64(address + 24, 1n, true);
       data.setBigUint64(address + 32, BigInt(node instanceof File ? node.size : 0), true);

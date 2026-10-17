@@ -44,6 +44,13 @@ val _ = attempt "full path missing" (fn () => ignore (OS.FileSys.fullPath first)
 val _ = show "is link" (bool (OS.FileSys.isLink second))
 val _ = attempt "read link file" (fn () => ignore (OS.FileSys.readLink second))
 
+val idA = OS.FileSys.fileId second
+val _ = show "id same" (bool (OS.FileSys.compare (idA, OS.FileSys.fileId (root ^ "/../" ^ root ^ "/b.txt")) = EQUAL))
+val _ = show "id dir differs" (bool (OS.FileSys.compare (idA, OS.FileSys.fileId root) <> EQUAL))
+val _ = show "id antisym"
+  (bool (OS.FileSys.compare (idA, OS.FileSys.fileId root) = (case OS.FileSys.compare (OS.FileSys.fileId root, idA) of LESS => GREATER | GREATER => LESS | EQUAL => EQUAL)))
+val _ = attempt "id missing" (fn () => ignore (OS.FileSys.fileId first))
+
 val name = OS.FileSys.tmpName ()
 val _ = show "tmp exists" (bool (OS.FileSys.access (name, [])))
 val _ = OS.FileSys.remove name
@@ -69,4 +76,8 @@ val _ = OS.FileSys.rmDir root
 (* CHECK-STDOUT-NEXT: full path missing: No such file or directory *)
 (* CHECK-STDOUT-NEXT: is link: false *)
 (* CHECK-STDOUT-NEXT: read link file: Invalid argument *)
+(* CHECK-STDOUT-NEXT: id same: true *)
+(* CHECK-STDOUT-NEXT: id dir differs: true *)
+(* CHECK-STDOUT-NEXT: id antisym: true *)
+(* CHECK-STDOUT-NEXT: id missing: No such file or directory *)
 (* CHECK-STDOUT-NEXT: tmp exists: true *)

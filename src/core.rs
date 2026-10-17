@@ -113,6 +113,7 @@ pub const EXTERN_FNS: &[ExternFn] = &[
     external("Prim.osIsLink", "nassau_os_is_link", &[STRING], INT),
     external("Prim.osReadLink", "nassau_os_read_link", &[STRING], STRING),
     external("Prim.osFullPath", "nassau_os_full_path", &[STRING], STRING),
+    external("Prim.osFileId", "nassau_os_file_id", &[STRING], STRING),
     external("Prim.osTmpName", "nassau_os_tmp_name", &[], STRING),
     external("Prim.osSystem", "nassau_os_system", &[STRING], INT),
     external("Prim.osSleep", "nassau_os_sleep", &[REAL], ExternTy::Unit),

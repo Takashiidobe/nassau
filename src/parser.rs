@@ -1334,7 +1334,36 @@ impl Parser {
                 }
                 "include" => {
                     self.index += 1;
-                    SpecKind::Include(self.parse_sigexp()?)
+                    let first = self.parse_sigexp()?;
+                    if matches!(first.value, SigExpKind::Name(_))
+                        && matches!(self.peek(), Some(TokenKind::Identifier(_)))
+                    {
+                        let mut includes = vec![Span::new(
+                            first.start.clone(),
+                            first.end.clone(),
+                            SpecKind::Include(first),
+                        )];
+                        while let Some(TokenKind::Identifier(name)) = self.peek().cloned() {
+                            let token = self.tokens[self.index].clone();
+                            self.index += 1;
+                            includes.push(Span::new(
+                                token.start.clone(),
+                                token.end.clone(),
+                                SpecKind::Include(Span::new(
+                                    token.start,
+                                    token.end,
+                                    SigExpKind::Name(name),
+                                )),
+                            ));
+                        }
+                        SpecKind::Include(Span::new(
+                            start.clone(),
+                            self.previous_end(),
+                            SigExpKind::Sig(includes),
+                        ))
+                    } else {
+                        SpecKind::Include(first)
+                    }
                 }
                 "sharing" => {
                     self.index += 1;
@@ -1890,11 +1919,18 @@ impl Parser {
                 let Some(operator) = self.tokens.get(self.index).cloned() else {
                     return Err(self.error(ParseErrorKind::Expect("an operator after op".into())));
                 };
-                let Some(name) = Self::token_name(&operator.value) else {
+                let Some(mut name) = Self::token_name(&operator.value) else {
                     return Err(self.error(ParseErrorKind::Expect("an operator after op".into())));
                 };
                 self.index += 1;
                 end = operator.end;
+                while self.at(&TokenKind::Dot)
+                    && let Some(part) = self.peek_at(1).and_then(Self::token_name)
+                {
+                    name = format!("{name}.{part}");
+                    self.index += 2;
+                    end = self.previous_end();
+                }
                 if OPERATORS_AS_FUNCTIONS.contains(&name.as_str()) {
                     return Ok(Self::operator_function(name, start, end));
                 }
@@ -2140,7 +2176,9 @@ impl Parser {
                 | TokenKind::LeftBracket
                 | TokenKind::LeftBrace,
             ) => true,
-            Some(TokenKind::Identifier(name)) => !self.fixity.contains_key(name),
+            Some(TokenKind::Identifier(name) | TokenKind::SymbolicIdentifier(name)) => {
+                !self.fixity.contains_key(name)
+            }
             Some(TokenKind::Reserved(word)) => word == "op",
             _ => false,
         }
@@ -2154,7 +2192,7 @@ impl Parser {
         let start = token.start.clone();
         let kind = match token.value {
             TokenKind::Underscore => PatKind::Wildcard,
-            TokenKind::Identifier(mut name) => {
+            TokenKind::Identifier(mut name) | TokenKind::SymbolicIdentifier(mut name) => {
                 if self.fixity.contains_key(&name) {
                     self.index -= 1;
                     return Err(self.error(ParseErrorKind::Expect(
@@ -2170,10 +2208,16 @@ impl Parser {
                 PatKind::Variable(name)
             }
             TokenKind::Reserved(word) if word == "op" => {
-                let Some(name) = self.peek().and_then(Self::token_name) else {
+                let Some(mut name) = self.peek().and_then(Self::token_name) else {
                     return Err(self.error(ParseErrorKind::Expect("a name after op".into())));
                 };
                 self.index += 1;
+                while self.at(&TokenKind::Dot)
+                    && let Some(part) = self.peek_at(1).and_then(Self::token_name)
+                {
+                    name = format!("{name}.{part}");
+                    self.index += 2;
+                }
                 PatKind::Variable(name)
             }
             TokenKind::Integer(value) => PatKind::Integer(

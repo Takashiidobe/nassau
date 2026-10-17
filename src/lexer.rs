@@ -206,6 +206,23 @@ impl<'a> Lexer<'a> {
                     Some('r') => value.push('\r'),
                     Some('"') => value.push('"'),
                     Some('\\') => value.push('\\'),
+                    Some('u') => {
+                        let mut code = 0;
+                        for _ in 0..4 {
+                            let digit =
+                                self.bump().and_then(|ch| ch.to_digit(16)).ok_or_else(|| {
+                                    self.error(
+                                        start.clone(),
+                                        LexerErrorKind::UnsupportedStringEscape,
+                                    )
+                                })?;
+                            code = code * 16 + digit;
+                        }
+                        let byte = u8::try_from(code).map_err(|_| {
+                            self.error(start.clone(), LexerErrorKind::UnsupportedStringEscape)
+                        })?;
+                        value.push(char::from(byte));
+                    }
                     Some('^') => match self.bump() {
                         Some(ch @ '@'..='_') => {
                             value.push(char::from_u32(ch as u32 & 0x1f).unwrap())

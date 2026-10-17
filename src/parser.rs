@@ -815,7 +815,25 @@ impl Parser {
             }
             _ => {}
         }
+        self.distinct_names(parameters.iter().map(String::as_str), "type variable")?;
         Ok(parameters)
+    }
+
+    fn distinct_names<'a>(
+        &self,
+        names: impl Iterator<Item = &'a str>,
+        what: &'static str,
+    ) -> Result<(), ParseError> {
+        let mut seen = std::collections::HashSet::new();
+        for name in names {
+            if !seen.insert(name) {
+                return Err(self.error(ParseErrorKind::Duplicate {
+                    what,
+                    name: name.into(),
+                }));
+            }
+        }
+        Ok(())
     }
 
     fn parse_value_tyvars(&mut self) -> Result<Vec<String>, ParseError> {
@@ -826,10 +844,6 @@ impl Parser {
             return Ok(Vec::new());
         }
         let variables = self.parse_type_parameters()?;
-        let mut seen = std::collections::HashSet::new();
-        if variables.iter().any(|name| !seen.insert(name)) {
-            return Err(self.error(ParseErrorKind::Expect("distinct type variables".into())));
-        }
         Ok(variables)
     }
 
@@ -978,6 +992,7 @@ impl Parser {
             }
             bindings.push(StructBinding { name, body });
             if !self.at_reserved("and") {
+                self.distinct_names(bindings.iter().map(|b| b.name.as_str()), "structure name")?;
                 return Ok(DeclKind::Structure(bindings));
             }
             self.index += 1;
@@ -1149,6 +1164,7 @@ impl Parser {
                 body,
             });
             if !self.at_reserved("and") {
+                self.distinct_names(bindings.iter().map(|b| b.name.as_str()), "functor name")?;
                 return Ok(DeclKind::Functor(bindings));
             }
             self.index += 1;
@@ -1167,6 +1183,7 @@ impl Parser {
             let body = self.parse_sigexp()?;
             bindings.push(SigBinding { name, body });
             if !self.at_reserved("and") {
+                self.distinct_names(bindings.iter().map(|b| b.name.as_str()), "signature name")?;
                 return Ok(DeclKind::Signature(bindings));
             }
             self.index += 1;
@@ -2003,6 +2020,10 @@ impl Parser {
                     )?;
                 }
                 end = self.previous_end();
+                self.distinct_names(
+                    fields.iter().map(|(label, _)| label.as_str()),
+                    "record label",
+                )?;
                 if fields.is_empty() {
                     ExprKind::Unit
                 } else {
@@ -2363,6 +2384,10 @@ impl Parser {
                 ParseErrorKind::Expect("} after record pattern".into()),
             )?;
         }
+        self.distinct_names(
+            fields.iter().map(|(label, _)| label.as_str()),
+            "record label",
+        )?;
         Ok(if fields.is_empty() && !flexible {
             PatKind::Unit
         } else {
@@ -2464,6 +2489,10 @@ impl Parser {
                         ParseErrorKind::Expect("} after record type".into()),
                     )?;
                 }
+                self.distinct_names(
+                    fields.iter().map(|(label, _)| label.as_str()),
+                    "record label",
+                )?;
                 Span::new(start.clone(), self.previous_end(), TyKind::Record(fields))
             }
             _ => {

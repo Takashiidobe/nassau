@@ -49,6 +49,8 @@ pub type LexerError = Span<LexerErrorKind>;
 
 #[derive(Debug, ThisError)]
 pub enum ParseErrorKind {
+    #[error("duplicate {what} '{name}'")]
+    Duplicate { what: &'static str, name: String },
     #[error("expected {0}")]
     Expect(String),
     #[error("int constant too large")]

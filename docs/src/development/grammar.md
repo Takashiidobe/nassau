@@ -126,12 +126,18 @@ or-patterns are not accepted.
 
 In source files:
 
-- Duplicate names in a binding group or pattern are errors.
+- Duplicate names in a binding group or pattern are errors. Record labels and
+  type-variable sequences must also be distinct. Signature specifications may
+  reuse a name in different namespaces, but cannot repeat it in one namespace,
+  including through `include`.
 - Redundant rules are errors.
 - Non-exhaustive `fun` and `case` matches are warnings.
 
-The REPL doesn't run these checks. At run time a failed `fun` or `case` match
-raises `Match`, and a failed `val` pattern raises `Bind`.
+The REPL omits file-only duplicate-pattern and match checks. Parsing still
+rejects duplicate record labels, type-variable sequences and module
+binding-group names, and signature elaboration rejects repeated specification
+names. At run time a failed `fun` or `case` match raises `Match`, and a failed
+`val` pattern raises `Bind`.
 
 ## Declarations and types
 

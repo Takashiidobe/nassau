@@ -455,9 +455,55 @@ impl Infer {
     fn elab_specs(&mut self, specs: &[Spec], base: Mark, items: &mut Vec<SigItem>) -> Res<()> {
         for spec in specs {
             self.elab_spec(spec, items)?;
+            Self::distinct_specifications(items, spec.source_span())?;
             self.release(base);
             let env = self.sig_env(items);
             self.extend_env(&env);
+        }
+        Ok(())
+    }
+
+    fn distinct_specifications(items: &[SigItem], span: SourceSpan) -> Res<()> {
+        let mut values = std::collections::HashSet::new();
+        let mut types = std::collections::HashSet::new();
+        let mut structures = std::collections::HashSet::new();
+        for item in items {
+            let (names, seen, what) = match item {
+                SigItem::Val { name, .. } | SigItem::Exception { name, .. } => {
+                    (vec![name], &mut values, "value name")
+                }
+                SigItem::Type { name, .. } => (vec![name], &mut types, "type name"),
+                SigItem::Datatype {
+                    name, constructors, ..
+                } => {
+                    if !types.insert(name) {
+                        return Err((
+                            TypeError::DuplicateSpecification {
+                                what: "type name",
+                                name: name.clone(),
+                            },
+                            span,
+                        ));
+                    }
+                    (
+                        constructors.iter().map(|(name, _)| name).collect(),
+                        &mut values,
+                        "constructor name",
+                    )
+                }
+                SigItem::Struct { name, .. } => (vec![name], &mut structures, "structure name"),
+            };
+            for name in names {
+                if !seen.insert(name) {
+                    return Err((
+                        TypeError::DuplicateSpecification {
+                            what,
+                            name: name.clone(),
+                        },
+                        span,
+                    ));
+                }
+            }
         }
         Ok(())
     }

@@ -60,6 +60,8 @@ pub enum TypeError {
     UnboundTypeVariable(String),
     #[error("explicit type variable cannot be generalized")]
     UngeneralizedTypeVariable,
+    #[error("duplicate {what} '{name}' in signature")]
+    DuplicateSpecification { what: &'static str, name: String },
     #[error("unbound structure '{0}'")]
     UnboundStructure(String),
     #[error("unbound signature '{0}'")]

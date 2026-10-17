@@ -51,9 +51,12 @@ and code generation.
 Integers outside the 31-bit range are rejected, and there are no
 arbitrary-precision integers. The uppercase `0wX` spelling is not handled.
 
-A file holds declarations, optionally separated by semicolons. A file containing
-only an integer is a legacy shortcut for the exit status. The REPL takes
-semicolon-terminated declarations and expressions; an expression binds to `it`.
+A file holds declarations, optionally separated by semicolons, and expressions
+terminated by semicolons. Each top-level expression binds its result to `it`.
+Poly/ML also accepts an implicit final semicolon; Nassau requires it in files. A
+file containing only an integer is a legacy shortcut for the exit status. The
+REPL takes semicolon-terminated declarations and expressions; an expression
+binds to `it`.
 
 ## Expressions
 
@@ -111,7 +114,10 @@ p ::= _ | name | op name | non-real literal
 
 Record patterns include `{x = p, y = q}`, puns like `{x, y}`, and `...` for
 unlisted fields, as in `{x = p, ...}`. Type checking must resolve the full
-record shape, or it is an error. `#x` selectors have the same requirement.
+record shape by the end of the declaration that generalizes the binding, or it
+is an error. Later declarations do not resolve an earlier flexible record. This
+follows SML/NJ; Poly/ML permits some later uses. `#x` selectors have the same
+requirement.
 
 Patterns work in `val`, `fun`, `fn`, `case`, and `handle`. Constructors include
 `::`, `SOME`, user datatypes, exceptions, and `ref`. Whether a name is a

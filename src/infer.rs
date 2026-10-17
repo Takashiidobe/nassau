@@ -1416,6 +1416,9 @@ impl Infer {
                 Ok(arrow(from, to))
             }
             TyKind::Record(fields) => {
+                if fields.is_empty() {
+                    return Ok(con("unit"));
+                }
                 let mut converted = Vec::new();
                 for (label, field) in fields {
                     converted.push((label.clone(), self.convert(field, variables)?));

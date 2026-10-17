@@ -1618,6 +1618,23 @@ impl Lowerer<'_> {
     }
 
     fn infix(&mut self, name: &str, lhs: &Expr, rhs: &Expr, expr: &Expr) -> Res<Atom> {
+        let ty = self.ty(expr).cloned();
+        let constructor = self
+            .exception(name, ty.as_ref())
+            .map(|(identity, _)| Test::Exception {
+                identity,
+                carries: true,
+            })
+            .or_else(|| {
+                self.constructor(name, ty.as_ref())
+                    .filter(|(_, carries)| *carries)
+                    .map(|(test, _)| test)
+            });
+        if let Some(test) = constructor {
+            let fields = vec![self.value(lhs)?, self.value(rhs)?];
+            let pair = self.bind("", Op::Record(fields));
+            return Ok(self.construct(&test, pair));
+        }
         let prim = match name {
             "::" => None,
             "^" => Some(Prim::Concat),

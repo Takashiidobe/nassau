@@ -331,13 +331,43 @@ impl Infer {
 
     fn elab_sigexp(&mut self, sig: &SigExp) -> Res<Sig> {
         match &sig.value {
-            SigExpKind::Name(name) => self
-                .signatures
-                .iter()
-                .rev()
-                .find(|(known, _)| known == name)
-                .map(|(_, sig)| sig.clone())
-                .ok_or_else(|| (TypeError::UnboundSignature(name.clone()), sig.source_span())),
+            SigExpKind::Name(name) => {
+                let mut found = self
+                    .signatures
+                    .iter()
+                    .rev()
+                    .find(|(known, _)| known == name)
+                    .map(|(_, sig)| sig.clone())
+                    .ok_or_else(|| {
+                        (TypeError::UnboundSignature(name.clone()), sig.source_span())
+                    })?;
+                let mut real = Realization::new();
+                self.fresh_signature_names(&found.items, &mut real);
+                self.apply_realization(&mut found.items, &real);
+                Self::rename_signature_names(&mut found.items, &real);
+                for (old, (_, body)) in &real {
+                    let Type::Con(fresh, _) = body else {
+                        unreachable!()
+                    };
+                    if let Some(info) = self.datatypes.get(old).cloned() {
+                        let constructors = info
+                            .constructors
+                            .iter()
+                            .map(|(name, scheme)| {
+                                (name.clone(), self.realize_scheme(scheme, &real))
+                            })
+                            .collect();
+                        self.datatypes.insert(
+                            fresh.stamp,
+                            DataInfo {
+                                constructors,
+                                ..info
+                            },
+                        );
+                    }
+                }
+                Ok(found)
+            }
             SigExpKind::Sig(specs) => {
                 let base = self.mark();
                 let mut items = Vec::new();
@@ -352,6 +382,70 @@ impl Infer {
                     self.refine(&mut sig_inner, refinement, sig.source_span())?;
                 }
                 Ok(sig_inner)
+            }
+        }
+    }
+
+    fn fresh_signature_names(&mut self, items: &[SigItem], real: &mut Realization) {
+        for item in items {
+            let (tycon, arity) = match item {
+                SigItem::Type {
+                    tycon,
+                    params,
+                    definition: None,
+                    ..
+                } => (tycon, params.len()),
+                SigItem::Datatype {
+                    tycon,
+                    arity,
+                    copy: false,
+                    ..
+                } => (tycon, *arity),
+                SigItem::Struct { sig, .. } => {
+                    self.fresh_signature_names(&sig.items, real);
+                    continue;
+                }
+                _ => continue,
+            };
+            if real.contains_key(&tycon.stamp) {
+                continue;
+            }
+            self.next_stamp += 1;
+            let fresh = TyCon {
+                name: tycon.name.clone(),
+                stamp: self.next_stamp,
+            };
+            let params: Vec<usize> = (0..arity)
+                .map(|_| {
+                    let Type::Var(id) = self.fresh() else {
+                        unreachable!()
+                    };
+                    id
+                })
+                .collect();
+            let args = params.iter().map(|id| Type::Var(*id)).collect();
+            real.insert(tycon.stamp, (params, Type::Con(fresh, args)));
+        }
+    }
+
+    fn rename_signature_names(items: &mut [SigItem], real: &Realization) {
+        for item in items {
+            match item {
+                SigItem::Type {
+                    tycon, definition, ..
+                } => {
+                    if let Some((_, Type::Con(fresh, _))) = real.get(&tycon.stamp) {
+                        *tycon = fresh.clone();
+                        *definition = None;
+                    }
+                }
+                SigItem::Datatype { tycon, .. } => {
+                    if let Some((_, Type::Con(fresh, _))) = real.get(&tycon.stamp) {
+                        *tycon = fresh.clone();
+                    }
+                }
+                SigItem::Struct { sig, .. } => Self::rename_signature_names(&mut sig.items, real),
+                _ => {}
             }
         }
     }
@@ -579,7 +673,20 @@ impl Infer {
                 definition,
                 ..
             } => match definition {
-                Some(body) => Some((params, body, None, equality)),
+                Some(body) => {
+                    let flexible = match &body {
+                        Type::Con(target, args)
+                            if args.iter().zip(&params).all(
+                                |(arg, param)| matches!(arg, Type::Var(id) if id == param),
+                            ) && args.len() == params.len()
+                                && Self::abstract_signature_type(items, target.stamp) =>
+                        {
+                            Some(target.stamp)
+                        }
+                        _ => None,
+                    };
+                    Some((params, body, flexible, equality))
+                }
                 None => {
                     let args = params.iter().map(|id| Type::Var(*id)).collect();
                     Some((
@@ -602,6 +709,18 @@ impl Infer {
             }
             _ => None,
         }
+    }
+
+    fn abstract_signature_type(items: &[SigItem], stamp: usize) -> bool {
+        items.iter().any(|item| match item {
+            SigItem::Type {
+                tycon,
+                definition: None,
+                ..
+            } => tycon.stamp == stamp,
+            SigItem::Struct { sig, .. } => Self::abstract_signature_type(&sig.items, stamp),
+            _ => false,
+        })
     }
 
     /// `sig ... end where type path = ty`.
@@ -666,7 +785,7 @@ impl Infer {
             .iter()
             .position(|(_, _, stamp, _)| stamp.is_none())
             .unwrap_or(0);
-        let (canon_params, canon_body, ..) = closures[canonical].clone();
+        let (canon_params, canon_body, canon_stamp, _) = closures[canonical].clone();
         let mut real = Realization::new();
         for (index, (params, body, stamp, _)) in closures.iter().enumerate() {
             if params.len() != canon_params.len() {
@@ -683,6 +802,9 @@ impl Infer {
             }
             match stamp {
                 Some(stamp) => {
+                    if Some(*stamp) == canon_stamp {
+                        continue;
+                    }
                     real.insert(*stamp, (canon_params.clone(), canon_body.clone()));
                 }
                 None => {
@@ -879,12 +1001,42 @@ impl Infer {
         span: SourceSpan,
     ) -> Res<StructEnv> {
         let mut real = Realization::new();
+        self.collect_realizations(env, &sig.items, &mut real);
         self.realize_types(env, &sig.items, &mut real, span)?;
         let mut sealed = real.clone();
         if opaque {
             self.seal(&sig.items, &real, &mut sealed);
         }
         self.conform(env, &sig.items, &real, &sealed, opaque, span)
+    }
+
+    fn collect_realizations(&mut self, env: &StructEnv, items: &[SigItem], real: &mut Realization) {
+        for item in items {
+            match item {
+                SigItem::Type {
+                    name,
+                    tycon,
+                    definition: None,
+                    ..
+                }
+                | SigItem::Datatype {
+                    name,
+                    tycon,
+                    copy: false,
+                    ..
+                } => {
+                    if let Some(entry) = latest_type(env, name) {
+                        real.insert(tycon.stamp, self.actual_type(&entry));
+                    }
+                }
+                SigItem::Struct { name, sig } => {
+                    if let Some(inner) = latest_struct(env, name) {
+                        self.collect_realizations(&inner, &sig.items, real);
+                    }
+                }
+                _ => {}
+            }
+        }
     }
 
     /// Finds what each flexible type of the specifications is in `env`, and

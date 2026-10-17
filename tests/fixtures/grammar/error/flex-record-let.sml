@@ -1,0 +1,6 @@
+(* POLYML-SKIP: record shape must be resolved at the generalizing declaration; Poly/ML permits later uses. *)
+(* SML'97 grammar, pattern: flex record let (nassau-ugc.21). *)
+fun pi n = print (Int.toString n ^ "\n")
+val _ = pi (let fun f {a, ...} = a in f {a = 1, b = 2} end)
+(* CHECK-ERR: × unresolved flex record (can't tell what fields there are besides #a) *)
+(* CHECK-ERR: :4:17] *)

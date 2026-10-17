@@ -465,10 +465,15 @@ impl Parser {
             }
             let declaration = if self.starts_decl() {
                 self.parse_decl()?
-            } else if self.allow_implicit_val {
+            } else {
                 let start = self.tokens[self.index].start.clone();
                 let expr = self.parse_expr()?;
                 let end = expr.end.clone();
+                if !self.allow_implicit_val && !self.at(&TokenKind::Semicolon) {
+                    return Err(self.error(ParseErrorKind::Expect(
+                        "; after a top-level expression".into(),
+                    )));
+                }
                 let pattern = Span::new(start.clone(), end.clone(), PatKind::Variable("it".into()));
                 Span::new(
                     start,
@@ -479,8 +484,6 @@ impl Parser {
                         bindings: vec![(pattern, expr)],
                     },
                 )
-            } else {
-                return Err(self.error(ParseErrorKind::Expect("a declaration".into())));
             };
             statements.push(Self::lower_statement(declaration));
         }

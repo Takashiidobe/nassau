@@ -36,25 +36,25 @@ the move needed to promote the fixture. Regenerate expectations with
 
 ## Find parser and static evidence
 
-| Area                                                       | Evidence                                                                                                                                   | Remaining limitation                                            |
-| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------- |
-| Constants, escapes, nested comments, longest tokens        | `lexer/`, `lexical-strings.sml`, `lexical-numbers.sml`, `grammar/con/`                                                                     | Character set is 8-bit; Unicode escapes above 255 are rejected. |
-| Alphanumeric, symbolic, qualified and `op` identifiers     | `grammar/id/`, `grammar/exp/op-longid.sml`, `grammar/pat/op-longid.sml`                                                                    | Protected constructor names: .24.                               |
-| Fixity, precedence, associativity and local scope          | `parser/valid-operators.sml`, `grammar/dec/`, `tests/repl/fixity.sml`                                                                      | Infix constructor expressions: .20.                             |
-| Atomic, record, application, typed and control expressions | `grammar/exp/`, `parser/`, `types/valid-control.sml`                                                                                       | Empty-record type: .18.                                         |
-| Matches, constructor status, typed and layered patterns    | `grammar/pat/`, `patterns/`, `types/error/constructor-pattern-argument.sml`                                                                | Constructor before `as`: .24; flexible-record scope: .21.       |
-| Arrow, tuple, record, alias and constructed types          | `grammar/typ/`, `types/error/type-arguments.sml`, `types/error/occurs-check.sml`                                                           | Duplicate labels and type parameters: .23.                      |
-| Simultaneous and recursive value bindings                  | `conformance/dynamic/binding-scope.sml`, `conformance/error/val-rec-non-fn.sml`                                                            | Implicit annotation scope: .25.                                 |
-| Explicit type-variable sequences and equality variables    | `grammar/dec/*explicit-tyvar*.sml`, `types/explicit-scopes.sml`, `types/explicit-and.sml`, `types/error/explicit-*.sml`                    | Nested explicit shadowing follows Poly/ML.                      |
-| Polymorphism, equality, overloading, value restriction     | `types/valid-polymorphism.sml`, `types/valid-value-restriction.sml`, `types/error/weak-type-conflict.sml`, `types/error/real-equality.sml` | Implicit annotation rigidity: .25.                              |
-| Types, datatypes, replication, `withtype`, `abstype`       | `datatypes/`, `types/valid-abstype.sml`, `types/error/abstype-hidden-constructor.sml`                                                      | Escaping local datatype: .26.                                   |
-| Exception arguments, replication and handler types         | `types/error/exception-type-variable.sml`, `types/error/handler-result-type.sml`, `exceptions/`                                            | Protected names: .24.                                           |
-| Duplicate bindings, constructors and pattern variables     | `conformance/error/duplicate-*.sml`, `conformance/error/pattern-duplicate-variable.sml`                                                    | Duplicate labels, parameters and module groups: .23.            |
-| Structure aliases, `open`, local structure scope           | `modules/scopes-and-effects.sml`, `modules/valid-open.sml`                                                                                 | Duplicate structure groups: .23.                                |
-| Signatures, enrichment, transparent/opaque matching        | `modules/valid-signature-matching.sml`, `conformance/error/opaque-identity.sml`, `conformance/error/signature-value-status.sml`            | Duplicate specifications: .23; substructure sharing: .19.       |
-| Include, refinement, type and structure sharing            | `grammar/spec/include-multiple.sml`, `modules/valid-where-type.sml`, `modules/valid-sharing.sml`                                           | Substructure sharing: .19.                                      |
-| Functor arguments, matching and generative identities      | `functors/`, `types/functors/error/`, `conformance/error/functor-generativity.sml`                                                         | Duplicate functor groups: .23.                                  |
-| Programs and persistent top-level state                    | `grammar/prog/`, `tests/repl/phrases.sml`, `tests/repl/modules.sml`                                                                        | File-level expression programs: .17.                            |
+| Area                                                       | Evidence                                                                                                                                   | Remaining limitation                                                                 |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ |
+| Constants, escapes, nested comments, longest tokens        | `lexer/`, `lexical-strings.sml`, `lexical-numbers.sml`, `grammar/con/`                                                                     | Character set is 8-bit; Unicode escapes above 255 are rejected.                      |
+| Alphanumeric, symbolic, qualified and `op` identifiers     | `grammar/id/`, `grammar/exp/op-longid.sml`, `grammar/pat/op-longid.sml`                                                                    | Protected constructor names: .24.                                                    |
+| Fixity, precedence, associativity and local scope          | `parser/valid-operators.sml`, `grammar/dec/`, `tests/repl/fixity.sml`                                                                      | Infix constructor expressions and exceptions are supported.                          |
+| Atomic, record, application, typed and control expressions | `grammar/exp/`, `parser/`, `types/valid-control.sml`                                                                                       | The empty record type is unit.                                                       |
+| Matches, constructor status, typed and layered patterns    | `grammar/pat/`, `patterns/`, `types/error/constructor-pattern-argument.sml`                                                                | Constructor before `as`: .24; record shape resolves at the generalizing declaration. |
+| Arrow, tuple, record, alias and constructed types          | `grammar/typ/`, `types/error/type-arguments.sml`, `types/error/occurs-check.sml`                                                           | Duplicate labels and type parameters: .23.                                           |
+| Simultaneous and recursive value bindings                  | `conformance/dynamic/binding-scope.sml`, `conformance/error/val-rec-non-fn.sml`                                                            | Implicit annotation scope: .25.                                                      |
+| Explicit type-variable sequences and equality variables    | `grammar/dec/*explicit-tyvar*.sml`, `types/explicit-scopes.sml`, `types/explicit-and.sml`, `types/error/explicit-*.sml`                    | Nested explicit shadowing follows Poly/ML.                                           |
+| Polymorphism, equality, overloading, value restriction     | `types/valid-polymorphism.sml`, `types/valid-value-restriction.sml`, `types/error/weak-type-conflict.sml`, `types/error/real-equality.sml` | Implicit annotation rigidity: .25.                                                   |
+| Types, datatypes, replication, `withtype`, `abstype`       | `datatypes/`, `types/valid-abstype.sml`, `types/error/abstype-hidden-constructor.sml`                                                      | Escaping local datatype: .26.                                                        |
+| Exception arguments, replication and handler types         | `types/error/exception-type-variable.sml`, `types/error/handler-result-type.sml`, `exceptions/`                                            | Protected names: .24.                                                                |
+| Duplicate bindings, constructors and pattern variables     | `conformance/error/duplicate-*.sml`, `conformance/error/pattern-duplicate-variable.sml`                                                    | Duplicate labels, parameters and module groups: .23.                                 |
+| Structure aliases, `open`, local structure scope           | `modules/scopes-and-effects.sml`, `modules/valid-open.sml`                                                                                 | Duplicate structure groups: .23.                                                     |
+| Signatures, enrichment, transparent/opaque matching        | `modules/valid-signature-matching.sml`, `conformance/error/opaque-identity.sml`, `conformance/error/signature-value-status.sml`            | Duplicate specifications: .23.                                                       |
+| Include, refinement, type and structure sharing            | `grammar/spec/include-multiple.sml`, `modules/valid-where-type.sml`, `modules/valid-sharing.sml`                                           | Fresh signature names preserve sharing across nested substructures.                  |
+| Functor arguments, matching and generative identities      | `functors/`, `types/functors/error/`, `conformance/error/functor-generativity.sml`                                                         | Duplicate functor groups: .23.                                                       |
+| Programs and persistent top-level state                    | `grammar/prog/`, `tests/repl/phrases.sml`, `tests/repl/modules.sml`                                                                        | File expressions require a final semicolon and bind `it`.                            |
 
 ## Find dynamic evidence
 
@@ -78,11 +78,6 @@ its issue in its header.
 
 | Issue | Discrepancy                                                                                      | Fixture location                                                                                                      |
 | ----- | ------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
-| .17   | Top-level expression programs are rejected.                                                      | `grammar.unsupported/prog/`                                                                                           |
-| .18   | The empty record type does not unify with unit.                                                  | `grammar.unsupported/typ/`                                                                                            |
-| .19   | Matching signatures with sharing across substructures fails.                                     | `grammar.unsupported/spec/`                                                                                           |
-| .20   | User infix constructors lack expression code generation.                                         | `grammar.unsupported/exp/`                                                                                            |
-| .21   | Flexible records resolved only by later uses are rejected.                                       | `grammar.unsupported/pat/`                                                                                            |
 | .23   | Duplicate record labels, type parameters, specifications and module binding groups are accepted. | `conformance.unsupported/error/duplicate-*.sml`, `conformance.unsupported/error/module-duplicate-*.sml`               |
 | .24   | Protected names and layered constructor status are not enforced.                                 | `conformance.unsupported/error/rebind-*.sml`, `conformance.unsupported/error/layered-constructor.sml`                 |
 | .25   | Implicit annotation variables may specialize or receive the wrong scope.                         | `conformance.unsupported/error/implicit-tyvar-*.sml`, `conformance.unsupported/static/implicit-tyvar-inner-scope.sml` |
@@ -110,8 +105,12 @@ integer and word literals.
   `parser/exceptions/error/redundant-handler.sml` and `patterns/` for evidence.
   These diagnostic choices are separate from runtime `Match`/`Bind` behavior.
 - Flexible-record resolution currently ends at the generalizing declaration.
-  Poly/ML allows some later uses to fix the shape. This remains an undecided
-  policy under .21, not an unqualified conformance claim.
+  Poly/ML allows some later uses to fix the shape. This is the explicit policy
+  decided in `nassau-ugc.21`. The rejection fixtures
+  `grammar/error/flex-record-later-use.sml` and
+  `grammar/error/flex-record-let.sml` skip the Poly/ML oracle with this reason;
+  `grammar/pat/flex-record-declaration-scope.sml` exercises accepted constraints
+  inside the declaration. The REPL applies the same declaration boundary.
 - Higher-order functors, or-patterns and other language extensions are outside
   the SML'97 target. Optional Basis interfaces remain separately scoped by the
   local manual and Beads.

@@ -84,3 +84,5 @@
 ## License
 
 - [Third-party licenses](./third-party-licenses.md)
+
+- [Core conformance inventory](./development/conformance.md)

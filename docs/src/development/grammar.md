@@ -4,7 +4,8 @@ Nassau compiles core SML (functions, data, pattern matching, references,
 exceptions) and modules (structures, signatures, functors). This page lists what
 works today. The grammar sketches show accepted forms, not the full SML
 Definition grammar. See [architecture.md](architecture.md) for how these forms
-move through the compiler.
+move through the compiler. See the [conformance inventory](conformance.md) for
+fixture coverage and tracked language gaps.
 
 ## What works where
 
@@ -34,7 +35,8 @@ and code generation.
 - Type variables start with `'a`; equality type variables with `''a`.
 - Comments are `(* ... *)` and nest.
 - Strings use `"..."` and characters use `#"..."`. All standard escapes work,
-  including `\ddd`, `\^A`, and `\ ... \` gaps.
+  including `\ddd`, `\uXXXX`, `\^A`, and `\ ... \` gaps. Hexadecimal escapes
+  must fit the 8-bit character set.
 
 | Literal   | Examples                | Notes                                  |
 | --------- | ----------------------- | -------------------------------------- |
@@ -58,7 +60,7 @@ semicolon-terminated declarations and expressions; an expression binds to `it`.
 `e` is an expression, `p` a pattern, `t` a type.
 
 ```text
-e ::= literal | name | op name
+e ::= literal | name | op qualified-name
     | () | (e) | (e, e, ...) | {label = e, ...} | [e, ...]
     | #label | e e | e infix-name e | e : t
     | if e then e else e
@@ -128,8 +130,8 @@ raises `Match`, and a failed `val` pattern raises `Bind`.
 ## Declarations and types
 
 ```text
-declaration ::= val [rec] p = e [and ...]
-              | fun name p ... [: t] = e [| name p ... = e ...] [and ...]
+declaration ::= val type-parameters [rec] p = e [and ...]
+              | fun type-parameters name p ... [: t] = e [| name p ... = e ...] [and ...]
               | type type-parameters name = t [and ...]
               | datatype datatype-bindings [withtype type-bindings]
               | datatype name = datatype qualified-name
@@ -152,8 +154,10 @@ t ::= 'a | ''a | type-name | t type-name | (t, t, ...) type-name
 - `val rec` requires `fn` right-hand sides.
 - Types are inferred with Hindley–Milner polymorphism, equality constraints,
   overloading, and the value restriction.
-- Explicit type variables after `val` or `fun` (`val 'a id = ...`) are not
-  parsed.
+- Explicit type variables after `val` or `fun` (`val 'a id = ...`) stay
+  polymorphic within that binding group. Equality variables use `''a`. Nested
+  explicit binders may shadow an outer binder, as in Poly/ML. Implicitly scoped
+  annotation variables still have gaps; see `nassau-ugc.25`.
 - `datatype` creates a fresh type. Replication shares the original, except that
   replicating built-in types like `list` is not implemented.
 - `abstype` hides constructors outside its body and removes equality.
@@ -188,7 +192,8 @@ structure Counter = MakeCounter (struct val step = 1 end)
 
 - Signatures support `val`, `type`, `eqtype`, `datatype`, datatype replication,
   `exception`, `structure`, `include`, `sharing type`, and structure sharing,
-  plus `where type` refinement. `withtype` in signatures is not accepted.
+  plus `where type` refinement. `include A B` includes both signatures.
+  `withtype` in signatures is not accepted.
 - Transparent (`:`) and opaque (`:>`) ascription both work.
 - Functors take named parameters (`F (X : SIG)`) or specification parameters
   (`F (val x : int)`), and structure or declaration arguments. Each application
@@ -202,36 +207,37 @@ structure Counter = MakeCounter (struct val step = 1 end)
 
 Most of the Basis is SML under `basis/`, compiled ahead of every program. It
 covers `General`, `Bool`, `Int`, `LargeInt`, `Position`, `IO`, `Char`, `Real`,
-`Math`, `IEEEReal`, `String`, `StringCvt`, `Substring`, `TextIO`, `Word8`, `Byte`,
-`OS.Process`, `List`, `ListPair`, `Array2`, `Option`, and `Posix.Process.exit`,
-plus the top-level names
-they export, such as `hd`, `map`, `@`, `ignore`, `o`, and `valOf`. Each
-structure has only the functions in its source file. `OS.Path` implements Unix
-path syntax. `OS.SysErr` and `OS.errorMsg` report the runtime's OS errors, and
-`OS.FileSys` has directory listing (`openDir`, `readDir`, `rewindDir`, `closeDir`), `isDir`, `fileSize`, `mkDir`, `rmDir`, `getDir`, `chDir` and `remove`; `OS.IO` needs more runtime support. `OS.Process`
-provides status constants, `isSuccess`, `system`, `atExit`, `exit`, `terminate`, `getEnv` and
-`sleep`. Exit hooks run in reverse order on `exit` and at the end of a compiled program, and
-`terminate` skips them; the REPL runs them only on `exit`. `system` raises `SysErr` in the
-browser, which cannot start processes. `Time` provides conversions, arithmetic, comparison and
-`now`, stored as real seconds, without `fmt`, `toString` or `scan`. `PACK_REAL`, `PACK_WORD`, and the
-optional POSIX structures are unavailable. POSIX filesystem, descriptor I/O,
-process, signal, and process-environment support is tracked in Beads. `Socket`
-is unavailable pending native socket support.
+`Math`, `IEEEReal`, `String`, `StringCvt`, `Substring`, `TextIO`, `Word8`,
+`Byte`, `OS.Process`, `List`, `ListPair`, `Array2`, `Option`, and
+`Posix.Process.exit`, plus the top-level names they export, such as `hd`, `map`,
+`@`, `ignore`, `o`, and `valOf`. Each structure has only the functions in its
+source file. `OS.Path` implements Unix path syntax. `OS.SysErr` and
+`OS.errorMsg` report the runtime's OS errors, and `OS.FileSys` has directory
+listing (`openDir`, `readDir`, `rewindDir`, `closeDir`), `isDir`, `fileSize`,
+`mkDir`, `rmDir`, `getDir`, `chDir` and `remove`; `OS.IO` needs more runtime
+support. `OS.Process` provides status constants, `isSuccess`, `system`,
+`atExit`, `exit`, `terminate`, `getEnv` and `sleep`. Exit hooks run in reverse
+order on `exit` and at the end of a compiled program, and `terminate` skips
+them; the REPL runs them only on `exit`. `system` raises `SysErr` in the
+browser, which cannot start processes. `Time` provides conversions, arithmetic,
+comparison and `now`, stored as real seconds, without `fmt`, `toString` or
+`scan`. `PACK_REAL`, `PACK_WORD`, and the optional POSIX structures are
+unavailable. POSIX filesystem, descriptor I/O, process, signal, and
+process-environment support is tracked in Beads. `Socket` is unavailable pending
+native socket support.
 
 Arrays, vectors, general file/stream I/O, `IntInf`, `Real.toString`, and most
 other structures are not implemented. `TextIO` supports file and standard
 streams (open, close, input, `input1`, `inputN`, `inputAll`, `inputLine`,
 `lookahead`, `endOfStream`, output, `print`) but not `openString`, buffering
-modes or `StreamIO`; `Time` needs runtime time services. `TEXT` needs the missing
-array/vector structures. `Real` exposes its primitive
-arithmetic, radix and precision, and a few classification and ordering
-operations. `Math` has the full `MATH` interface; the monomorphic array and
-vector signatures are defined without their structures. The polymorphic
-`VECTOR` signature is also defined without its structure. `WORD`, `Windows`,
-and network database structures are unavailable.
-The compiler itself provides `print`, `size`,
-`not`, `~`, `^`, `ref`, `!`, `:=`, equality, and the built-in constructors and
-exceptions.
+modes or `StreamIO`; `Time` needs runtime time services. `TEXT` needs the
+missing array/vector structures. `Real` exposes its primitive arithmetic, radix
+and precision, and a few classification and ordering operations. `Math` has the
+full `MATH` interface; the monomorphic array and vector signatures are defined
+without their structures. The polymorphic `VECTOR` signature is also defined
+without its structure. `WORD`, `Windows`, and network database structures are
+unavailable. The compiler itself provides `print`, `size`, `not`, `~`, `^`,
+`ref`, `!`, `:=`, equality, and the built-in constructors and exceptions.
 
 ## REPL behavior
 

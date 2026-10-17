@@ -58,7 +58,7 @@ assert.equal(stress('case !link of Node next => next = link | End => false;'), '
 stress('reset;;');
 assert.notEqual(stressed.submit('historical ();').diagnostics, '');
 stressed.free();
-for (const name of ['textio-files', 'filesys']) {
+for (const name of ['textio-files', 'filesys', 'filesys-meta']) {
   const fixture = await readFile(`tests/fixtures/basis/${name}.sml`, 'utf8');
   const expectedLines = [...fixture.matchAll(/\(\* CHECK-STDOUT(?:-NEXT)?: (.*) \*\)/g)].map(match => match[1]);
   assert.ok(expectedLines.length > 10);

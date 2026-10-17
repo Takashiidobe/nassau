@@ -21,10 +21,15 @@ const FDFLAGS_APPEND = 1;
 
 const ROOT_FD = 3;
 
+const nowNanoseconds = () => BigInt(Math.round(Date.now() * 1e6));
+const FSTFLAGS_MTIM = 4;
+const FSTFLAGS_MTIM_NOW = 8;
+
 class Directory {
   constructor(parent) {
     this.entries = new Map();
     this.parent = parent ?? this;
+    this.mtime = nowNanoseconds();
   }
 }
 
@@ -32,6 +37,7 @@ class File {
   constructor(data = new Uint8Array(0)) {
     this.data = data;
     this.size = data.length;
+    this.mtime = nowNanoseconds();
   }
 
   write(offset, bytes) {
@@ -44,11 +50,13 @@ class File {
     if (offset > this.size) this.data.fill(0, this.size, offset);
     this.data.set(bytes, offset);
     this.size = Math.max(this.size, end);
+    this.mtime = nowNanoseconds();
   }
 
   truncate(size) {
     if (size > this.size) this.write(this.size, new Uint8Array(size - this.size));
     this.size = size;
+    this.mtime = nowNanoseconds();
   }
 }
 
@@ -131,6 +139,7 @@ export class Wasi {
       data.setUint8(address + 16, node instanceof Directory ? FILETYPE_DIRECTORY : FILETYPE_REGULAR_FILE);
       data.setBigUint64(address + 24, 1n, true);
       data.setBigUint64(address + 32, BigInt(node instanceof File ? node.size : 0), true);
+      for (const offset of [40, 48, 56]) data.setBigUint64(address + offset, node.mtime, true);
     };
     const gather = (iovs, count) => {
       const data = view();
@@ -244,6 +253,13 @@ export class Wasi {
         open.node.truncate(Number(size));
         return SUCCESS;
       },
+      fd_filestat_set_times: (fd, atime, mtime, flags) => {
+        const open = entry(fd);
+        if (!open) return EBADF;
+        if (flags & FSTFLAGS_MTIM_NOW) open.node.mtime = nowNanoseconds();
+        else if (flags & FSTFLAGS_MTIM) open.node.mtime = mtime;
+        return SUCCESS;
+      },
       fd_prestat_get: (fd, buffer) => {
         if (fd !== ROOT_FD) return EBADF;
         const data = view();
@@ -338,6 +354,35 @@ export class Wasi {
         if (!(node instanceof Directory)) return ENOTDIR;
         if (node.entries.size) return ENOTEMPTY;
         parent.entries.delete(name);
+        return SUCCESS;
+      },
+      path_readlink: (dirfd, pathAddress, pathLength) => {
+        const directory = entry(dirfd);
+        if (!directory) return EBADF;
+        return this.resolve(directory.node, text(pathAddress, pathLength)) ? EINVAL : ENOENT;
+      },
+      path_rename: (oldfd, oldAddress, oldLength, newfd, newAddress, newLength) => {
+        const from = entry(oldfd);
+        const to = entry(newfd);
+        if (!from || !to) return EBADF;
+        const source = this.parent(from.node, text(oldAddress, oldLength));
+        const target = this.parent(to.node, text(newAddress, newLength));
+        const node = source.directory?.entries?.get(source.name);
+        if (!node) return ENOENT;
+        if (!(target.directory instanceof Directory) || !target.name) return ENOENT;
+        const existing = target.directory.entries.get(target.name);
+        if (existing) {
+          if (existing === node) return SUCCESS;
+          if (existing instanceof Directory) {
+            if (!(node instanceof Directory)) return EISDIR;
+            if (existing.entries.size) return ENOTEMPTY;
+          } else if (node instanceof Directory) {
+            return ENOTDIR;
+          }
+        }
+        source.directory.entries.delete(source.name);
+        target.directory.entries.set(target.name, node);
+        if (node instanceof Directory) node.parent = target.directory;
         return SUCCESS;
       },
       environ_sizes_get: (count, size) => {

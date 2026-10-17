@@ -1,7 +1,9 @@
 use std::fs::{File, OpenOptions, ReadDir};
 use std::io::{self, Read, Write};
 use std::slice;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, MutexGuard};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use super::{string, string_bytes, string_length, write_stderr, write_stdout};
 use crate::value::tagged;
@@ -177,6 +179,155 @@ pub extern "C" fn nassau_os_close(handle: i64) -> i64 {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn nassau_os_remove(path: i64) -> i64 {
     result(std::fs::remove_file(unsafe { text(path) }))
+}
+
+const ACCESS_WRITE: i64 = 2;
+const ACCESS_EXEC: i64 = 4;
+
+fn text_result(outcome: io::Result<String>) -> i64 {
+    let reply = match outcome {
+        Ok(value) => format!("={value}"),
+        Err(error) => (error.raw_os_error().unwrap_or(EIO as i32)).to_string(),
+    };
+    unsafe { string(reply.as_bytes()) }
+}
+
+fn executable(meta: &std::fs::Metadata) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        meta.permissions().mode() & 0o111 != 0
+    }
+    #[cfg(not(unix))]
+    {
+        meta.is_dir()
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nassau_os_access(path: i64, mode: i64) -> i64 {
+    let path = unsafe { text(path) };
+    let mode = mode >> 1;
+    let Ok(meta) = std::fs::metadata(&path) else {
+        return tagged(0);
+    };
+    let writable = mode & ACCESS_WRITE == 0
+        || if meta.is_dir() {
+            !meta.permissions().readonly()
+        } else {
+            OpenOptions::new().write(true).open(&path).is_ok()
+        };
+    let granted =
+        File::open(&path).is_ok() && writable && (mode & ACCESS_EXEC == 0 || executable(&meta));
+    tagged(i64::from(granted))
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nassau_os_rename(old: i64, new: i64) -> i64 {
+    result(std::fs::rename(unsafe { text(old) }, unsafe { text(new) }))
+}
+
+fn micros(time: SystemTime) -> i64 {
+    match time.duration_since(UNIX_EPOCH) {
+        Ok(after) => after.as_micros() as i64,
+        Err(before) => -(before.duration().as_micros() as i64),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nassau_os_mod_time(path: i64) -> i64 {
+    std::fs::metadata(unsafe { text(path) })
+        .and_then(|meta| meta.modified())
+        .map_or_else(|error| failure(&error), |time| tagged(micros(time)))
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nassau_os_set_time(path: i64, stamp: i64, use_now: i64) -> i64 {
+    let time = if use_now >> 1 == 1 {
+        SystemTime::now()
+    } else {
+        let stamp = stamp >> 1;
+        let offset = Duration::from_micros(stamp.unsigned_abs());
+        if stamp < 0 {
+            UNIX_EPOCH - offset
+        } else {
+            UNIX_EPOCH + offset
+        }
+    };
+    result(File::open(unsafe { text(path) }).and_then(|file| file.set_modified(time)))
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nassau_os_is_link(path: i64) -> i64 {
+    std::fs::symlink_metadata(unsafe { text(path) }).map_or_else(
+        |error| failure(&error),
+        |meta| tagged(i64::from(meta.file_type().is_symlink())),
+    )
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nassau_os_read_link(path: i64) -> i64 {
+    text_result(
+        std::fs::read_link(unsafe { text(path) })
+            .map(|target| target.to_string_lossy().into_owned()),
+    )
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nassau_os_full_path(path: i64) -> i64 {
+    let path = unsafe { text(path) };
+    text_result(canonical(&path))
+}
+
+#[cfg(not(target_os = "wasi"))]
+fn canonical(path: &str) -> io::Result<String> {
+    std::fs::canonicalize(path).map(|full| full.to_string_lossy().into_owned())
+}
+
+#[cfg(target_os = "wasi")]
+fn canonical(path: &str) -> io::Result<String> {
+    std::fs::metadata(path)?;
+    let mut parts: Vec<&str> = Vec::new();
+    let base = if path.starts_with('/') {
+        String::new()
+    } else {
+        normalized_dir()
+    };
+    for part in base.split('/').chain(path.split('/')) {
+        match part {
+            "" | "." => {}
+            ".." => {
+                parts.pop();
+            }
+            part => parts.push(part),
+        }
+    }
+    Ok(format!("/{}", parts.join("/")))
+}
+
+static TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+#[unsafe(no_mangle)]
+pub extern "C" fn nassau_os_tmp_name() -> i64 {
+    let directory =
+        std::path::PathBuf::from(std::env::var_os("TMPDIR").unwrap_or_else(|| "/tmp".into()));
+    if cfg!(target_os = "wasi") {
+        let _ = std::fs::create_dir_all(&directory);
+    }
+    let seed = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_nanos());
+    loop {
+        let name = directory.join(format!(
+            "nassau{seed:x}-{}",
+            TMP_COUNTER.fetch_add(1, Ordering::Relaxed)
+        ));
+        match OpenOptions::new().write(true).create_new(true).open(&name) {
+            Ok(_) => return text_result(Ok(name.to_string_lossy().into_owned())),
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
+            Err(error) => return text_result(Err(error)),
+        }
+    }
 }
 
 #[unsafe(no_mangle)]

@@ -60,42 +60,6 @@ struct
 
   fun errorMsg code = Prim.osErrorMessage code
 
-  structure FileSys :>
-  sig
-    type dirstream
-    val openDir : string -> dirstream
-    val readDir : dirstream -> string option
-    val rewindDir : dirstream -> unit
-    val closeDir : dirstream -> unit
-    val isDir : string -> bool
-    val fileSize : string -> int
-    val mkDir : string -> unit
-    val rmDir : string -> unit
-    val remove : string -> unit
-    val getDir : unit -> string
-    val chDir : string -> unit
-  end =
-  struct
-    type dirstream = int
-
-    fun check result =
-      if result < 0 then raise SysErr (errorMsg (~result), SOME (~result)) else result
-
-    fun openDir path = check (Prim.osOpenDir path)
-    fun readDir stream =
-      let val name = Prim.osReadDir stream
-      in if size name = 0 then NONE else SOME name end
-    fun rewindDir stream = (check (Prim.osRewindDir stream); ())
-    fun closeDir stream = (Prim.osClose stream; ())
-    fun isDir path = check (Prim.osIsDir path) = 1
-    fun fileSize path = check (Prim.osFileSize path)
-    fun mkDir path = (check (Prim.osMkDir path); ())
-    fun rmDir path = (check (Prim.osRmDir path); ())
-    fun remove path = (check (Prim.osRemove path); ())
-    fun getDir () = Prim.osGetDir ()
-    fun chDir path = (check (Prim.osChDir path); ())
-  end
-
   structure Process :>
   sig
     include OS_PROCESS
@@ -344,4 +308,85 @@ struct
     fun fromUnixPath path = path
     fun toUnixPath path = path
   end
+  structure FileSys :>
+  sig
+    type dirstream
+    datatype access_mode = A_READ | A_WRITE | A_EXEC
+    val openDir : string -> dirstream
+    val readDir : dirstream -> string option
+    val rewindDir : dirstream -> unit
+    val closeDir : dirstream -> unit
+    val isDir : string -> bool
+    val fileSize : string -> int
+    val mkDir : string -> unit
+    val rmDir : string -> unit
+    val remove : string -> unit
+    val getDir : unit -> string
+    val chDir : string -> unit
+    val access : string * access_mode list -> bool
+    val rename : {old : string, new : string} -> unit
+    val modTime : string -> Time.time
+    val setTime : string * Time.time option -> unit
+    val isLink : string -> bool
+    val readLink : string -> string
+    val fullPath : string -> string
+    val realPath : string -> string
+    val tmpName : unit -> string
+  end =
+  struct
+    type dirstream = int
+    datatype access_mode = A_READ | A_WRITE | A_EXEC
+
+    fun check result =
+      if result < 0 then raise SysErr (errorMsg (~result), SOME (~result)) else result
+
+    fun openDir path = check (Prim.osOpenDir path)
+    fun readDir stream =
+      let val name = Prim.osReadDir stream
+      in if size name = 0 then NONE else SOME name end
+    fun rewindDir stream = (check (Prim.osRewindDir stream); ())
+    fun closeDir stream = (Prim.osClose stream; ())
+    fun isDir path = check (Prim.osIsDir path) = 1
+    fun fileSize path = check (Prim.osFileSize path)
+    fun mkDir path = (check (Prim.osMkDir path); ())
+    fun rmDir path = (check (Prim.osRmDir path); ())
+    fun remove path = (check (Prim.osRemove path); ())
+    fun getDir () = Prim.osGetDir ()
+    fun chDir path = (check (Prim.osChDir path); ())
+
+    fun accessBit A_READ = 1
+      | accessBit A_WRITE = 2
+      | accessBit A_EXEC = 4
+
+    fun access (path, modes) =
+      Prim.osAccess (path, List.foldl (fn (mode, bits) => bits + accessBit mode) 0 modes) = 1
+
+    fun rename {old, new} = (check (Prim.osRename (old, new)); ())
+    fun modTime path = Time.fromMicroseconds (check (Prim.osModTime path))
+
+    fun setTime (path, time) =
+      case time of
+        NONE => (check (Prim.osSetTime (path, 0, 1)); ())
+      | SOME t => (check (Prim.osSetTime (path, Time.toMicroseconds t, 0)); ())
+
+    fun isLink path = check (Prim.osIsLink path) = 1
+
+    fun textResult reply =
+      if String.sub (reply, 0) = #"=" then String.extract (reply, 1, NONE)
+      else
+        let val code = valOf (Int.fromString reply)
+        in raise SysErr (errorMsg code, SOME code) end
+
+    fun readLink path = textResult (Prim.osReadLink path)
+    fun fullPath path = textResult (Prim.osFullPath path)
+    fun tmpName () = textResult (Prim.osTmpName ())
+
+    fun realPath path =
+      let val full = fullPath path
+      in
+        if Path.isAbsolute path then full
+        else Path.mkRelative {path = full, relativeTo = fullPath (getDir ())}
+      end
+  end
+
 end

@@ -34,7 +34,7 @@ pub(super) fn roots(declaration: &Decl, environment: &Environment) -> BTreeSet<G
                     pattern(pat, &mut names);
                 }
             }
-            DeclKind::Fun(bindings) => {
+            DeclKind::Fun { bindings, .. } => {
                 for binding in bindings {
                     for clause in &binding.clauses {
                         for pat in &clause.parameters {

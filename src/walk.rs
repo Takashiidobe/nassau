@@ -52,7 +52,7 @@ fn walk_decl<'a>(
                 walk_expr(expr, visit, env, sigs);
             }
         }
-        DeclKind::Fun(bindings) => {
+        DeclKind::Fun { bindings, .. } => {
             for binding in bindings {
                 for clause in &binding.clauses {
                     walk_expr(&clause.body, visit, env, sigs);

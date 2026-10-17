@@ -59,7 +59,7 @@ pub fn check_program(program: &Program) -> Vec<MatchDiagnostic> {
 
 fn check_declaration(declaration: &Decl, env: &Constructors, out: &mut Vec<MatchDiagnostic>) {
     match &declaration.value {
-        DeclKind::Fun(bindings) => {
+        DeclKind::Fun { bindings, .. } => {
             for binding in bindings {
                 let mut labels = Vec::new();
                 for clause in &binding.clauses {

@@ -848,6 +848,7 @@ impl Lowerer<'_> {
             DeclKind::Val {
                 recursive: false,
                 bindings,
+                ..
             } => {
                 // Every right-hand side is evaluated before any name is bound.
                 let mut values = Vec::new();
@@ -883,6 +884,7 @@ impl Lowerer<'_> {
             DeclKind::Val {
                 recursive: true,
                 bindings,
+                ..
             } => {
                 let mut definitions = Vec::new();
                 for (pattern, expr) in bindings {
@@ -901,7 +903,7 @@ impl Lowerer<'_> {
                 }
                 self.functions_group(definitions, top)?;
             }
-            DeclKind::Fun(bindings) => {
+            DeclKind::Fun { bindings, .. } => {
                 let definitions = bindings
                     .iter()
                     .map(|binding| Definition {

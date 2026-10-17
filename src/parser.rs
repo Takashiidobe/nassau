@@ -104,12 +104,16 @@ pub enum DeclKind {
     /// the names the patterns bind; with `rec` (whose right-hand sides must be
     /// `fn`), they see their own.
     Val {
+        tyvars: Vec<String>,
         recursive: bool,
         bindings: Vec<(Pat, Expr)>,
     },
     /// `fun f p = e | f q = e' and g ...`: an `and` group of mutually recursive
     /// functions, each with one or more clauses.
-    Fun(Vec<FunBinding>),
+    Fun {
+        tyvars: Vec<String>,
+        bindings: Vec<FunBinding>,
+    },
     Type(Vec<TypeBinding>),
     /// `datatype 'a t = A | B of 'a and ... [withtype ...]`. The `withtype`
     /// abbreviations may be used by the constructors' argument types.
@@ -470,6 +474,7 @@ impl Parser {
                     start,
                     end,
                     DeclKind::Val {
+                        tyvars: Vec::new(),
                         recursive: false,
                         bindings: vec![(pattern, expr)],
                     },
@@ -493,9 +498,11 @@ impl Parser {
     fn lower_statement(declaration: Decl) -> Stmt {
         let (start, end) = (declaration.start.clone(), declaration.end.clone());
         if let DeclKind::Val {
+            tyvars,
             recursive: false,
             bindings,
         } = &declaration.value
+            && tyvars.is_empty()
             && let [(pattern, _)] = bindings.as_slice()
             && matches!(&pattern.value, PatKind::Variable(name) if !name.contains('.'))
         {
@@ -613,6 +620,7 @@ impl Parser {
 
     /// After `val` (or at the start of an implicit REPL `val`).
     fn parse_val_decl(&mut self, start: crate::span::Loc) -> Result<Decl, ParseError> {
+        let tyvars = self.parse_value_tyvars()?;
         let recursive = self.at_reserved("rec");
         if recursive {
             self.index += 1;
@@ -641,6 +649,7 @@ impl Parser {
             start,
             self.previous_end(),
             DeclKind::Val {
+                tyvars,
                 recursive,
                 bindings,
             },
@@ -649,6 +658,7 @@ impl Parser {
 
     /// After `fun`: `f p1 p2 = e | f q1 q2 = e' and g ...`.
     fn parse_fun_decl(&mut self) -> Result<DeclKind, ParseError> {
+        let tyvars = self.parse_value_tyvars()?;
         let mut bindings = Vec::new();
         loop {
             let mut name: Option<String> = None;
@@ -693,7 +703,7 @@ impl Parser {
                 clauses,
             });
             if !self.at_reserved("and") {
-                return Ok(DeclKind::Fun(bindings));
+                return Ok(DeclKind::Fun { tyvars, bindings });
             }
             self.index += 1;
         }
@@ -803,6 +813,21 @@ impl Parser {
             _ => {}
         }
         Ok(parameters)
+    }
+
+    fn parse_value_tyvars(&mut self) -> Result<Vec<String>, ParseError> {
+        if !matches!(self.peek(), Some(TokenKind::TypeVariable(_)))
+            && !(self.at(&TokenKind::LeftParen)
+                && matches!(self.peek_at(1), Some(TokenKind::TypeVariable(_))))
+        {
+            return Ok(Vec::new());
+        }
+        let variables = self.parse_type_parameters()?;
+        let mut seen = std::collections::HashSet::new();
+        if variables.iter().any(|name| !seen.insert(name)) {
+            return Err(self.error(ParseErrorKind::Expect("distinct type variables".into())));
+        }
+        Ok(variables)
     }
 
     fn parse_type_decl(&mut self) -> Result<DeclKind, ParseError> {

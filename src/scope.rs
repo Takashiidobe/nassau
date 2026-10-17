@@ -23,7 +23,7 @@ pub fn check_program(program: &Program) -> Vec<ScopeDiagnostic> {
             DeclKind::Val { bindings, .. } => {
                 check_distinct(bindings.iter().map(|(pattern, _)| pattern), env, &mut out);
             }
-            DeclKind::Fun(bindings) => {
+            DeclKind::Fun { bindings, .. } => {
                 let mut seen: Vec<&str> = Vec::new();
                 for binding in bindings {
                     if seen.contains(&binding.name.as_str()) {

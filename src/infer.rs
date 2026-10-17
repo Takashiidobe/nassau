@@ -58,6 +58,8 @@ pub enum TypeError {
     NotAnException(String),
     #[error("unbound type variable {0} in type declaration")]
     UnboundTypeVariable(String),
+    #[error("explicit type variable cannot be generalized")]
+    UngeneralizedTypeVariable,
     #[error("unbound structure '{0}'")]
     UnboundStructure(String),
     #[error("unbound signature '{0}'")]
@@ -334,6 +336,7 @@ enum Type {
 
 #[derive(Clone)]
 struct VarInfo {
+    rigid: bool,
     link: Option<Type>,
     level: usize,
     equality: bool,
@@ -658,6 +661,7 @@ impl Infer {
 
     fn fresh(&mut self) -> Type {
         self.vars.push(VarInfo {
+            rigid: false,
             link: None,
             level: self.level,
             equality: false,
@@ -764,6 +768,22 @@ impl Infer {
 
     /// Link `a` to `b`, keeping the constraints of both.
     fn merge(&mut self, a: usize, b: usize) -> Result<(), UnifyError> {
+        if self.vars[a].rigid {
+            if self.vars[b].rigid || self.vars[b].level < self.vars[a].level {
+                return Err(UnifyError::Mismatch);
+            }
+            if self.vars[b].overload.is_some() || self.vars[b].fields.is_some() {
+                return Err(UnifyError::Mismatch);
+            }
+            if self.vars[b].equality && !self.vars[a].equality {
+                return Err(UnifyError::NotEquality(Type::Var(a)));
+            }
+            self.vars[b].link = Some(Type::Var(a));
+            return Ok(());
+        }
+        if self.vars[b].rigid {
+            return self.merge(b, a);
+        }
         let equality = self.vars[a].equality || self.vars[b].equality;
         let level = self.vars[a].level.min(self.vars[b].level);
         let overload = match (self.vars[a].overload.clone(), self.vars[b].overload.clone()) {
@@ -806,6 +826,9 @@ impl Infer {
     }
 
     fn bind(&mut self, id: usize, ty: &Type) -> Result<(), UnifyError> {
+        if self.vars[id].rigid {
+            return Err(UnifyError::Mismatch);
+        }
         self.check_occurs(id, ty).map_err(|error| match error {
             UnifyError::Circular(var, _) => UnifyError::Circular(var, ty.clone()),
             other => other,
@@ -837,6 +860,9 @@ impl Infer {
         match self.prune(ty) {
             Type::Var(other) if other == id => Err(UnifyError::Circular(id, ty.clone())),
             Type::Var(other) => {
+                if self.vars[other].rigid && self.vars[other].level > self.vars[id].level {
+                    return Err(UnifyError::Mismatch);
+                }
                 self.vars[other].level = self.vars[other].level.min(self.vars[id].level);
                 match self.vars[other].fields.clone() {
                     Some(fields) => fields
@@ -859,6 +885,9 @@ impl Infer {
     fn require_equality(&mut self, ty: &Type) -> Result<(), UnifyError> {
         match self.prune(ty) {
             Type::Var(id) => {
+                if self.vars[id].rigid && !self.vars[id].equality {
+                    return Err(UnifyError::NotEquality(ty.clone()));
+                }
                 self.vars[id].equality = true;
                 if let Some(candidates) = &mut self.vars[id].overload {
                     candidates.retain(|c| *c != "real");
@@ -1819,10 +1848,43 @@ impl Infer {
     /// Infers a declaration, extends the environment with what it binds and
     /// returns those value bindings in order.
     fn infer_decl(&mut self, decl: &Decl) -> Res<Vec<(String, Scheme)>> {
+        let variables = match &decl.value {
+            DeclKind::Val { tyvars, .. } | DeclKind::Fun { tyvars, .. } => tyvars,
+            _ => return self.infer_decl_kind(decl),
+        };
+        if variables.is_empty() {
+            return self.infer_decl_kind(decl);
+        }
+        let saved = self.tyvars.clone();
+        let mut rigid = Vec::new();
+        self.level += 1;
+        for name in variables {
+            let ty = self.fresh_with(name.starts_with("''"));
+            if let Type::Var(id) = ty {
+                self.vars[id].rigid = true;
+                rigid.push(id);
+            }
+            self.tyvars.insert(name.clone(), ty);
+        }
+        self.level -= 1;
+        let result = self.infer_decl_kind(decl);
+        self.tyvars = saved;
+        let escaped = rigid.iter().any(|id| self.vars[*id].level <= self.level);
+        for id in rigid {
+            self.vars[id].rigid = false;
+        }
+        if escaped && result.is_ok() {
+            return Err((TypeError::UngeneralizedTypeVariable, decl.source_span()));
+        }
+        result
+    }
+
+    fn infer_decl_kind(&mut self, decl: &Decl) -> Res<Vec<(String, Scheme)>> {
         match &decl.value {
             DeclKind::Val {
                 recursive: false,
                 bindings,
+                ..
             } => {
                 let mut pending = Vec::new();
                 for (pattern, expr) in bindings {
@@ -1844,6 +1906,7 @@ impl Infer {
             DeclKind::Val {
                 recursive: true,
                 bindings,
+                ..
             } => {
                 self.level += 1;
                 let result = self.infer_val_rec(bindings);
@@ -1858,7 +1921,7 @@ impl Infer {
                     })
                     .collect())
             }
-            DeclKind::Fun(bindings) => {
+            DeclKind::Fun { bindings, .. } => {
                 self.level += 1;
                 let result = self.infer_functions(bindings);
                 self.level -= 1;

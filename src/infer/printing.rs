@@ -313,7 +313,7 @@ impl Infer {
                 .iter()
                 .flat_map(|decl| self.declaration_echo(decl))
                 .collect(),
-            DeclKind::Val { .. } | DeclKind::Fun(_) => Vec::new(),
+            DeclKind::Val { .. } | DeclKind::Fun { .. } => Vec::new(),
         }
     }
 }

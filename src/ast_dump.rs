@@ -92,16 +92,21 @@ fn expr_text(expr: &Expr) -> String {
 }
 
 fn decl_text(declaration: &Decl) -> String {
+    let variables = match &declaration.value {
+        DeclKind::Val { tyvars, .. } | DeclKind::Fun { tyvars, .. } => tyvars.as_slice(),
+        _ => &[],
+    };
     let group = |bindings: &[(Pat, Expr)]| {
         bindings
             .iter()
             .map(|(pattern, expr)| format!("({} {})", pat_text(pattern), expr_text(expr)))
             .collect::<Vec<_>>()
     };
-    match &declaration.value {
+    let text = match &declaration.value {
         DeclKind::Val {
             recursive: false,
             bindings,
+            ..
         } if bindings.len() == 1 => format!(
             "(val {} {})",
             pat_text(&bindings[0].0),
@@ -110,11 +115,12 @@ fn decl_text(declaration: &Decl) -> String {
         DeclKind::Val {
             recursive,
             bindings,
+            ..
         } => list(
             if *recursive { "val-rec" } else { "val-and" },
             &group(bindings),
         ),
-        DeclKind::Fun(bindings) => {
+        DeclKind::Fun { bindings, .. } => {
             let bindings = bindings
                 .iter()
                 .map(|binding| {
@@ -220,6 +226,11 @@ fn decl_text(declaration: &Decl) -> String {
             FixityKind::Infix => format!("(infix {precedence} {})", names.join(" ")),
             FixityKind::Infixr => format!("(infixr {precedence} {})", names.join(" ")),
         },
+    };
+    if variables.is_empty() {
+        text
+    } else {
+        format!("(tyvars ({}) {text})", variables.join(" "))
     }
 }
 

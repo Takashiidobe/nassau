@@ -1,3 +1,5 @@
+#![cfg_attr(target_os = "wasi", feature(wasi_ext))]
+
 #[cfg(any(not(feature = "runtime-archive"), feature = "codegen"))]
 pub mod constructors;
 #[cfg(any(not(feature = "runtime-archive"), feature = "codegen"))]

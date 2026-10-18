@@ -121,7 +121,11 @@ requirement.
 
 Patterns work in `val`, `fun`, `fn`, `case`, and `handle`. Constructors include
 `::`, `SOME`, user datatypes, exceptions, and `ref`. Whether a name is a
-constructor comes from scope, not capitalization. Real-literal patterns and
+constructor comes from scope, not capitalization. A value pattern such as
+`val C = C` matches an existing constructor and binds no new name. A constructor
+cannot be the binder before `as`. The primitive names `true`, `false`, `nil`,
+`::`, and `ref` cannot be rebound or specified as new values or constructors;
+`it` cannot be a datatype or exception constructor. Real-literal patterns and
 or-patterns are not accepted.
 
 In source files:

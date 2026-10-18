@@ -496,29 +496,12 @@ impl Parser {
         })
     }
 
-    /// Keeps `val x = e` as the simple statement the backend handles directly
-    /// and every other declaration as it was parsed.
     fn lower_statement(declaration: Decl) -> Stmt {
-        let (start, end) = (declaration.start.clone(), declaration.end.clone());
-        if let DeclKind::Val {
-            tyvars,
-            recursive: false,
-            bindings,
-        } = &declaration.value
-            && tyvars.is_empty()
-            && let [(pattern, _)] = bindings.as_slice()
-            && matches!(&pattern.value, PatKind::Variable(name) if !name.contains('.'))
-        {
-            let DeclKind::Val { mut bindings, .. } = declaration.value else {
-                unreachable!()
-            };
-            let (pattern, expr) = bindings.pop().expect("one binding");
-            let PatKind::Variable(name) = pattern.value else {
-                unreachable!()
-            };
-            return Span::new(start, end, StmtKind::Val(name, expr));
-        }
-        Span::new(start, end, StmtKind::Declaration(declaration))
+        Span::new(
+            declaration.start.clone(),
+            declaration.end.clone(),
+            StmtKind::Declaration(declaration),
+        )
     }
 
     fn starts_decl(&self) -> bool {

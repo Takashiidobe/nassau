@@ -62,6 +62,8 @@ pub enum TypeError {
     UngeneralizedTypeVariable,
     #[error("duplicate {what} '{name}' in signature")]
     DuplicateSpecification { what: &'static str, name: String },
+    #[error("'{0}' cannot be used as a binding name")]
+    InvalidBinding(String),
     #[error("unbound structure '{0}'")]
     UnboundStructure(String),
     #[error("unbound signature '{0}'")]
@@ -1530,6 +1532,9 @@ impl Infer {
                 expected
             }
             PatKind::Layered(name, annotation, inner) => {
+                if name.contains('.') || self.lookup_constructor(name).is_some() {
+                    return Err((TypeError::InvalidBinding(name.clone()), span));
+                }
                 let position = binds.len();
                 let ty = self.infer_pat(inner, binds)?;
                 if let Some(annotation) = annotation {
@@ -1884,13 +1889,28 @@ impl Infer {
         result
     }
 
+    fn check_binding_name(name: &str, allow_it: bool, span: SourceSpan) -> Res<()> {
+        if matches!(name, "true" | "false" | "nil" | "::" | "ref") || (!allow_it && name == "it") {
+            return Err((TypeError::InvalidBinding(name.into()), span));
+        }
+        Ok(())
+    }
+
     fn infer_decl_kind(&mut self, decl: &Decl) -> Res<Vec<(String, Scheme)>> {
         match &decl.value {
             DeclKind::Val {
+                tyvars,
                 recursive: false,
                 bindings,
-                ..
             } => {
+                if tyvars.is_empty()
+                    && let [(pattern, expr)] = bindings.as_slice()
+                    && let PatKind::Variable(name) = &pattern.value
+                    && !name.contains('.')
+                    && self.lookup_constructor(name).is_none()
+                {
+                    return self.infer_simple_val(name, expr);
+                }
                 let mut pending = Vec::new();
                 for (pattern, expr) in bindings {
                     self.level += 1;
@@ -2192,6 +2212,11 @@ impl Infer {
             let mut constructors = Vec::new();
             let mut arguments = Vec::new();
             for constructor in &binding.constructors {
+                Self::check_binding_name(
+                    &constructor.value.name,
+                    false,
+                    constructor.source_span(),
+                )?;
                 let argument = match &constructor.value.argument {
                     Some(ty) => {
                         let converted = self.convert(ty, &mut variables)?;
@@ -2321,6 +2346,7 @@ impl Infer {
     ) -> Res<()> {
         let mut declared = Vec::new();
         for binding in bindings {
+            Self::check_binding_name(&binding.name, false, span)?;
             let scheme = match &binding.kind {
                 ExceptionKind::Fresh(None) => Scheme {
                     vars: Vec::new(),
@@ -2451,6 +2477,7 @@ impl Infer {
         let mark = self.mark();
         let mut function_types = Vec::new();
         for binding in bindings {
+            Self::check_binding_name(&binding.name, true, binding.clauses[0].body.source_span())?;
             let ty = self.fresh();
             function_types.push(ty.clone());
             self.push_monomorphic(binding.name.clone(), ty);

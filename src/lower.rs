@@ -844,6 +844,24 @@ impl Lowerer<'_> {
     /// Lowers a declaration. At the top level, the names it binds become
     /// globals; elsewhere they are local variables.
     fn declaration(&mut self, declaration: &Decl, top: bool) -> Res<()> {
+        if top
+            && let DeclKind::Val {
+                recursive: false,
+                bindings,
+                ..
+            } = &declaration.value
+            && let [(pattern, expr)] = bindings.as_slice()
+            && let PatKind::Variable(name) = &pattern.value
+            && !name.contains('.')
+            && (self.lookup(name).is_some()
+                || (self.lookup_raw(name).is_none()
+                    && self.constructor(name, self.types.pat(pattern)).is_none()
+                    && value::builtin_exception(name).is_none()))
+        {
+            let value = self.value(expr)?;
+            self.bind_top(name, value, None);
+            return Ok(());
+        }
         match &declaration.value {
             DeclKind::Val {
                 recursive: false,

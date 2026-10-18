@@ -512,6 +512,7 @@ impl Infer {
         match &spec.value {
             SpecKind::Val(values) => {
                 for (name, ty) in values {
+                    Self::check_binding_name(name, true, spec.source_span())?;
                     self.level += 1;
                     let converted = self.convert(ty, &mut HashMap::new());
                     self.level -= 1;
@@ -591,6 +592,7 @@ impl Infer {
             }
             SpecKind::Exception(exceptions) => {
                 for (name, argument) in exceptions {
+                    Self::check_binding_name(name, false, spec.source_span())?;
                     let argument = match argument {
                         Some(ty) => Some(self.convert(ty, &mut HashMap::new())?),
                         None => None,

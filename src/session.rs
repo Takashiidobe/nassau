@@ -90,7 +90,11 @@ impl<B: Backend> Session<B> {
             exit: self.exit,
             ..Response::default()
         };
-        match source.trim().strip_suffix(";;").map(str::trim) {
+        match source
+            .trim()
+            .strip_suffix(';')
+            .map(|command| command.trim_end_matches(';').trim())
+        {
             Some("clear") => {
                 response.clear = true;
                 response.output = b"Cleared\n".to_vec();

@@ -105,10 +105,8 @@ struct SmlHighlighter {
 
 impl Highlighter for SmlHighlighter {
     fn highlight(&self, line: &str, cursor: usize) -> StyledText {
-        self.auto_submit.store(
-            can_auto_submit_double_semicolon(line, cursor),
-            Ordering::Relaxed,
-        );
+        self.auto_submit
+            .store(completes_on_semicolon(line, cursor), Ordering::Relaxed);
         let (tokens, error_range, error_style) =
             match Lexer::new(line, Path::new("<repl>")).tokenize() {
                 Ok(tokens) => (tokens, None, None),
@@ -198,16 +196,29 @@ impl Highlighter for SmlHighlighter {
     }
 }
 
-fn can_auto_submit_double_semicolon(line: &str, cursor: usize) -> bool {
-    if cursor != line.len() || !line.ends_with(';') || line.ends_with(";;") {
+fn completes_on_semicolon(line: &str, cursor: usize) -> bool {
+    if cursor != line.len() || line.trim().is_empty() {
         return false;
     }
-    let Ok(tokens) = Lexer::new(line, Path::new("<repl>")).tokenize() else {
+    let Ok(tokens) = Lexer::new(&format!("{line};"), Path::new("<repl>")).tokenize() else {
         return false;
     };
-    tokens.last().is_some_and(|token| {
-        matches!(&token.value, TokenKind::Semicolon) && token.end.offset == line.len()
-    })
+    let mut depth = 0usize;
+    for token in &tokens {
+        match &token.value {
+            TokenKind::LeftParen | TokenKind::LeftBracket | TokenKind::LeftBrace => depth += 1,
+            TokenKind::RightParen | TokenKind::RightBracket | TokenKind::RightBrace => {
+                depth = depth.saturating_sub(1);
+            }
+            TokenKind::Reserved(word) => match word.as_str() {
+                "let" | "local" | "struct" | "sig" | "abstype" => depth += 1,
+                "end" => depth = depth.saturating_sub(1),
+                _ => {}
+            },
+            _ => {}
+        }
+    }
+    depth == 0
 }
 
 fn comment_ranges(source: &str) -> Vec<std::ops::Range<usize>> {

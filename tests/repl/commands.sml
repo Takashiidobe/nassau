@@ -11,7 +11,7 @@ clear + 1;;
 val reset = 5;;
 reset + 1;;
 "clear;;";;
-reset;;
+reset;
 val kept = 9;;
 kept;;
 Array.length (Array.fromList [1, 2]);;

@@ -32,16 +32,16 @@ CodeMirror 5.65.16 runMode addon renders submitted input and results using the
 same SML syntax mode as the active prompt.
 
 The page is a single REPL. Type into the CodeMirror prompt and submit with
-`;;`, Ctrl+Enter or Cmd+Enter. `;;` submits when typed at the end
-of the input, outside a string or comment. Enter continues a multiline command. Results appear immediately below that prompt,
+`;`, Ctrl+Enter or Cmd+Enter. `;` submits when typed at the end
+of the input, outside a string, comment, bracket or `let`/`struct`/`sig` block; `;;` also works. Enter continues a multiline command. Results appear immediately below that prompt,
 followed by a fresh prompt. Submitted input stays in place; it is not copied
-into the output. End internal phrases with single semicolons; `;;` finishes a submission. Bindings, fixity, modules, closures
+into the output. Bindings, fixity, modules, closures
 and references remain available between submissions.
 
 The key bindings selector supports Standard, Vim and Emacs and remembers your
 choice. Vim supports `:w` and `:submit` to submit a phrase. Ctrl+Up/Ctrl+Down recalls submitted input, preserving your current draft. Tab lists matching names beneath the cursor in columns, completes the highlighted name, and cycles through candidates on repeated presses.
 Examples populate the current prompt without resetting the session. `clear;;`
-clears previous prompts and results but keeps bindings. `reset;;` clears the
+clears previous prompts and results but keeps bindings. `reset;` clears the
 display and starts a fresh session. Both show a confirmation at the top of the
 terminal: `Cleared` or `Reset`. These commands also work in the native
 REPL. They are reserved only when submitted alone;

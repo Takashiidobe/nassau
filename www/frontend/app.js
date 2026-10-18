@@ -53,10 +53,23 @@ function configureEditor(textarea) {
 function endsCommand(cm) {
   const cursor = cm.getCursor();
   const before = cm.getRange({ line: 0, ch: 0 }, cursor);
-  if (!before.endsWith(';;')) return false;
+  if (!before.endsWith(';') || !before.slice(0, -1).trim()) return false;
   if (cm.getRange(cursor, { line: cm.lastLine(), ch: cm.getLine(cm.lastLine()).length }).trim()) return false;
   const token = cm.getTokenAt(cursor, true);
-  return token.type !== 'string' && token.type !== 'comment';
+  return token.type !== 'string' && token.type !== 'comment' && nestingDepth(before) === 0;
+}
+function nestingDepth(source) {
+  let depth = 0;
+  const words = /\(\*|\*\)|#?"(?:\\.|[^"\\])*"|[A-Za-z_][A-Za-z0-9_']*|[()[\]{}]/g;
+  let comments = 0;
+  for (const [token] of source.matchAll(words)) {
+    if (token === '(*') comments++;
+    else if (token === '*)') comments = Math.max(0, comments - 1);
+    else if (comments || token.endsWith('"')) continue;
+    else if (/^[([{]$/.test(token) || /^(?:let|local|struct|sig|abstype)$/.test(token)) depth++;
+    else if (/^[)\]}]$/.test(token) || token === 'end') depth = Math.max(0, depth - 1);
+  }
+  return depth;
 }
 function newPrompt(source = '') {
   inputRow = document.createElement('div'); inputRow.className = 'input-row';
@@ -253,7 +266,7 @@ function requestStdin() {
 }
 function run() {
   const source = editor.getValue();
-  if (!ready || busy || (exited && !/^\s*(?:clear|reset)\s*;;\s*$/.test(source))) return;
+  if (!ready || busy || (exited && !/^\s*(?:clear|reset)\s*;+\s*$/.test(source))) return;
   if (!source.trim()) { editor.focus(); return; }
   history.push(source); historyIndex = history.length;
   resumeVimInsert = $('keymap').value === 'vim' && Boolean(editor.state.vim?.insertMode);

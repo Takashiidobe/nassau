@@ -21,7 +21,7 @@ A work-in-progress Standard ML implementation in Rust with a Cranelift backend.
 
 - Start the REPL: `cargo run`.
 - The native REPL saves submitted phrases in the platform data directory and completes in-scope names with Tab.
-- In the native and browser REPLs, `clear;;` clears the display; `reset;;` clears it and discards bindings.
+- In the native and browser REPLs, `clear;` clears the display; `reset;` clears it and discards bindings.
 - Compile a program: `cargo run -- input.sml`.
 - Run fixtures: `cargo test` (requires `poly` and `FileCheck`).
 

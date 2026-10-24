@@ -187,4 +187,23 @@ struct
         SOME (value, _) => SOME value
       | NONE => NONE
     end
+
+  fun getRoundingMode () =
+    case Prim.fpGetRound () of
+      1 => TO_NEGINF
+    | 2 => TO_POSINF
+    | 3 => TO_ZERO
+    | _ => TO_NEAREST
+
+  fun setRoundingMode mode =
+    let
+      val code =
+        case mode of
+          TO_NEAREST => 0
+        | TO_NEGINF => 1
+        | TO_POSINF => 2
+        | TO_ZERO => 3
+    in
+      if Prim.fpSetRound code = 0 then () else raise Fail "unsupported rounding mode"
+    end
 end

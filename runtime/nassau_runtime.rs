@@ -1,6 +1,8 @@
 use core::ffi::{c_char, c_int, c_void};
 use core::ptr;
 
+mod float;
+pub use float::*;
 mod gc;
 mod math;
 pub use math::*;

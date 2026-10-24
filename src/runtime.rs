@@ -2,17 +2,20 @@
 
 use crate::native_runtime::{
     nassau_alloc, nassau_array_new, nassau_code_global, nassau_exception, nassau_exit,
-    nassau_global_root, nassau_math_acos, nassau_math_asin, nassau_math_atan, nassau_math_atan2,
-    nassau_math_cos, nassau_math_cosh, nassau_math_exp, nassau_math_log, nassau_math_log10,
-    nassau_math_pow, nassau_math_sin, nassau_math_sinh, nassau_math_tan, nassau_math_tanh,
-    nassau_os_access, nassau_os_args, nassau_os_chdir, nassau_os_close, nassau_os_error_message,
-    nassau_os_file_id, nassau_os_file_size, nassau_os_full_path, nassau_os_get_dir,
-    nassau_os_getenv, nassau_os_is_dir, nassau_os_is_link, nassau_os_mkdir, nassau_os_mod_time,
-    nassau_os_now, nassau_os_open, nassau_os_open_dir, nassau_os_read, nassau_os_read_dir,
-    nassau_os_read_link, nassau_os_remove, nassau_os_rename, nassau_os_rewind_dir, nassau_os_rmdir,
-    nassau_os_set_time, nassau_os_sleep, nassau_os_system, nassau_os_tmp_name, nassau_os_write,
-    nassau_print, nassau_raised, nassau_repl, nassau_roots_pop, nassau_roots_push,
-    nassau_take_uncaught, nassau_terminate, nassau_uncaught, nassau_vector_from_array,
+    nassau_fp_get_round, nassau_fp_set_round, nassau_global_root, nassau_math_acos,
+    nassau_math_asin, nassau_math_atan, nassau_math_atan2, nassau_math_cos, nassau_math_cosh,
+    nassau_math_exp, nassau_math_log, nassau_math_log10, nassau_math_pow, nassau_math_sin,
+    nassau_math_sinh, nassau_math_tan, nassau_math_tanh, nassau_os_access, nassau_os_args,
+    nassau_os_chdir, nassau_os_close, nassau_os_error_message, nassau_os_file_id,
+    nassau_os_file_size, nassau_os_full_path, nassau_os_get_dir, nassau_os_getenv,
+    nassau_os_is_dir, nassau_os_is_link, nassau_os_mkdir, nassau_os_mod_time, nassau_os_now,
+    nassau_os_open, nassau_os_open_dir, nassau_os_read, nassau_os_read_dir, nassau_os_read_link,
+    nassau_os_remove, nassau_os_rename, nassau_os_rewind_dir, nassau_os_rmdir, nassau_os_set_time,
+    nassau_os_sleep, nassau_os_system, nassau_os_tmp_name, nassau_os_write, nassau_print,
+    nassau_raised, nassau_repl, nassau_roots_pop, nassau_roots_push, nassau_sock_accept,
+    nassau_sock_bind, nassau_sock_connect, nassau_sock_create, nassau_sock_listen,
+    nassau_sock_name, nassau_sock_pair, nassau_sock_shutdown, nassau_take_uncaught,
+    nassau_terminate, nassau_uncaught, nassau_vector_from_array,
 };
 
 /// The runtime archive, written next to the object file when linking.
@@ -21,7 +24,7 @@ pub const ARCHIVE: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/libnassau_r
 pub const NATIVE_LIBS: &str = env!("NASSAU_RUNTIME_NATIVE_LIBS");
 
 /// Runtime entry points called by generated code, for the JIT's symbol table.
-pub fn symbols() -> [(&'static str, *const u8); 56] {
+pub fn symbols() -> [(&'static str, *const u8); 66] {
     [
         ("nassau_alloc", nassau_alloc as *const u8),
         ("nassau_math_sin", nassau_math_sin as *const u8),
@@ -85,6 +88,16 @@ pub fn symbols() -> [(&'static str, *const u8); 56] {
         ("nassau_os_now", nassau_os_now as *const u8),
         ("nassau_os_getenv", nassau_os_getenv as *const u8),
         ("nassau_os_args", nassau_os_args as *const u8),
+        ("nassau_sock_create", nassau_sock_create as *const u8),
+        ("nassau_sock_pair", nassau_sock_pair as *const u8),
+        ("nassau_sock_bind", nassau_sock_bind as *const u8),
+        ("nassau_sock_listen", nassau_sock_listen as *const u8),
+        ("nassau_sock_accept", nassau_sock_accept as *const u8),
+        ("nassau_sock_connect", nassau_sock_connect as *const u8),
+        ("nassau_sock_name", nassau_sock_name as *const u8),
+        ("nassau_sock_shutdown", nassau_sock_shutdown as *const u8),
+        ("nassau_fp_get_round", nassau_fp_get_round as *const u8),
+        ("nassau_fp_set_round", nassau_fp_set_round as *const u8),
     ]
 }
 

@@ -1,5 +1,8 @@
 use std::fs::{File, OpenOptions, ReadDir};
 use std::io::{self, Read, Write};
+use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream};
+#[cfg(unix)]
+use std::os::unix::net::{UnixListener, UnixStream};
 use std::slice;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, MutexGuard};
@@ -14,6 +17,23 @@ enum Stream {
     Stderr,
     File(File),
     Dir { path: String, entries: ReadDir },
+    Socket(Socket),
+}
+
+enum Address {
+    Inet(SocketAddr),
+    Unix(String),
+}
+
+enum Socket {
+    Fresh,
+    Bound(Address),
+    TcpListener(TcpListener),
+    TcpStream(TcpStream),
+    #[cfg(unix)]
+    UnixListener(UnixListener, String),
+    #[cfg(unix)]
+    UnixStream(UnixStream),
 }
 
 static STREAMS: Mutex<Vec<Option<Stream>>> = Mutex::new(Vec::new());
@@ -141,6 +161,9 @@ pub unsafe extern "C" fn nassau_os_read(handle: i64, max: i64) -> i64 {
     let count = match streams().get_mut((handle >> 1) as usize) {
         Some(Some(Stream::Stdin)) => io::stdin().read(&mut buffer),
         Some(Some(Stream::File(file))) => file.read(&mut buffer),
+        Some(Some(Stream::Socket(Socket::TcpStream(stream)))) => stream.read(&mut buffer),
+        #[cfg(unix)]
+        Some(Some(Stream::Socket(Socket::UnixStream(stream)))) => stream.read(&mut buffer),
         _ => Ok(0),
     }
     .unwrap_or(0);
@@ -160,6 +183,9 @@ pub unsafe extern "C" fn nassau_os_write(handle: i64, data: i64) -> i64 {
             Ok(())
         }
         Some(Some(Stream::File(file))) => file.write_all(data),
+        Some(Some(Stream::Socket(Socket::TcpStream(stream)))) => stream.write_all(data),
+        #[cfg(unix)]
+        Some(Some(Stream::Socket(Socket::UnixStream(stream)))) => stream.write_all(data),
         _ => Err(io::Error::from_raw_os_error(EIO as i32)),
     })
 }
@@ -431,4 +457,186 @@ pub extern "C" fn nassau_os_now() -> f64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0.0, |elapsed| elapsed.as_secs_f64())
+}
+
+fn parse_address(text: &str) -> Option<Address> {
+    if let Some(path) = text.strip_prefix("unix:") {
+        return Some(Address::Unix(path.to_owned()));
+    }
+    text.strip_prefix("inet:")?.parse().ok().map(Address::Inet)
+}
+
+fn address_text(address: &Address) -> String {
+    match address {
+        Address::Inet(address) => format!("inet:{address}"),
+        Address::Unix(path) => format!("unix:{path}"),
+    }
+}
+
+fn unsupported() -> io::Error {
+    io::Error::from_raw_os_error(ENOSYS as i32)
+}
+
+fn with_socket<T>(handle: i64, action: impl FnOnce(&mut Socket) -> io::Result<T>) -> io::Result<T> {
+    match streams().get_mut((handle >> 1) as usize) {
+        Some(Some(Stream::Socket(socket))) => action(socket),
+        _ => Err(io::Error::from_raw_os_error(EIO as i32)),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn nassau_sock_create() -> i64 {
+    insert(Stream::Socket(Socket::Fresh))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn nassau_sock_pair() -> i64 {
+    #[cfg(unix)]
+    {
+        return match UnixStream::pair() {
+            Ok((left, right)) => {
+                let left = insert(Stream::Socket(Socket::UnixStream(left))) >> 1;
+                let right = insert(Stream::Socket(Socket::UnixStream(right))) >> 1;
+                tagged(left * 16384 + right)
+            }
+            Err(error) => failure(&error),
+        };
+    }
+    #[cfg(not(unix))]
+    failure(&unsupported())
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nassau_sock_bind(handle: i64, address: i64) -> i64 {
+    let Some(address) = parse_address(&unsafe { text(address) }) else {
+        return failure(&io::Error::from_raw_os_error(22));
+    };
+    result(with_socket(handle, |socket| match socket {
+        Socket::Fresh => {
+            *socket = Socket::Bound(address);
+            Ok(())
+        }
+        _ => Err(io::Error::from_raw_os_error(22)),
+    }))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn nassau_sock_listen(handle: i64) -> i64 {
+    result(with_socket(handle, |socket| {
+        let Socket::Bound(address) = socket else {
+            return Err(io::Error::from_raw_os_error(22));
+        };
+        *socket = match address {
+            Address::Inet(address) => Socket::TcpListener(TcpListener::bind(*address)?),
+            #[cfg(unix)]
+            Address::Unix(path) => Socket::UnixListener(UnixListener::bind(&*path)?, path.clone()),
+            #[cfg(not(unix))]
+            Address::Unix(_) => return Err(unsupported()),
+        };
+        Ok(())
+    }))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn nassau_sock_accept(handle: i64) -> i64 {
+    // the table lock is released while blocked so other handles keep working
+    let accepted = with_socket(handle, |socket| match socket {
+        Socket::TcpListener(listener) => {
+            listener.try_clone().map(|clone| Socket::TcpListener(clone))
+        }
+        #[cfg(unix)]
+        Socket::UnixListener(listener, path) => listener
+            .try_clone()
+            .map(|clone| Socket::UnixListener(clone, path.clone())),
+        _ => Err(io::Error::from_raw_os_error(22)),
+    });
+    let outcome = accepted.and_then(|listener| match listener {
+        Socket::TcpListener(listener) => listener
+            .accept()
+            .map(|(stream, _)| Socket::TcpStream(stream)),
+        #[cfg(unix)]
+        Socket::UnixListener(listener, _) => listener
+            .accept()
+            .map(|(stream, _)| Socket::UnixStream(stream)),
+        _ => Err(unsupported()),
+    });
+    match outcome {
+        Ok(socket) => insert(Stream::Socket(socket)),
+        Err(error) => failure(&error),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nassau_sock_connect(handle: i64, address: i64) -> i64 {
+    let Some(address) = parse_address(&unsafe { text(address) }) else {
+        return failure(&io::Error::from_raw_os_error(22));
+    };
+    result(with_socket(handle, |socket| {
+        if !matches!(socket, Socket::Fresh | Socket::Bound(_)) {
+            return Err(io::Error::from_raw_os_error(22));
+        }
+        *socket = match address {
+            Address::Inet(address) => Socket::TcpStream(TcpStream::connect(address)?),
+            #[cfg(unix)]
+            Address::Unix(path) => Socket::UnixStream(UnixStream::connect(path)?),
+            #[cfg(not(unix))]
+            Address::Unix(_) => return Err(unsupported()),
+        };
+        Ok(())
+    }))
+}
+
+// peer selects the remote end rather than the local one
+#[unsafe(no_mangle)]
+pub extern "C" fn nassau_sock_name(handle: i64, peer: i64) -> i64 {
+    let peer = peer >> 1 != 0;
+    let name = with_socket(handle, |socket| match socket {
+        Socket::Bound(address) if !peer => Ok(address_text(address)),
+        Socket::TcpListener(listener) if !peer => listener
+            .local_addr()
+            .map(|address| address_text(&Address::Inet(address))),
+        Socket::TcpStream(stream) => if peer {
+            stream.peer_addr()
+        } else {
+            stream.local_addr()
+        }
+        .map(|address| address_text(&Address::Inet(address))),
+        #[cfg(unix)]
+        Socket::UnixListener(_, path) if !peer => Ok(format!("unix:{path}")),
+        #[cfg(unix)]
+        Socket::UnixStream(stream) => {
+            let address = if peer {
+                stream.peer_addr()
+            } else {
+                stream.local_addr()
+            }?;
+            Ok(format!(
+                "unix:{}",
+                address
+                    .as_pathname()
+                    .map(|path| path.to_string_lossy().into_owned())
+                    .unwrap_or_default()
+            ))
+        }
+        _ => Err(io::Error::from_raw_os_error(107)),
+    });
+    text_result(name)
+}
+
+const SHUT_READ: i64 = 0;
+const SHUT_WRITE: i64 = 1;
+
+#[unsafe(no_mangle)]
+pub extern "C" fn nassau_sock_shutdown(handle: i64, how: i64) -> i64 {
+    let how = match how >> 1 {
+        SHUT_READ => Shutdown::Read,
+        SHUT_WRITE => Shutdown::Write,
+        _ => Shutdown::Both,
+    };
+    result(with_socket(handle, |socket| match socket {
+        Socket::TcpStream(stream) => stream.shutdown(how),
+        #[cfg(unix)]
+        Socket::UnixStream(stream) => stream.shutdown(how),
+        _ => Err(io::Error::from_raw_os_error(107)),
+    }))
 }

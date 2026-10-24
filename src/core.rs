@@ -119,6 +119,26 @@ pub const EXTERN_FNS: &[ExternFn] = &[
     external("Prim.osSleep", "nassau_os_sleep", &[REAL], ExternTy::Unit),
     external("Prim.osNow", "nassau_os_now", &[], REAL),
     external("Prim.osGetenv", "nassau_os_getenv", &[STRING], STRING),
+    external("Prim.fpGetRound", "nassau_fp_get_round", &[], INT),
+    external("Prim.fpSetRound", "nassau_fp_set_round", &[INT], INT),
+    external("Prim.sockCreate", "nassau_sock_create", &[], INT),
+    external("Prim.sockPair", "nassau_sock_pair", &[], INT),
+    external("Prim.sockBind", "nassau_sock_bind", &[INT, STRING], INT),
+    external("Prim.sockListen", "nassau_sock_listen", &[INT], INT),
+    external("Prim.sockAccept", "nassau_sock_accept", &[INT], INT),
+    external(
+        "Prim.sockConnect",
+        "nassau_sock_connect",
+        &[INT, STRING],
+        INT,
+    ),
+    external("Prim.sockName", "nassau_sock_name", &[INT, INT], STRING),
+    external(
+        "Prim.sockShutdown",
+        "nassau_sock_shutdown",
+        &[INT, INT],
+        INT,
+    ),
     external("Prim.osArgs", "nassau_os_args", &[], STRING),
 ];
 

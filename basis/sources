@@ -37,4 +37,5 @@ mono-array-impl.sml
 mono-array2.sml
 mono-slice-impl.sml
 byte.sml
+socket.sml
 net-host-db.sml

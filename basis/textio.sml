@@ -18,6 +18,8 @@ sig
   val inputAll : instream -> vector
   val inputLine : instream -> string option
   val lookahead : instream -> elem option
+  val canInput : instream * int -> int option
+  val openString : string -> instream
   val endOfStream : instream -> bool
   val output : outstream * vector -> unit
   val output1 : outstream * elem -> unit
@@ -107,6 +109,14 @@ struct
     else NONE
 
   fun endOfStream stream = not (fill stream)
+
+  fun canInput (stream as Instream {buffer, position, ...}, n) =
+    if n < 0 then raise Size
+    else if fill stream then SOME (Int.min (n, size (!buffer) - !position))
+    else SOME 0
+
+  fun openString text =
+    Instream {name = "<string>", fd = ~1, buffer = ref text, position = ref 0, closed = ref false}
 
   fun inputAll stream =
     let

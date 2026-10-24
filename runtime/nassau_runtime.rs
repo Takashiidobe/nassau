@@ -6,6 +6,8 @@ pub use float::*;
 mod gc;
 mod math;
 pub use math::*;
+mod time;
+pub use time::*;
 mod os;
 pub use os::*;
 

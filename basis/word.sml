@@ -6,7 +6,7 @@ struct
 
   fun fromInt (i: int) : word = Prim.wordOfInt i
 
-  val largestInt : word = 0w1073741823
+  val largestInt : word = 0w4611686018427387903
 
   fun toInt (w: word) : int =
     if w > largestInt then raise Overflow else Prim.intOfWord w

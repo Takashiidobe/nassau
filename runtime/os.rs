@@ -493,14 +493,14 @@ pub extern "C" fn nassau_sock_create() -> i64 {
 pub extern "C" fn nassau_sock_pair() -> i64 {
     #[cfg(unix)]
     {
-        return match UnixStream::pair() {
+        match UnixStream::pair() {
             Ok((left, right)) => {
                 let left = insert(Stream::Socket(Socket::UnixStream(left))) >> 1;
                 let right = insert(Stream::Socket(Socket::UnixStream(right))) >> 1;
                 tagged(left * 16384 + right)
             }
             Err(error) => failure(&error),
-        };
+        }
     }
     #[cfg(not(unix))]
     failure(&unsupported())
@@ -542,7 +542,7 @@ pub extern "C" fn nassau_sock_accept(handle: i64) -> i64 {
     // the table lock is released while blocked so other handles keep working
     let accepted = with_socket(handle, |socket| match socket {
         Socket::TcpListener(listener) => {
-            listener.try_clone().map(|clone| Socket::TcpListener(clone))
+            listener.try_clone().map(Socket::TcpListener)
         }
         #[cfg(unix)]
         Socket::UnixListener(listener, path) => listener

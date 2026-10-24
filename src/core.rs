@@ -119,6 +119,7 @@ pub const EXTERN_FNS: &[ExternFn] = &[
     external("Prim.osSleep", "nassau_os_sleep", &[REAL], ExternTy::Unit),
     external("Prim.osNow", "nassau_os_now", &[], REAL),
     external("Prim.osGetenv", "nassau_os_getenv", &[STRING], STRING),
+    external("Prim.timeZone", "nassau_time_zone", &[REAL], INT),
     external("Prim.fpGetRound", "nassau_fp_get_round", &[], INT),
     external("Prim.fpSetRound", "nassau_fp_set_round", &[INT], INT),
     external("Prim.sockCreate", "nassau_sock_create", &[], INT),

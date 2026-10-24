@@ -1537,11 +1537,17 @@ impl Lowerer<'_> {
             | ExprKind::GreaterEqual(lhs, rhs)
             | ExprKind::Less(lhs, rhs)
             | ExprKind::LessEqual(lhs, rhs) => {
-                if self.ty(lhs).is_some_and(|ty| ty.is("word")) {
-                    return Err(unsupported("word arithmetic and comparisons", expr));
-                }
+                let word = self.ty(lhs).is_some_and(|ty| ty.is("word"));
                 let real = self.is_real(lhs);
                 let prim = match (&expr.value, real) {
+                    (ExprKind::Add(..), _) if word => Prim::WordAdd,
+                    (ExprKind::Subtract(..), _) if word => Prim::WordSub,
+                    (ExprKind::Multiply(..), _) if word => Prim::WordMul,
+                    (ExprKind::IntDivide(..), _) if word => Prim::WordDiv,
+                    (ExprKind::Less(..), _) if word => Prim::WordLt,
+                    (ExprKind::LessEqual(..), _) if word => Prim::WordLe,
+                    (ExprKind::Greater(..), _) if word => Prim::WordGt,
+                    (ExprKind::GreaterEqual(..), _) if word => Prim::WordGe,
                     (ExprKind::Less(..), _) if self.ty(lhs).is_some_and(|ty| ty.is("string")) => {
                         Prim::StringLt
                     }
@@ -1579,7 +1585,7 @@ impl Lowerer<'_> {
                     _ => unreachable!(),
                 };
                 let mut args = vec![self.value(lhs)?, self.value(rhs)?];
-                if prim == Prim::IntDiv {
+                if matches!(prim, Prim::IntDiv | Prim::WordDiv) {
                     args.push(Atom::String(self.source.operator("div", lhs, rhs)));
                 }
                 self.bind("", Op::Prim(prim, args))
@@ -1656,6 +1662,7 @@ impl Lowerer<'_> {
         let prim = match name {
             "::" => None,
             "^" => Some(Prim::Concat),
+            "mod" if self.ty(lhs).is_some_and(|ty| ty.is("word")) => Some(Prim::WordMod),
             "mod" => Some(Prim::IntMod),
             ":=" => Some(Prim::Assign),
             _ => {
@@ -1682,7 +1689,7 @@ impl Lowerer<'_> {
             // A cons cell is a record of the head and the tail.
             None => self.bind("", Op::Record(args)),
             Some(prim) => {
-                if prim == Prim::IntMod {
+                if matches!(prim, Prim::IntMod | Prim::WordMod) {
                     args.push(Atom::String(self.source.operator("mod", lhs, rhs)));
                 }
                 self.bind("", Op::Prim(prim, args))

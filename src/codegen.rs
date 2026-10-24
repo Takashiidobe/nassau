@@ -985,6 +985,45 @@ impl<M: Module> Translator<'_, M> {
                 let result = self.tag(result);
                 self.check_overflow(result)?
             }
+            Prim::WordAdd => {
+                let sum = self.builder.ins().iadd(args[0], args[1]);
+                self.builder.ins().iadd_imm_s(sum, -1)
+            }
+            Prim::WordSub => {
+                let difference = self.builder.ins().isub(args[0], args[1]);
+                self.builder.ins().iadd_imm_s(difference, 1)
+            }
+            Prim::WordMul => {
+                let lhs = self.untag(args[0]);
+                let rhs = self.builder.ins().iadd_imm_s(args[1], -1);
+                let product = self.builder.ins().imul(lhs, rhs);
+                self.builder.ins().iadd_imm_s(product, 1)
+            }
+            Prim::WordDiv | Prim::WordMod => {
+                let zero = self
+                    .builder
+                    .ins()
+                    .icmp_imm_s(IntCC::Equal, args[1], value::tagged(0));
+                self.raise_if(zero, "Div", args[2])?;
+                let lhs = self.builder.ins().ushr_imm_u(args[0], 1);
+                let rhs = self.builder.ins().ushr_imm_u(args[1], 1);
+                let result = if prim == Prim::WordDiv {
+                    self.builder.ins().udiv(lhs, rhs)
+                } else {
+                    self.builder.ins().urem(lhs, rhs)
+                };
+                self.tag(result)
+            }
+            Prim::WordLt | Prim::WordLe | Prim::WordGt | Prim::WordGe => {
+                let condition = match prim {
+                    Prim::WordLt => IntCC::UnsignedLessThan,
+                    Prim::WordLe => IntCC::UnsignedLessThanOrEqual,
+                    Prim::WordGt => IntCC::UnsignedGreaterThan,
+                    _ => IntCC::UnsignedGreaterThanOrEqual,
+                };
+                let compared = self.builder.ins().icmp(condition, args[0], args[1]);
+                self.boolean(compared)
+            }
             Prim::IntNeg => {
                 let two = self.word(2);
                 let negated = self.builder.ins().isub(two, args[0]);

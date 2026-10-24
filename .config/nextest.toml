@@ -1,0 +1,8 @@
+[profile.default]
+default-filter = "not binary(wasm)"
+
+[profile.native]
+default-filter = "not binary(wasm)"
+
+[profile.wasm]
+default-filter = "binary(wasm)"

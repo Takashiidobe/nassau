@@ -9,3 +9,5 @@ val _ = print "after\n"
 (* CHECK-STDERR: /usr/lib/smlnj/bin/sml: Fatal error -- Uncaught exception Overflow with 0 *)
 (* CHECK-STDERR-NEXT:  raised at <file overflow.sml> *)
 (* CHECK-STDERR-EMPTY: *)
+(* WASM-SKIP: REPL continues after an uncaught exception where a program exits 1 *)
+(* WASM-SKIP: REPL continues after an uncaught exception where a program exits 1 *)

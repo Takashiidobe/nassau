@@ -41,12 +41,23 @@ Requirements:
   if it's missing.
 - LLVM's `FileCheck` on `PATH` (or `FILECHECK`).
 
-The browser session fixture runs the generated Wasm in Node and compares its
-REPL transcripts with the native JIT:
+Nextest has two profiles, `native` (the default) and `wasm`. The `wasm`
+profile runs each program fixture's `CHECK-STDOUT` and `CHECK-EXIT` lines
+against the browser bundle in Node, with no browser. Build the bundle first:
 
 ```sh
-cargo build --release
 ./www/build.sh
+cargo nextest r --release --profile wasm
+cargo nextest r --release --profile native
+```
+
+The wasm runner submits the fixture to the REPL, then exits as a program would.
+A fixture opts out with `(* WASM-SKIP: reason *)` at the end of the file.
+
+The browser session fixture checks stateful REPL behaviour in Node and
+compares transcripts with the native JIT:
+
+```sh
 node tests/fixtures/runtime/browser-session.mjs
 ```
 

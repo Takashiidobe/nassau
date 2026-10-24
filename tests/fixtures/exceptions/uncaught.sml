@@ -11,3 +11,5 @@ val () = print "not reached\n"
 (* CHECK-STDERR: /usr/lib/smlnj/bin/sml: Fatal error -- Uncaught exception Code with -5 *)
 (* CHECK-STDERR-NEXT:  raised at uncaught.sml:5.35-5.47 *)
 (* CHECK-STDERR-EMPTY: *)
+(* WASM-SKIP: REPL continues after an uncaught exception where a program exits 1 *)
+(* WASM-SKIP: REPL continues after an uncaught exception where a program exits 1 *)

@@ -36,6 +36,15 @@ host OS. The browser uses an in-memory filesystem preopened at `/`.
 `textio-files`, `filesys`, `filesys-meta` and the `os-process-*` fixtures run on
 both targets.
 
+## Math
+
+`Math` functions other than `sqrt` call the `nassau_math_*` exports in
+`runtime/math.rs`, which wrap the pure-Rust `libm` crate. Native and browser run
+the same code, so results are bit-identical, and `sqrt` is inline on both.
+`basis/math-digits.sml` prints 15 fractional digits and runs on both targets.
+`libm` differs from glibc by 1 ulp for some inputs (`cosh 10`, `pow (10, 2.5)`),
+so that fixture is `POLYML-SKIP`.
+
 ## Differences
 
 | Area | Native | Browser |
@@ -44,12 +53,10 @@ both targets.
 | `OS.Process.system` | Runs `sh -c` | Raises `SysErr` with ENOSYS. |
 | `FileSys.isLink`, `readLink` | Real symlinks | No symlinks in `wasi.js`: `isLink` is always false and `readLink` fails. |
 | Filesystem and environment | Host disk and environment | Both start empty and nothing persists across sessions. |
-| `Math` (`sin`, `pow`, `sinh`, ...) | Host libm | JS `Math`; last-digit differences are possible. `sqrt` is inline on both. |
 | `OS.Process.sleep` | Thread sleep | `Atomics.wait` in the worker, a busy-wait without `SharedArrayBuffer`. |
 
 ## Untested
 
-- No fixture compares `Math` results across targets.
 - Only the queued-input path of browser stdin is tested, in Node. The prompt in
   a real browser is `nassau-i4g`.
 
@@ -64,6 +71,15 @@ No file in `basis/` defines these:
 
 Optional-component coverage is tracked by `nassau-617.5`, and the remaining
 `TextIO` and `StreamIO` work by `nassau-bda`.
+
+## Testing
+
+Nextest has a `native` profile (also the default) and a `wasm` profile. `wasm`
+runs program fixtures against the browser bundle in Node
+(`tests/wasm.rs`, `tests/wasm/run-fixture.mjs`) after `./www/build.sh`. It skips
+fixtures marked `WASM-SKIP`: uncaught-exception fixtures (the REPL keeps going
+where a program exits 1), FileCheck regex fixtures, `basis/process.sml`, and four
+fixtures that trap on deep non-tail recursion (`nassau-gph`).
 
 ## Adding an OS service
 

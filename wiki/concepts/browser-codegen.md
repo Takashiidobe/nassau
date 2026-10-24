@@ -42,7 +42,7 @@ and object fields as `u64` rather than `usize`.
 
 `www/frontend/runtime.js` instantiates it, owns the function table and the
 stack-pointer global, and maps the generated modules' `env` imports onto its
-exports (libm functions come from JS `Math`). `www/frontend/wasi.js` supplies
+exports. `www/frontend/wasi.js` supplies
 the WASI imports. Output written to fd 1 and 2 is captured as bytes, `proc_exit`
 becomes the session's exit status, and `NASSAU_GC_*` settings arrive through the
 WASI environment. The collector, roots, exceptions and `Posix.Process.exit`
@@ -67,7 +67,7 @@ session, lowering, CLIF emitter and value printer serve both REPL hosts.
 Basis functions that reach the OS are table-driven externs. `EXTERN_FNS` in
 `src/core.rs` lists each as `Prim.<name>`, its C symbol, parameter types
 (`Int`, `String`, `Real`, `Unit`) and result type; one `Prim::Extern` serves
-them all. libm functions use it (`sqrt` is inline), as do the `nassau_os_*`
+them all. The `nassau_math_*` functions use it (`sqrt` is inline), as do the `nassau_os_*`
 entry points in `runtime/os.rs`: file open/read/write/close/remove,
 `getenv` and error messages. `runtime/os.rs` uses plain `std::fs` and
 `std::env`, so the same code runs natively and, built for `wasm32-wasip1`,

@@ -7,3 +7,5 @@ val quotient = 10 div zero
 (* CHECK-STDERR: /usr/lib/smlnj/bin/sml: Fatal error -- Uncaught exception Div with 0 *)
 (* CHECK-STDERR-NEXT:  raised at div-by-zero.sml:4.19-4.22 *)
 (* CHECK-STDERR-EMPTY: *)
+(* WASM-SKIP: REPL continues after an uncaught exception where a program exits 1 *)
+(* WASM-SKIP: REPL continues after an uncaught exception where a program exits 1 *)

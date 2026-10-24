@@ -2,6 +2,8 @@ use core::ffi::{c_char, c_int, c_void};
 use core::ptr;
 
 mod gc;
+mod math;
+pub use math::*;
 mod os;
 pub use os::*;
 

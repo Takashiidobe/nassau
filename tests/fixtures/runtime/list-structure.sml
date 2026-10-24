@@ -70,3 +70,5 @@ val () = print (Int.toString (List.length (upto 20000 @ upto 20000)) ^ " " ^ Int
 (* CHECK-STDOUT-NEXT: ok *)
 (* CHECK-STDOUT-NEXT: Size *)
 (* CHECK-STDOUT-NEXT: 40000 199990000 0 *)
+(* WASM-SKIP: nassau-gph: deep non-tail recursion traps in the wasm build *)
+(* WASM-SKIP: deep non-tail recursion traps in the wasm build (nassau-gph) *)

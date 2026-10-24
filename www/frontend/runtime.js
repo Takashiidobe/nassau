@@ -17,20 +17,6 @@ export class NassauRuntime {
       memory: this.memory,
       table: this.table,
       stack_pointer: this.stack_pointer,
-      sin: Math.sin,
-      cos: Math.cos,
-      tan: Math.tan,
-      asin: Math.asin,
-      acos: Math.acos,
-      atan: Math.atan,
-      atan2: Math.atan2,
-      exp: Math.exp,
-      log: Math.log,
-      log10: Math.log10,
-      sinh: Math.sinh,
-      cosh: Math.cosh,
-      tanh: Math.tanh,
-      pow: (x, y) => (x === 1 || (x === -1 && !Number.isFinite(y) && !Number.isNaN(y)) ? 1 : Math.pow(x, y)),
     };
     for (const [name, value] of Object.entries(exports)) {
       if (name.startsWith('nassau_')) this.env[name] = value;

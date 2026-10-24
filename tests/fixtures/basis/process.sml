@@ -42,3 +42,5 @@ val _ = OS.Process.sleep Time.zeroTime
 (* CHECK-STDOUT-NEXT: real: true *)
 (* CHECK-STDOUT-NEXT: slept enough: true *)
 (* CHECK-STDOUT-NEXT: slept briefly: true *)
+(* WASM-SKIP: OS.Process.system raises SysErr in the browser *)
+(* WASM-SKIP: OS.Process.system raises SysErr in the browser *)

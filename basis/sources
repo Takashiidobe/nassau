@@ -7,7 +7,6 @@ int.sml
 option.sml
 string.sml
 word8.sml
-byte.sml
 list.sml
 time.sml
 os.sml
@@ -35,4 +34,5 @@ integer.sml
 mono-array-impl.sml
 mono-array2.sml
 mono-slice-impl.sml
+byte.sml
 net-host-db.sml

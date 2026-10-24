@@ -7,6 +7,8 @@ int.sml
 option.sml
 string.sml
 word8.sml
+word.sml
+bit-flags.sml
 list.sml
 time.sml
 os.sml

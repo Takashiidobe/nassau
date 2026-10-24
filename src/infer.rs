@@ -598,6 +598,20 @@ impl Infer {
         });
         self.builtin("Prim.word8OfInt", false, 0, |_| arrow(int(), con("word8")));
         self.builtin("Prim.intOfWord8", false, 0, |_| arrow(con("word8"), int()));
+        self.builtin("Prim.wordOfInt", false, 0, |_| arrow(int(), con("word")));
+        self.builtin("Prim.intOfWord", false, 0, |_| arrow(con("word"), int()));
+        for name in [
+            "Prim.wordAnd",
+            "Prim.wordOr",
+            "Prim.wordXor",
+            "Prim.wordShl",
+            "Prim.wordLShr",
+            "Prim.wordAShr",
+        ] {
+            self.builtin(name, false, 0, |_| {
+                arrow(tuple(vec![con("word"), con("word")]), con("word"))
+            });
+        }
         self.builtin("Prim.arrayNew", false, 1, |v| {
             arrow(tuple(vec![int(), v[0].clone()]), array(v[0].clone()))
         });

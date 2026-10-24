@@ -999,6 +999,38 @@ impl<M: Module> Translator<'_, M> {
                 let product = self.builder.ins().imul(lhs, rhs);
                 self.builder.ins().iadd_imm_s(product, 1)
             }
+            Prim::WordAnd => self.builder.ins().band(args[0], args[1]),
+            Prim::WordOr => self.builder.ins().bor(args[0], args[1]),
+            Prim::WordXor => {
+                let exclusive = self.builder.ins().bxor(args[0], args[1]);
+                self.builder.ins().bor_imm_s(exclusive, 1)
+            }
+            Prim::WordShl | Prim::WordLShr | Prim::WordAShr => {
+                let count = self.builder.ins().ushr_imm_u(args[1], 1);
+                let past =
+                    self.builder
+                        .ins()
+                        .icmp_imm_s(IntCC::UnsignedGreaterThanOrEqual, count, 63);
+                let result = match prim {
+                    Prim::WordAShr => {
+                        let value = self.untag(args[0]);
+                        let limit = self.word(63);
+                        let count = self.builder.ins().select(past, limit, count);
+                        self.builder.ins().sshr(value, count)
+                    }
+                    _ => {
+                        let value = self.builder.ins().ushr_imm_u(args[0], 1);
+                        let shifted = if prim == Prim::WordShl {
+                            self.builder.ins().ishl(value, count)
+                        } else {
+                            self.builder.ins().ushr(value, count)
+                        };
+                        let zero = self.word(0);
+                        self.builder.ins().select(past, zero, shifted)
+                    }
+                };
+                self.tag(result)
+            }
             Prim::WordDiv | Prim::WordMod => {
                 let zero = self
                     .builder

@@ -401,6 +401,7 @@ enum Builtin {
     StringSub,
     /// A conversion between types of the same representation.
     Identity,
+    Word(Prim),
     Size,
     Not,
     Negate,
@@ -441,7 +442,14 @@ fn builtin(name: &str) -> Option<Builtin> {
         "Prim.arrayVector" => Builtin::ArrayVector,
         "Prim.vectorLength" => Builtin::VectorLength,
         "Prim.vectorSub" => Builtin::VectorSub,
-        "Prim.word8OfInt" | "Prim.intOfWord8" | "Prim.ord" | "Prim.chr" => Builtin::Identity,
+        "Prim.word8OfInt" | "Prim.intOfWord8" | "Prim.ord" | "Prim.chr" | "Prim.wordOfInt"
+        | "Prim.intOfWord" => Builtin::Identity,
+        "Prim.wordAnd" => Builtin::Word(Prim::WordAnd),
+        "Prim.wordOr" => Builtin::Word(Prim::WordOr),
+        "Prim.wordXor" => Builtin::Word(Prim::WordXor),
+        "Prim.wordShl" => Builtin::Word(Prim::WordShl),
+        "Prim.wordLShr" => Builtin::Word(Prim::WordLShr),
+        "Prim.wordAShr" => Builtin::Word(Prim::WordAShr),
         "size" => Builtin::Size,
         "not" => Builtin::Not,
         "~" => Builtin::Negate,
@@ -1832,6 +1840,11 @@ impl Lowerer<'_> {
                 self.bind("", Op::Prim(Prim::StringSub, vec![string, index]))
             }
             Builtin::Identity => argument,
+            Builtin::Word(prim) => {
+                let lhs = self.bind("", Op::Select(argument.clone(), 0));
+                let rhs = self.bind("", Op::Select(argument, 1));
+                self.bind("", Op::Prim(prim, vec![lhs, rhs]))
+            }
             Builtin::Size => self.bind("", Op::Prim(Prim::Size, vec![argument])),
             Builtin::Not => self.bind(
                 "",

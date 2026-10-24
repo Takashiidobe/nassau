@@ -64,7 +64,7 @@ so that fixture is `POLYML-SKIP`.
 
 No file in `basis/` defines these:
 
-- `Word` (only `Word8`), `Word31`, `Word32`, `Word64`, `LargeWord`
+- `Word31`, `Word32`, `Word64`, `LargeWord`. `Word` and `SysWord` exist and are 63-bit (`SysWord` is not 64-bit as on Poly/ML).
 - `Date`, `Timer`, `CommandLine`, `BinIO`, `Text`
 - `Unix`, `Socket`, and `NetHostDB` beyond its signature
 - `Posix` beyond `Posix.Process.exit`

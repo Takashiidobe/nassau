@@ -401,6 +401,7 @@ enum Builtin {
     StringSub,
     /// A conversion between types of the same representation.
     Identity,
+    ExnName,
     Word(Prim),
     Size,
     Not,
@@ -444,6 +445,7 @@ fn builtin(name: &str) -> Option<Builtin> {
         "Prim.vectorSub" => Builtin::VectorSub,
         "Prim.word8OfInt" | "Prim.intOfWord8" | "Prim.ord" | "Prim.chr" | "Prim.wordOfInt"
         | "Prim.intOfWord" => Builtin::Identity,
+        "Prim.exnName" => Builtin::ExnName,
         "Prim.wordAnd" => Builtin::Word(Prim::WordAnd),
         "Prim.wordOr" => Builtin::Word(Prim::WordOr),
         "Prim.wordXor" => Builtin::Word(Prim::WordXor),
@@ -1840,6 +1842,10 @@ impl Lowerer<'_> {
                 self.bind("", Op::Prim(Prim::StringSub, vec![string, index]))
             }
             Builtin::Identity => argument,
+            Builtin::ExnName => {
+                let identity = self.bind("", Op::Select(argument, 0));
+                self.bind("", Op::Select(identity, 0))
+            }
             Builtin::Word(prim) => {
                 let lhs = self.bind("", Op::Select(argument.clone(), 0));
                 let rhs = self.bind("", Op::Select(argument, 1));

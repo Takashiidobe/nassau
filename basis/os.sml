@@ -397,3 +397,26 @@ struct
   end
 
 end
+
+structure CommandLine =
+struct
+  fun split s =
+    let
+      fun go (i, start, acc) =
+        if i = size s then rev (String.substring (s, start, i - start) :: acc)
+        else if String.sub (s, i) = #"\000" then go (i + 1, i + 1, String.substring (s, start, i - start) :: acc)
+        else go (i + 1, start, acc)
+    in
+      if size s = 0 then [] else go (0, 0, [])
+    end
+
+  fun name () =
+    case split (Prim.osArgs ()) of
+      name :: _ => name
+    | [] => ""
+
+  fun arguments () =
+    case split (Prim.osArgs ()) of
+      _ :: rest => rest
+    | [] => []
+end

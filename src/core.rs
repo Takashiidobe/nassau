@@ -119,6 +119,7 @@ pub const EXTERN_FNS: &[ExternFn] = &[
     external("Prim.osSleep", "nassau_os_sleep", &[REAL], ExternTy::Unit),
     external("Prim.osNow", "nassau_os_now", &[], REAL),
     external("Prim.osGetenv", "nassau_os_getenv", &[STRING], STRING),
+    external("Prim.osArgs", "nassau_os_args", &[], STRING),
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -67,6 +67,7 @@ export class Wasi {
   constructor(env = {}, files = {}) {
     this.environment = Object.entries(env).map(([name, value]) =>
       new TextEncoder().encode(`${name}=${value}\0`));
+    this.arguments = [new TextEncoder().encode('nassau\0')];
     this.output = [];
     this.stdin = () => new Uint8Array(0);
     this.exit = undefined;
@@ -387,6 +388,21 @@ export class Wasi {
         source.directory.entries.delete(source.name);
         target.directory.entries.set(target.name, node);
         if (node instanceof Directory) node.parent = target.directory;
+        return SUCCESS;
+      },
+      args_sizes_get: (count, size) => {
+        const data = view();
+        data.setUint32(count, this.arguments.length, true);
+        data.setUint32(size, this.arguments.reduce((total, item) => total + item.length, 0), true);
+        return SUCCESS;
+      },
+      args_get: (pointers, buffer) => {
+        const data = view();
+        this.arguments.forEach((item, index) => {
+          data.setUint32(pointers + index * 4, buffer, true);
+          bytes().set(item, buffer);
+          buffer += item.length;
+        });
         return SUCCESS;
       },
       environ_sizes_get: (count, size) => {

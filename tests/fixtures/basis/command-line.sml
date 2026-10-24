@@ -1,0 +1,6 @@
+(* POLYML-SKIP: the oracle reports Poly/ML's own command line *)
+val _ = print (Int.toString (length (CommandLine.arguments ())) ^ "\n")
+val _ = print (Bool.toString (size (CommandLine.name ()) > 0) ^ "\n")
+(* CHECK-STDOUT: 0 *)
+(* CHECK-STDOUT-NEXT: true *)
+(* CHECK-EXIT: 0 *)

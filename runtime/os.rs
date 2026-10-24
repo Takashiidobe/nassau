@@ -368,6 +368,14 @@ pub unsafe extern "C" fn nassau_os_getenv(name: i64) -> i64 {
     unsafe { string(&found) }
 }
 
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nassau_os_args() -> i64 {
+    let arguments: Vec<String> = std::env::args_os()
+        .map(|argument| argument.to_string_lossy().into_owned())
+        .collect();
+    unsafe { string(arguments.join("\0").as_bytes()) }
+}
+
 fn normalized_dir() -> String {
     let mut parts: Vec<String> = Vec::new();
     let directory = std::env::current_dir().unwrap_or_else(|_| "/".into());

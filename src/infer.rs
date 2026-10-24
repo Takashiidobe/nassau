@@ -598,6 +598,7 @@ impl Infer {
         });
         self.builtin("Prim.word8OfInt", false, 0, |_| arrow(int(), con("word8")));
         self.builtin("Prim.intOfWord8", false, 0, |_| arrow(con("word8"), int()));
+        self.builtin("Prim.exnName", false, 0, |_| arrow(con("exn"), string()));
         self.builtin("Prim.wordOfInt", false, 0, |_| arrow(int(), con("word")));
         self.builtin("Prim.intOfWord", false, 0, |_| arrow(con("word"), int()));
         for name in [

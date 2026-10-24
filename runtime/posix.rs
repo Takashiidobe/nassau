@@ -28,6 +28,31 @@ fn reply(outcome: Result<Vec<u8>, i64>) -> i64 {
     unsafe { string(&bytes) }
 }
 
+const LINUX: bool = cfg!(any(target_os = "linux", target_os = "wasi"));
+
+const SIGNALS: [(i32, i32); 20] = [
+    (1, 1),
+    (2, 2),
+    (3, 3),
+    (4, 4),
+    (6, 6),
+    (8, 8),
+    (9, 9),
+    (13, 13),
+    (14, 14),
+    (15, 15),
+    (11, 11),
+    (7, if LINUX { 7 } else { 10 }),
+    (10, if LINUX { 10 } else { 30 }),
+    (12, if LINUX { 12 } else { 31 }),
+    (17, if LINUX { 17 } else { 20 }),
+    (18, if LINUX { 18 } else { 19 }),
+    (19, if LINUX { 19 } else { 17 }),
+    (20, if LINUX { 20 } else { 18 }),
+    (21, 21),
+    (22, 22),
+];
+
 #[cfg(unix)]
 mod sys {
     use core::ffi::{c_char, c_int, c_long};
@@ -94,29 +119,6 @@ mod sys {
     fn errno() -> i64 {
         i64::from(std::io::Error::last_os_error().raw_os_error().unwrap_or(5))
     }
-
-    const SIGNALS: [(i32, i32); 20] = [
-        (1, 1),
-        (2, 2),
-        (3, 3),
-        (4, 4),
-        (6, 6),
-        (8, 8),
-        (9, 9),
-        (13, 13),
-        (14, 14),
-        (15, 15),
-        (11, 11),
-        (7, if cfg!(target_os = "linux") { 7 } else { 10 }),
-        (10, if cfg!(target_os = "linux") { 10 } else { 30 }),
-        (12, if cfg!(target_os = "linux") { 12 } else { 31 }),
-        (17, if cfg!(target_os = "linux") { 17 } else { 20 }),
-        (18, if cfg!(target_os = "linux") { 18 } else { 19 }),
-        (19, if cfg!(target_os = "linux") { 19 } else { 17 }),
-        (20, if cfg!(target_os = "linux") { 20 } else { 18 }),
-        (21, 21),
-        (22, 22),
-    ];
 
     fn sysconf_name(index: i64) -> Option<c_int> {
         let linux = [0, 1, 2, 3, 4, 5, 6, 7, 8, 29];
@@ -187,7 +189,9 @@ mod sys {
             }
             18 => STATUS_KIND.load(Ordering::Relaxed),
             19 => STATUS_VALUE.load(Ordering::Relaxed),
-            20 => SIGNALS.get(a as usize).map_or(-EINVAL, |s| i64::from(s.1)),
+            20 => super::SIGNALS
+                .get(a as usize)
+                .map_or(-EINVAL, |s| i64::from(s.1)),
             21 => check(unsafe { getgroups(0, core::ptr::null_mut()) }),
             22 => {
                 let mut list = vec![0u32; a.max(1) as usize];
@@ -199,7 +203,7 @@ mod sys {
                 }
             }
             23 => i64::from(unsafe { sleep(a as u32) }),
-            24 => SIGNALS
+            24 => super::SIGNALS
                 .iter()
                 .position(|s| i64::from(s.1) == a)
                 .map_or(-EINVAL, |i| i as i64),
@@ -301,9 +305,15 @@ mod sys {
 #[cfg(not(unix))]
 mod sys {
     const ENOSYS: i64 = if cfg!(target_os = "wasi") { 52 } else { 38 };
+    const EINVAL: i64 = if cfg!(target_os = "wasi") { 28 } else { 22 };
 
-    pub fn call(_op: i64, _a: i64, _b: i64) -> i64 {
-        -ENOSYS
+    pub fn call(op: i64, a: i64, _b: i64) -> i64 {
+        match op {
+            20 => super::SIGNALS
+                .get(a as usize)
+                .map_or(-EINVAL, |s| i64::from(s.1)),
+            _ => -ENOSYS,
+        }
     }
 
     pub fn real(_op: i64) -> f64 {

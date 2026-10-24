@@ -111,6 +111,8 @@ recorded.
    - `cargo clippy -p <crate> --allow-dirty --fix` for each changed crate, to apply what can be fixed automatically
    - `cargo fmt`
    - `cargo nextest r --release`
+   - `./www/build.sh && cargo nextest r --profile wasm --release` when `runtime/`,
+     `basis/`, `src/` or `www/` changed: it catches browser shim drift
 3. **Update issue status** - Close finished work, update in-progress items.
 4. **Log every change** - `llog new`, summarizing the change in no more than 30 lines.
 5. **Commit** - `git commit -m ...` with a one-line message summarizing the task.

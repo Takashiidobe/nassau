@@ -445,6 +445,8 @@ export class Wasi {
         data.setUint32(produced, count, true);
         return SUCCESS;
       },
+      sock_accept: () => ENOSYS,
+      sock_shutdown: () => ENOSYS,
       random_get: (address, length) => {
         crypto.getRandomValues(new Uint8Array(memory().buffer, address, length));
         return SUCCESS;

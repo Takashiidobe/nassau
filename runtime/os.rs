@@ -671,10 +671,6 @@ pub extern "C" fn nassau_os_io_kind(handle: i64) -> i64 {
     use std::os::fd::FromRawFd;
     use std::os::unix::fs::FileTypeExt;
 
-    unsafe extern "C" {
-        fn isatty(fd: i32) -> i32;
-    }
-
     let streams = streams();
     let Some(Some(stream)) = streams.get((handle >> 1) as usize) else {
         return tagged(-EBADF);
@@ -701,7 +697,7 @@ pub extern "C" fn nassau_os_io_kind(handle: i64) -> i64 {
         KIND_DIR
     } else if kind.is_file() {
         KIND_FILE
-    } else if kind.is_char_device() && unsafe { isatty(fd) } == 1 {
+    } else if kind.is_char_device() && unsafe { libc::isatty(fd) } == 1 {
         KIND_TTY
     } else {
         KIND_DEVICE
@@ -717,17 +713,6 @@ pub extern "C" fn nassau_os_io_kind(_handle: i64) -> i64 {
 #[cfg(unix)]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn nassau_os_poll(spec: i64, timeout: i64) -> i64 {
-    #[repr(C)]
-    struct PollFd {
-        fd: i32,
-        events: i16,
-        revents: i16,
-    }
-
-    unsafe extern "C" {
-        fn poll(fds: *mut PollFd, count: u64, timeout: i32) -> i32;
-    }
-
     let spec = unsafe { text(spec) };
     let mut wanted = Vec::new();
     {
@@ -742,7 +727,7 @@ pub unsafe extern "C" fn nassau_os_poll(spec: i64, timeout: i64) -> i64 {
             let Some(fd) = found else {
                 return unsafe { string(EBADF.to_string().as_bytes()) };
             };
-            wanted.push(PollFd {
+            wanted.push(libc::pollfd {
                 fd,
                 events: events.parse().unwrap_or(0),
                 revents: 0,
@@ -751,9 +736,9 @@ pub unsafe extern "C" fn nassau_os_poll(spec: i64, timeout: i64) -> i64 {
     }
     unsafe { write_stdout(&[]) };
     let count = unsafe {
-        poll(
+        libc::poll(
             wanted.as_mut_ptr(),
-            wanted.len() as u64,
+            wanted.len() as libc::nfds_t,
             (timeout >> 1) as i32,
         )
     };

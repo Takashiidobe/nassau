@@ -4,29 +4,13 @@ fn tagged(value: i64) -> i64 {
 
 #[cfg(unix)]
 mod zone {
-    use core::ffi::{c_char, c_int, c_long};
-
-    #[repr(C)]
-    struct Tm {
-        fields: [c_int; 9],
-        gmtoff: c_long,
-        zone: *const c_char,
-    }
-
-    unsafe extern "C" {
-        fn localtime_r(time: *const i64, out: *mut Tm) -> *mut Tm;
-    }
-
     pub fn lookup(seconds: i64) -> (i64, bool) {
-        let mut tm = Tm {
-            fields: [0; 9],
-            gmtoff: 0,
-            zone: core::ptr::null(),
-        };
-        if unsafe { localtime_r(&seconds, &mut tm) }.is_null() {
+        let time = seconds as libc::time_t;
+        let mut tm: libc::tm = unsafe { core::mem::zeroed() };
+        if unsafe { libc::localtime_r(&time, &mut tm) }.is_null() {
             return (0, false);
         }
-        (tm.gmtoff as i64, tm.fields[8] > 0)
+        (tm.tm_gmtoff as i64, tm.tm_isdst > 0)
     }
 }
 

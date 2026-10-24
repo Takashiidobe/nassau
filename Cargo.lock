@@ -986,6 +986,7 @@ dependencies = [
  "crossterm",
  "directories",
  "js-sys",
+ "libc",
  "libm",
  "libtest-mimic",
  "miette",

@@ -1,5 +1,6 @@
-use core::ffi::{c_char, c_int, c_void};
+use core::ffi::c_int;
 use core::ptr;
+use libc::{_exit as _Exit, FILE, exit, fflush, fprintf, fwrite};
 
 mod float;
 pub use float::*;
@@ -17,16 +18,12 @@ use crate::value;
 
 use value::{BUILTIN_EXCEPTIONS, KIND_ARRAY, KIND_REF, KIND_STRING, KIND_VECTOR, NIL, header};
 
+// libc exposes neither stream
 unsafe extern "C" {
-    fn fwrite(bytes: *const u8, size: usize, count: usize, stream: *mut c_void) -> usize;
-    fn fflush(stream: *mut c_void) -> c_int;
-    fn fprintf(stream: *mut c_void, format: *const c_char, ...) -> c_int;
-    fn exit(status: c_int) -> !;
-    fn _Exit(status: c_int) -> !;
     #[cfg_attr(target_vendor = "apple", link_name = "__stdoutp")]
-    static mut stdout: *mut c_void;
+    static mut stdout: *mut FILE;
     #[cfg_attr(target_vendor = "apple", link_name = "__stderrp")]
-    static mut stderr: *mut c_void;
+    static mut stderr: *mut FILE;
 }
 
 static mut IDENTITIES: [i64; BUILTIN_EXCEPTIONS.len()] = [0; BUILTIN_EXCEPTIONS.len()];
@@ -94,14 +91,14 @@ unsafe fn string_length(string: i64) -> usize {
 
 unsafe fn write_stdout(bytes: &[u8]) {
     unsafe {
-        fwrite(bytes.as_ptr(), 1, bytes.len(), stdout);
+        fwrite(bytes.as_ptr().cast(), 1, bytes.len(), stdout);
         fflush(stdout);
     }
 }
 
 unsafe fn write_stderr(bytes: &[u8]) {
     unsafe {
-        fwrite(bytes.as_ptr(), 1, bytes.len(), stderr);
+        fwrite(bytes.as_ptr().cast(), 1, bytes.len(), stderr);
         fflush(stderr);
     }
 }

@@ -541,9 +541,7 @@ pub extern "C" fn nassau_sock_listen(handle: i64) -> i64 {
 pub extern "C" fn nassau_sock_accept(handle: i64) -> i64 {
     // the table lock is released while blocked so other handles keep working
     let accepted = with_socket(handle, |socket| match socket {
-        Socket::TcpListener(listener) => {
-            listener.try_clone().map(Socket::TcpListener)
-        }
+        Socket::TcpListener(listener) => listener.try_clone().map(Socket::TcpListener),
         #[cfg(unix)]
         Socket::UnixListener(listener, path) => listener
             .try_clone()
@@ -639,4 +637,143 @@ pub extern "C" fn nassau_sock_shutdown(handle: i64, how: i64) -> i64 {
         Socket::UnixStream(stream) => stream.shutdown(how),
         _ => Err(io::Error::from_raw_os_error(107)),
     }))
+}
+
+#[cfg(unix)]
+fn raw_descriptor(stream: &Stream) -> Option<i32> {
+    use std::os::fd::AsRawFd;
+    match stream {
+        Stream::Stdin => Some(0),
+        Stream::Stdout => Some(1),
+        Stream::Stderr => Some(2),
+        Stream::File(file) => Some(file.as_raw_fd()),
+        Stream::Dir { .. } => None,
+        Stream::Socket(Socket::TcpListener(socket)) => Some(socket.as_raw_fd()),
+        Stream::Socket(Socket::TcpStream(socket)) => Some(socket.as_raw_fd()),
+        Stream::Socket(Socket::UnixListener(socket, _)) => Some(socket.as_raw_fd()),
+        Stream::Socket(Socket::UnixStream(socket)) => Some(socket.as_raw_fd()),
+        Stream::Socket(_) => None,
+    }
+}
+
+const KIND_FILE: i64 = 0;
+const KIND_DIR: i64 = 1;
+const KIND_TTY: i64 = 3;
+const KIND_PIPE: i64 = 4;
+const KIND_SOCKET: i64 = 5;
+const KIND_DEVICE: i64 = 6;
+const EBADF: i64 = 9;
+
+#[cfg(unix)]
+#[unsafe(no_mangle)]
+pub extern "C" fn nassau_os_io_kind(handle: i64) -> i64 {
+    use std::mem::ManuallyDrop;
+    use std::os::fd::FromRawFd;
+    use std::os::unix::fs::FileTypeExt;
+
+    unsafe extern "C" {
+        fn isatty(fd: i32) -> i32;
+    }
+
+    let streams = streams();
+    let Some(Some(stream)) = streams.get((handle >> 1) as usize) else {
+        return tagged(-EBADF);
+    };
+    if matches!(stream, Stream::Dir { .. }) {
+        return tagged(KIND_DIR);
+    }
+    if matches!(stream, Stream::Socket(_)) {
+        return tagged(KIND_SOCKET);
+    }
+    let Some(fd) = raw_descriptor(stream) else {
+        return tagged(-EBADF);
+    };
+    let file = ManuallyDrop::new(unsafe { File::from_raw_fd(fd) });
+    let Ok(metadata) = file.metadata() else {
+        return tagged(-EBADF);
+    };
+    let kind = metadata.file_type();
+    tagged(if kind.is_socket() {
+        KIND_SOCKET
+    } else if kind.is_fifo() {
+        KIND_PIPE
+    } else if kind.is_dir() {
+        KIND_DIR
+    } else if kind.is_file() {
+        KIND_FILE
+    } else if kind.is_char_device() && unsafe { isatty(fd) } == 1 {
+        KIND_TTY
+    } else {
+        KIND_DEVICE
+    })
+}
+
+#[cfg(not(unix))]
+#[unsafe(no_mangle)]
+pub extern "C" fn nassau_os_io_kind(_handle: i64) -> i64 {
+    tagged(-ENOSYS)
+}
+
+#[cfg(unix)]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nassau_os_poll(spec: i64, timeout: i64) -> i64 {
+    #[repr(C)]
+    struct PollFd {
+        fd: i32,
+        events: i16,
+        revents: i16,
+    }
+
+    unsafe extern "C" {
+        fn poll(fds: *mut PollFd, count: u64, timeout: i32) -> i32;
+    }
+
+    let spec = unsafe { text(spec) };
+    let mut wanted = Vec::new();
+    {
+        let streams = streams();
+        for entry in spec.split(',').filter(|entry| !entry.is_empty()) {
+            let (handle, events) = entry.split_once(':').unwrap_or((entry, "0"));
+            let found = handle
+                .parse::<usize>()
+                .ok()
+                .and_then(|handle| streams.get(handle)?.as_ref())
+                .and_then(raw_descriptor);
+            let Some(fd) = found else {
+                return unsafe { string(EBADF.to_string().as_bytes()) };
+            };
+            wanted.push(PollFd {
+                fd,
+                events: events.parse().unwrap_or(0),
+                revents: 0,
+            });
+        }
+    }
+    unsafe { write_stdout(&[]) };
+    let count = unsafe {
+        poll(
+            wanted.as_mut_ptr(),
+            wanted.len() as u64,
+            (timeout >> 1) as i32,
+        )
+    };
+    if count < 0 {
+        let code = io::Error::last_os_error()
+            .raw_os_error()
+            .unwrap_or(EIO as i32);
+        return unsafe { string(code.to_string().as_bytes()) };
+    }
+    let mut reply = vec![b'='];
+    let found: Vec<String> = wanted
+        .iter()
+        .map(|entry| entry.revents.to_string())
+        .collect();
+    reply.extend_from_slice(found.join(",").as_bytes());
+    unsafe { string(&reply) }
+}
+
+#[cfg(not(unix))]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nassau_os_poll(_spec: i64, _timeout: i64) -> i64 {
+    unsafe { string(ENOSYS.to_string().as_bytes()) }
 }

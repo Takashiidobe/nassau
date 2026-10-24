@@ -141,6 +141,17 @@ pub const EXTERN_FNS: &[ExternFn] = &[
         INT,
     ),
     external("Prim.osArgs", "nassau_os_args", &[], STRING),
+    external("Prim.osIoKind", "nassau_os_io_kind", &[INT], INT),
+    external("Prim.osPoll", "nassau_os_poll", &[STRING, INT], STRING),
+    external("Prim.posixInt", "nassau_posix_int", &[INT, INT, INT], INT),
+    external("Prim.posixReal", "nassau_posix_real", &[INT], REAL),
+    external("Prim.posixText", "nassau_posix_text", &[INT, INT], STRING),
+    external(
+        "Prim.posixExec",
+        "nassau_posix_exec",
+        &[STRING, STRING, STRING, INT],
+        INT,
+    ),
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

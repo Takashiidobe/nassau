@@ -1,12 +1,3 @@
-structure Posix =
-struct
-  structure Process =
-  struct
-    fun exit (status: Word8.word) =
-      Prim.exit (Word8.toInt status)
-  end
-end
-
 signature OS_PATH =
 sig
   exception Path
@@ -60,9 +51,33 @@ struct
 
   fun errorMsg code = Prim.osErrorMessage code
 
+  val errorNames =
+    [("E2BIG", 7), ("EACCES", 13), ("EADDRINUSE", 98), ("EADDRNOTAVAIL", 99),
+     ("EAGAIN", 11), ("EALREADY", 114), ("EBADF", 9), ("EBUSY", 16),
+     ("ECHILD", 10), ("ECONNREFUSED", 111), ("ECONNRESET", 104),
+     ("EDEADLK", 35), ("EDOM", 33), ("EEXIST", 17), ("EFAULT", 14),
+     ("EFBIG", 27), ("EINPROGRESS", 115), ("EINTR", 4), ("EINVAL", 22),
+     ("EIO", 5), ("EISDIR", 21), ("EMFILE", 24), ("EMLINK", 31),
+     ("ENAMETOOLONG", 36), ("ENFILE", 23), ("ENODEV", 19), ("ENOENT", 2),
+     ("ENOEXEC", 8), ("ENOMEM", 12), ("ENOSPC", 28), ("ENOSYS", 38),
+     ("ENOTCONN", 107), ("ENOTDIR", 20), ("ENOTEMPTY", 39), ("ENOTSOCK", 88),
+     ("ENOTTY", 25), ("ENXIO", 6), ("EPERM", 1), ("EPIPE", 32),
+     ("EPROTO", 71), ("ERANGE", 34), ("EROFS", 30), ("ESPIPE", 29),
+     ("ESRCH", 3), ("ETIMEDOUT", 110), ("EXDEV", 18)]
+
+  fun errorName code =
+    case List.find (fn (_, number) => number = code) errorNames of
+      SOME (name, _) => name
+    | NONE => "E" ^ Int.toString code
+
+  fun syserror name =
+    case List.find (fn (known, _) => known = name) errorNames of
+      SOME (_, number) => SOME number
+    | NONE => NONE
+
   structure Process :>
   sig
-    include OS_PROCESS
+    include OS_PROCESS where type status = int
     val runAtExit: unit -> unit
     val addCleanup: (unit -> unit) -> unit
   end =
@@ -104,6 +119,113 @@ struct
     fun terminate status = Prim.terminate status
 
     fun sleep time = Prim.osSleep (Time.toReal time)
+  end
+
+  structure IO :
+  sig
+    eqtype iodesc
+    val hash : iodesc -> word
+    val compare : iodesc * iodesc -> order
+    eqtype iodesc_kind
+    structure Kind :
+    sig
+      val file : iodesc_kind
+      val dir : iodesc_kind
+      val symlink : iodesc_kind
+      val tty : iodesc_kind
+      val pipe : iodesc_kind
+      val socket : iodesc_kind
+      val device : iodesc_kind
+    end
+    val kind : iodesc -> iodesc_kind
+    exception Poll
+    eqtype poll_desc
+    type poll_info
+    val pollDesc : iodesc -> poll_desc option
+    val pollToIODesc : poll_desc -> iodesc
+    val pollIn : poll_desc -> poll_desc
+    val pollOut : poll_desc -> poll_desc
+    val pollPri : poll_desc -> poll_desc
+    val poll : poll_desc list * Time.time option -> poll_info list
+    val isIn : poll_info -> bool
+    val isOut : poll_info -> bool
+    val isPri : poll_info -> bool
+    val infoToPollDesc : poll_info -> poll_desc
+    val ofHandle : int -> iodesc
+  end =
+  struct
+    type iodesc = int
+
+    fun hash d = Word.fromInt d
+    fun compare (a, b) = Int.compare (a, b)
+
+    type iodesc_kind = int
+
+    structure Kind =
+    struct
+      val file = 0
+      val dir = 1
+      val symlink = 2
+      val tty = 3
+      val pipe = 4
+      val socket = 5
+      val device = 6
+    end
+
+    fun check result =
+      if result < 0 then raise SysErr (errorMsg (~result), SOME (~result)) else result
+
+    fun kind d = check (Prim.osIoKind d)
+
+    exception Poll
+
+    type poll_desc = int * int
+    type poll_info = int * int
+
+    fun pollDesc d = if Prim.osIoKind d < 0 then NONE else SOME (d, 0)
+    fun pollToIODesc (d, _) = d
+
+    fun withEvent bit (d, events) =
+      (d, if events div bit mod 2 = 1 then events else events + bit)
+
+    val pollIn = withEvent 1
+    val pollPri = withEvent 2
+    val pollOut = withEvent 4
+
+    fun specOf descs =
+      String.concatWith ","
+        (List.map (fn (d, e) => Int.toString d ^ ":" ^ Int.toString e) descs)
+
+    fun split text =
+      List.map (fn part => valOf (Int.fromString part))
+        (String.fields (fn c => c = #",") text)
+
+    fun poll (descs, timeout) =
+      let
+        val ms =
+          case timeout of
+            NONE => ~1
+          | SOME t => Int.max (0, Time.toMilliseconds t)
+        val reply = Prim.osPoll (specOf descs, ms)
+      in
+        if String.sub (reply, 0) = #"=" then
+          let
+            val revents = if null descs then [] else split (String.extract (reply, 1, NONE))
+            fun pair ((d, _) :: ds, r :: rs) =
+                  if r = 0 then pair (ds, rs) else (d, r) :: pair (ds, rs)
+              | pair _ = []
+          in pair (descs, revents) end
+        else
+          let val code = valOf (Int.fromString reply)
+          in raise SysErr (errorMsg code, SOME code) end
+      end
+
+    fun has bit (_, revents) = revents div bit mod 2 = 1
+    fun isIn info = has 1 info orelse has 16 info
+    val isPri = has 2
+    val isOut = has 4
+    fun infoToPollDesc (d, _) = (d, 0)
+    fun ofHandle d = d
   end
 
   structure Path : OS_PATH =
@@ -335,6 +457,7 @@ struct
     eqtype file_id
     val fileId : string -> file_id
     val compare : file_id * file_id -> order
+    val hash : file_id -> word
   end =
   struct
     type dirstream = int
@@ -388,6 +511,11 @@ struct
 
     fun fileId path = textResult (Prim.osFileId path)
     fun compare (a, b) = String.compare (a, b)
+
+    fun hash id =
+      List.foldl
+        (fn (c, h) => Word.andb (h * 0w31 + Word.fromInt (Char.ord c), 0w1073741823))
+        0w5381 (String.explode id)
     fun realPath path =
       let val full = fullPath path
       in

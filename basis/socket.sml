@@ -31,6 +31,7 @@ struct
     if result < 0 then raise OS.SysErr (OS.errorMsg (~result), SOME (~result)) else result
 
   fun sameDesc (SOCK a, SOCK b) = a = b
+  fun ioDesc (SOCK h) = OS.IO.ofHandle h
   fun sameAddr (ADDR a, ADDR b) = a = b
 
   fun bind (SOCK h, ADDR a) = (check (Prim.sockBind (h, a)); ())

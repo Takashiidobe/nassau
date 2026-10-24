@@ -8,14 +8,16 @@ use crate::native_runtime::{
     nassau_math_sinh, nassau_math_tan, nassau_math_tanh, nassau_os_access, nassau_os_args,
     nassau_os_chdir, nassau_os_close, nassau_os_error_message, nassau_os_file_id,
     nassau_os_file_size, nassau_os_full_path, nassau_os_get_dir, nassau_os_getenv,
-    nassau_os_is_dir, nassau_os_is_link, nassau_os_mkdir, nassau_os_mod_time, nassau_os_now,
-    nassau_os_open, nassau_os_open_dir, nassau_os_read, nassau_os_read_dir, nassau_os_read_link,
-    nassau_os_remove, nassau_os_rename, nassau_os_rewind_dir, nassau_os_rmdir, nassau_os_set_time,
-    nassau_os_sleep, nassau_os_system, nassau_os_tmp_name, nassau_os_write, nassau_print,
-    nassau_raised, nassau_repl, nassau_roots_pop, nassau_roots_push, nassau_sock_accept,
-    nassau_sock_bind, nassau_sock_connect, nassau_sock_create, nassau_sock_listen,
-    nassau_sock_name, nassau_sock_pair, nassau_sock_shutdown, nassau_take_uncaught,
-    nassau_terminate, nassau_time_zone, nassau_uncaught, nassau_vector_from_array,
+    nassau_os_io_kind, nassau_os_is_dir, nassau_os_is_link, nassau_os_mkdir, nassau_os_mod_time,
+    nassau_os_now, nassau_os_open, nassau_os_open_dir, nassau_os_poll, nassau_os_read,
+    nassau_os_read_dir, nassau_os_read_link, nassau_os_remove, nassau_os_rename,
+    nassau_os_rewind_dir, nassau_os_rmdir, nassau_os_set_time, nassau_os_sleep, nassau_os_system,
+    nassau_os_tmp_name, nassau_os_write, nassau_posix_exec, nassau_posix_int, nassau_posix_real,
+    nassau_posix_text, nassau_print, nassau_raised, nassau_repl, nassau_roots_pop,
+    nassau_roots_push, nassau_sock_accept, nassau_sock_bind, nassau_sock_connect,
+    nassau_sock_create, nassau_sock_listen, nassau_sock_name, nassau_sock_pair,
+    nassau_sock_shutdown, nassau_take_uncaught, nassau_terminate, nassau_time_zone,
+    nassau_uncaught, nassau_vector_from_array,
 };
 
 /// The runtime archive, written next to the object file when linking.
@@ -24,7 +26,7 @@ pub const ARCHIVE: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/libnassau_r
 pub const NATIVE_LIBS: &str = env!("NASSAU_RUNTIME_NATIVE_LIBS");
 
 /// Runtime entry points called by generated code, for the JIT's symbol table.
-pub fn symbols() -> [(&'static str, *const u8); 67] {
+pub fn symbols() -> [(&'static str, *const u8); 73] {
     [
         ("nassau_alloc", nassau_alloc as *const u8),
         ("nassau_math_sin", nassau_math_sin as *const u8),
@@ -88,6 +90,12 @@ pub fn symbols() -> [(&'static str, *const u8); 67] {
         ("nassau_os_now", nassau_os_now as *const u8),
         ("nassau_os_getenv", nassau_os_getenv as *const u8),
         ("nassau_os_args", nassau_os_args as *const u8),
+        ("nassau_os_io_kind", nassau_os_io_kind as *const u8),
+        ("nassau_os_poll", nassau_os_poll as *const u8),
+        ("nassau_posix_int", nassau_posix_int as *const u8),
+        ("nassau_posix_real", nassau_posix_real as *const u8),
+        ("nassau_posix_text", nassau_posix_text as *const u8),
+        ("nassau_posix_exec", nassau_posix_exec as *const u8),
         ("nassau_sock_create", nassau_sock_create as *const u8),
         ("nassau_sock_pair", nassau_sock_pair as *const u8),
         ("nassau_sock_bind", nassau_sock_bind as *const u8),

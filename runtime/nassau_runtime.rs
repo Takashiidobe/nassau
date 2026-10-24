@@ -10,6 +10,8 @@ mod time;
 pub use time::*;
 mod os;
 pub use os::*;
+mod posix;
+pub use posix::*;
 
 use crate::value;
 

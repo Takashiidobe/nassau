@@ -17,7 +17,8 @@ use crate::native_runtime::{
     nassau_roots_push, nassau_sock_accept, nassau_sock_bind, nassau_sock_connect,
     nassau_sock_create, nassau_sock_listen, nassau_sock_name, nassau_sock_pair,
     nassau_sock_shutdown, nassau_take_uncaught, nassau_terminate, nassau_time_zone,
-    nassau_uncaught, nassau_vector_from_array,
+    nassau_udp_create, nassau_udp_recv_from, nassau_udp_send_to, nassau_uncaught,
+    nassau_vector_from_array,
 };
 
 /// The runtime archive, written next to the object file when linking.
@@ -26,7 +27,7 @@ pub const ARCHIVE: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/libnassau_r
 pub const NATIVE_LIBS: &str = env!("NASSAU_RUNTIME_NATIVE_LIBS");
 
 /// Runtime entry points called by generated code, for the JIT's symbol table.
-pub fn symbols() -> [(&'static str, *const u8); 73] {
+pub fn symbols() -> [(&'static str, *const u8); 76] {
     [
         ("nassau_alloc", nassau_alloc as *const u8),
         ("nassau_math_sin", nassau_math_sin as *const u8),
@@ -97,6 +98,9 @@ pub fn symbols() -> [(&'static str, *const u8); 73] {
         ("nassau_posix_text", nassau_posix_text as *const u8),
         ("nassau_posix_exec", nassau_posix_exec as *const u8),
         ("nassau_sock_create", nassau_sock_create as *const u8),
+        ("nassau_udp_create", nassau_udp_create as *const u8),
+        ("nassau_udp_send_to", nassau_udp_send_to as *const u8),
+        ("nassau_udp_recv_from", nassau_udp_recv_from as *const u8),
         ("nassau_sock_pair", nassau_sock_pair as *const u8),
         ("nassau_sock_bind", nassau_sock_bind as *const u8),
         ("nassau_sock_listen", nassau_sock_listen as *const u8),

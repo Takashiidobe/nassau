@@ -38,15 +38,13 @@ struct
   fun listen (SOCK h, _: int) = (check (Prim.sockListen h); ())
   fun connect (SOCK h, ADDR a) = (check (Prim.sockConnect (h, a)); ())
 
-  fun addressOf (h, peer) =
-    let
-      val reply = Prim.sockName (h, peer)
-    in
-      if size reply > 0 andalso String.sub (reply, 0) = #"=" then String.extract (reply, 1, NONE)
-      else raise OS.SysErr (OS.errorMsg (valOf (Int.fromString reply)), Int.fromString reply)
-    end
+  fun checkedText reply =
+    if size reply > 0 andalso String.sub (reply, 0) = #"=" then String.extract (reply, 1, NONE)
+    else raise OS.SysErr (OS.errorMsg (valOf (Int.fromString reply)), Int.fromString reply)
 
-  fun accept (SOCK h) =
+  fun addressOf (h, peer) = checkedText (Prim.sockName (h, peer))
+
+  fun accept (SOCK h : ('af, 'kind) sock) : ('af, active stream) sock * 'af sock_addr =
     let val fresh = check (Prim.sockAccept h)
     in (SOCK fresh, ADDR (addressOf (fresh, 1))) end
 
@@ -69,10 +67,72 @@ struct
 
   fun recvVec (SOCK h, n) = Byte.stringToBytes (Prim.osRead (h, n))
 
+  type out_flags = {don't_route: bool, oob: bool}
+  type in_flags = {peek: bool, oob: bool}
+
+  local
+    val defaultOut = {don't_route = false, oob = false}
+    val defaultIn = {peek = false, oob = false}
+
+    fun flagBits (oob, secondary, nonblocking) =
+      (if oob then 1 else 0) + (if secondary then 2 else 0) + (if nonblocking then 4 else 0)
+
+    fun sendTo (SOCK h : ('af, dgram) sock, ADDR a : 'af sock_addr,
+                data, {don't_route, oob}, nonblocking) =
+      check (Prim.udpSendTo (h, a, data, flagBits (oob, don't_route, nonblocking))) <> 0
+
+    fun recvFrom (SOCK h : ('af, dgram) sock, n, {peek, oob}, nonblocking)
+        : (Substring.substring * 'af sock_addr) option =
+      if n < 0 orelse n > Word8Vector.maxLen then raise Size
+      else
+        let val reply = Prim.udpRecvFrom (h, n, flagBits (oob, peek, nonblocking))
+        in
+          if reply = "" then NONE
+          else
+            let
+              val (peer, rest) = Substring.splitl (fn c => c <> #"\n") (Substring.full (checkedText reply))
+            in
+              SOME (Substring.triml 1 rest, ADDR (Substring.string peer))
+            end
+        end
+
+    fun toVector (data, peer) = (Byte.stringToBytes (Substring.string data), peer)
+
+    fun toArray slice (data, peer) =
+      let val (array, start, _) = Word8ArraySlice.base slice
+      in (Byte.packString (array, start, data); (Substring.size data, peer)) end
+  in
+    fun sendVecTo' (sock, addr, slice, flags) =
+      (sendTo (sock, addr, Byte.unpackStringVec slice, flags, false); ())
+    fun sendVecTo (sock, addr, slice) = sendVecTo' (sock, addr, slice, defaultOut)
+    fun sendArrTo' (sock, addr, slice, flags) =
+      (sendTo (sock, addr, Byte.unpackString slice, flags, false); ())
+    fun sendArrTo (sock, addr, slice) = sendArrTo' (sock, addr, slice, defaultOut)
+
+    fun sendVecToNB' (sock, addr, slice, flags) =
+      sendTo (sock, addr, Byte.unpackStringVec slice, flags, true)
+    fun sendVecToNB (sock, addr, slice) = sendVecToNB' (sock, addr, slice, defaultOut)
+    fun sendArrToNB' (sock, addr, slice, flags) =
+      sendTo (sock, addr, Byte.unpackString slice, flags, true)
+    fun sendArrToNB (sock, addr, slice) = sendArrToNB' (sock, addr, slice, defaultOut)
+
+    fun recvVecFrom' (sock, n, flags) = toVector (valOf (recvFrom (sock, n, flags, false)))
+    fun recvVecFrom (sock, n) = recvVecFrom' (sock, n, defaultIn)
+    fun recvArrFrom' (sock, slice, flags) =
+      toArray slice (valOf (recvFrom (sock, Word8ArraySlice.length slice, flags, false)))
+    fun recvArrFrom (sock, slice) = recvArrFrom' (sock, slice, defaultIn)
+
+    fun recvVecFromNB' (sock, n, flags) = Option.map toVector (recvFrom (sock, n, flags, true))
+    fun recvVecFromNB (sock, n) = recvVecFromNB' (sock, n, defaultIn)
+    fun recvArrFromNB' (sock, slice, flags) =
+      Option.map (toArray slice) (recvFrom (sock, Word8ArraySlice.length slice, flags, true))
+    fun recvArrFromNB (sock, slice) = recvArrFromNB' (sock, slice, defaultIn)
+  end
+
   structure Ctl =
   struct
-    fun getSockName (SOCK h) = ADDR (addressOf (h, 0))
-    fun getPeerName (SOCK h) = ADDR (addressOf (h, 1))
+    fun getSockName (SOCK h : ('af, 'kind) sock) : 'af sock_addr = ADDR (addressOf (h, 0))
+    fun getPeerName (SOCK h : ('af, 'kind) sock) : 'af sock_addr = ADDR (addressOf (h, 1))
   end
 end
 
@@ -80,14 +140,14 @@ structure INetSock =
 struct
   type inet = unit
   type 'a sock = (inet, 'a) Socket.sock
-  type 'a stream_sock = inet Socket.stream sock
+  type 'a stream_sock = 'a Socket.stream sock
   type dgram_sock = Socket.dgram sock
   type sock_addr = inet Socket.sock_addr
 
-  fun toAddr (addr, port) =
+  fun toAddr (addr, port) : sock_addr =
     Socket.ADDR ("inet:" ^ NetHostDB.toString addr ^ ":" ^ Int.toString port)
 
-  fun fromAddr (Socket.ADDR text) =
+  fun fromAddr (Socket.ADDR text : sock_addr) =
     let
       val body = String.extract (text, 5, NONE)
       val cut = valOf (List.find (fn i => String.sub (body, i) = #":")
@@ -98,9 +158,15 @@ struct
 
   fun any port = toAddr (NetHostDB.any, port)
 
+  structure UDP =
+  struct
+    fun socket' protocol : dgram_sock = Socket.SOCK (Socket.check (Prim.udpCreate protocol))
+    fun socket () = socket' 0
+  end
+
   structure TCP =
   struct
-    fun socket () = Socket.SOCK (Socket.check (Prim.sockCreate ()))
+    fun socket () : 'mode stream_sock = Socket.SOCK (Socket.check (Prim.sockCreate ()))
   end
 end
 

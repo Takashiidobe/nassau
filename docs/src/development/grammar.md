@@ -239,8 +239,8 @@ browser, which cannot start processes. `Time` provides conversions, arithmetic,
 comparison and `now`, stored as real seconds, without `fmt`, `toString` or
 `scan`. `PACK_REAL`, `PACK_WORD`, and the optional POSIX structures are
 unavailable. POSIX filesystem, descriptor I/O, process, signal, and
-process-environment support is tracked in Beads. `Socket` is unavailable pending
-native socket support.
+process-environment support is tracked in Beads. Native `Socket` supports TCP
+streams and IPv4 UDP datagrams. Unix hosts also support Unix-domain streams.
 
 Arrays, vectors, general file/stream I/O, `IntInf`, `Real.toString`, and most
 other structures are not implemented. `TextIO` supports file and standard

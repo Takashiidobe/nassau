@@ -2,11 +2,18 @@ use std::fs::{File, OpenOptions, ReadDir};
 use std::io::{self, Read, Write};
 use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream};
 #[cfg(unix)]
+use std::os::fd::AsRawFd;
+#[cfg(unix)]
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::slice;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, MutexGuard};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+#[cfg(any(unix, windows))]
+use socket2::{Domain, Protocol, SockAddr, Socket as Datagram, Type};
+#[cfg(windows)]
+use windows_sys::Win32::Networking::WinSock;
 
 use super::{string, string_bytes, string_length, write_stderr, write_stdout};
 use crate::value::tagged;
@@ -30,6 +37,8 @@ enum Socket {
     Bound(Address),
     TcpListener(TcpListener),
     TcpStream(TcpStream),
+    #[cfg(any(unix, windows))]
+    Udp(Datagram),
     #[cfg(unix)]
     UnixListener(UnixListener, String),
     #[cfg(unix)]
@@ -332,23 +341,46 @@ fn canonical(path: &str) -> io::Result<String> {
 }
 
 #[cfg(unix)]
-fn identity(meta: &std::fs::Metadata) -> (u64, u64) {
+fn identity(path: &str) -> io::Result<(u64, u64)> {
     use std::os::unix::fs::MetadataExt;
-    (meta.dev(), meta.ino())
+    let meta = std::fs::metadata(path)?;
+    Ok((meta.dev(), meta.ino()))
 }
 
 #[cfg(target_os = "wasi")]
-fn identity(meta: &std::fs::Metadata) -> (u64, u64) {
+fn identity(path: &str) -> io::Result<(u64, u64)> {
     use std::os::wasi::fs::MetadataExt;
-    (meta.dev(), meta.ino())
+    let meta = std::fs::metadata(path)?;
+    Ok((meta.dev(), meta.ino()))
+}
+
+#[cfg(windows)]
+fn identity(path: &str) -> io::Result<(u64, u64)> {
+    use std::os::windows::fs::OpenOptionsExt;
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::{
+        BY_HANDLE_FILE_INFORMATION, FILE_FLAG_BACKUP_SEMANTICS, GetFileInformationByHandle,
+    };
+
+    let file = OpenOptions::new()
+        .access_mode(0)
+        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+        .open(path)?;
+    let mut info = std::mem::MaybeUninit::<BY_HANDLE_FILE_INFORMATION>::uninit();
+    if unsafe { GetFileInformationByHandle(file.as_raw_handle(), info.as_mut_ptr()) } == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    let info = unsafe { info.assume_init() };
+    let index = (u64::from(info.nFileIndexHigh) << 32) | u64::from(info.nFileIndexLow);
+    Ok((u64::from(info.dwVolumeSerialNumber), index))
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn nassau_os_file_id(path: i64) -> i64 {
-    text_result(std::fs::metadata(unsafe { text(path) }).map(|meta| {
-        let (device, inode) = identity(&meta);
-        format!("{device:016x}{inode:016x}")
-    }))
+    text_result(
+        identity(&unsafe { text(path) })
+            .map(|(device, inode)| format!("{device:016x}{inode:016x}")),
+    )
 }
 
 static TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -516,6 +548,8 @@ pub unsafe extern "C" fn nassau_sock_bind(handle: i64, address: i64) -> i64 {
             *socket = Socket::Bound(address);
             Ok(())
         }
+        #[cfg(any(unix, windows))]
+        Socket::Udp(socket) => socket.bind(&udp_address(address)?),
         _ => Err(io::Error::from_raw_os_error(22)),
     }))
 }
@@ -570,6 +604,13 @@ pub unsafe extern "C" fn nassau_sock_connect(handle: i64, address: i64) -> i64 {
         return failure(&io::Error::from_raw_os_error(22));
     };
     result(with_socket(handle, |socket| {
+        #[cfg(any(unix, windows))]
+        if let Socket::Udp(socket) = socket {
+            if socket.peer_addr().is_ok() {
+                return Err(udp_already_connected());
+            }
+            return socket.connect(&udp_address(address)?);
+        }
         if !matches!(socket, Socket::Fresh | Socket::Bound(_)) {
             return Err(io::Error::from_raw_os_error(22));
         }
@@ -599,6 +640,15 @@ pub extern "C" fn nassau_sock_name(handle: i64, peer: i64) -> i64 {
             stream.local_addr()
         }
         .map(|address| address_text(&Address::Inet(address))),
+        #[cfg(any(unix, windows))]
+        Socket::Udp(socket) => {
+            let address = if peer {
+                socket.peer_addr()
+            } else {
+                socket.local_addr()
+            }?;
+            Ok(address_text(&Address::Inet(udp_inet(address)?)))
+        }
         #[cfg(unix)]
         Socket::UnixListener(_, path) if !peer => Ok(format!("unix:{path}")),
         #[cfg(unix)]
@@ -621,6 +671,217 @@ pub extern "C" fn nassau_sock_name(handle: i64, peer: i64) -> i64 {
     text_result(name)
 }
 
+#[cfg(any(unix, windows))]
+fn udp_address(address: Address) -> io::Result<SockAddr> {
+    match address {
+        Address::Inet(SocketAddr::V4(address)) => Ok(address.into()),
+        _ => Err(io::ErrorKind::InvalidInput.into()),
+    }
+}
+
+#[cfg(any(unix, windows))]
+fn udp_inet(address: SockAddr) -> io::Result<SocketAddr> {
+    address.as_socket().ok_or(io::ErrorKind::InvalidData.into())
+}
+
+#[cfg(any(unix, windows))]
+fn udp_already_connected() -> io::Error {
+    #[cfg(unix)]
+    let code = libc::EISCONN;
+    #[cfg(windows)]
+    let code = WinSock::WSAEISCONN;
+    io::Error::from_raw_os_error(code)
+}
+
+#[cfg(any(unix, windows))]
+fn udp_socket(handle: i64) -> io::Result<Datagram> {
+    with_socket(handle, |socket| match socket {
+        Socket::Udp(socket) => socket.try_clone(),
+        _ => Err(io::ErrorKind::InvalidInput.into()),
+    })
+}
+
+#[cfg(any(unix, windows))]
+fn udp_flags(flags: i64, receive: bool) -> i32 {
+    #[cfg(windows)]
+    use WinSock::{MSG_DONTROUTE, MSG_OOB, MSG_PEEK};
+    #[cfg(unix)]
+    use libc::{MSG_DONTROUTE, MSG_OOB, MSG_PEEK};
+
+    let mut native = 0;
+    if flags & 1 != 0 {
+        native |= MSG_OOB;
+    }
+    if flags & 2 != 0 {
+        native |= if receive { MSG_PEEK } else { MSG_DONTROUTE };
+    }
+    #[cfg(unix)]
+    if flags & 4 != 0 {
+        native |= libc::MSG_DONTWAIT;
+    }
+    native
+}
+
+#[cfg(any(unix, windows))]
+fn udp_io<T>(
+    socket: &Datagram,
+    receive: bool,
+    flags: i64,
+    mut operation: impl FnMut(i32) -> io::Result<T>,
+) -> io::Result<Option<T>> {
+    let native = udp_flags(flags, receive);
+    let nonblocking = flags & 4 != 0;
+    #[cfg(unix)]
+    let _ = socket;
+    loop {
+        match operation(native) {
+            Ok(value) => return Ok(Some(value)),
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+            Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                if nonblocking {
+                    return Ok(None);
+                }
+                #[cfg(windows)]
+                udp_wait(socket, receive)?;
+                #[cfg(unix)]
+                return Err(error);
+            }
+            Err(error) => return Err(error),
+        }
+    }
+}
+
+#[cfg(windows)]
+fn udp_wait(socket: &Datagram, receive: bool) -> io::Result<()> {
+    use std::os::windows::io::AsRawSocket;
+
+    let mut descriptor = WinSock::WSAPOLLFD {
+        fd: socket.as_raw_socket() as WinSock::SOCKET,
+        events: if receive {
+            WinSock::POLLIN
+        } else {
+            WinSock::POLLOUT
+        },
+        revents: 0,
+    };
+    if unsafe { WinSock::WSAPoll(&mut descriptor, 1, -1) } == WinSock::SOCKET_ERROR {
+        return Err(io::Error::from_raw_os_error(unsafe {
+            WinSock::WSAGetLastError()
+        }));
+    }
+    Ok(())
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn nassau_udp_create(protocol: i64) -> i64 {
+    #[cfg(any(unix, windows))]
+    {
+        let Ok(protocol) = i32::try_from(protocol >> 1) else {
+            return failure(&io::ErrorKind::InvalidInput.into());
+        };
+        let outcome = Datagram::new(Domain::IPV4, Type::DGRAM, Some(Protocol::from(protocol)));
+        #[cfg(windows)]
+        let outcome = outcome.and_then(|socket| {
+            socket.set_nonblocking(true)?;
+            Ok(socket)
+        });
+        match outcome {
+            Ok(socket) => insert(Stream::Socket(Socket::Udp(socket))),
+            Err(error) => failure(&error),
+        }
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = protocol;
+        failure(&unsupported())
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nassau_udp_send_to(
+    handle: i64,
+    address: i64,
+    data: i64,
+    flags: i64,
+) -> i64 {
+    #[cfg(any(unix, windows))]
+    {
+        let outcome = (|| {
+            let address =
+                parse_address(&unsafe { text(address) }).ok_or(io::ErrorKind::InvalidInput)?;
+            let address = udp_address(address)?;
+            let socket = udp_socket(handle)?;
+            let peer = socket.peer_addr().ok();
+            if let Some(peer) = &peer
+                && peer.as_socket() != address.as_socket()
+            {
+                return Err(udp_already_connected());
+            }
+            let data = unsafe { bytes(data) };
+            udp_io(&socket, false, flags >> 1, |native| {
+                if peer.is_some() {
+                    socket.send_with_flags(data, native)
+                } else {
+                    socket.send_to_with_flags(data, &address, native)
+                }
+            })
+        })();
+        match outcome {
+            Ok(sent) => tagged(i64::from(sent.is_some())),
+            Err(error) => failure(&error),
+        }
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = (handle, address, data, flags);
+        failure(&unsupported())
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn nassau_udp_recv_from(handle: i64, max: i64, flags: i64) -> i64 {
+    #[cfg(any(unix, windows))]
+    {
+        let outcome = (|| {
+            let socket = udp_socket(handle)?;
+            let peer = socket.peer_addr().ok();
+            let max = (max >> 1).clamp(0, 65535) as usize;
+            #[cfg(unix)]
+            let capacity = max;
+            #[cfg(windows)]
+            let capacity = 65535;
+            let mut data = vec![std::mem::MaybeUninit::<u8>::uninit(); capacity];
+            let received = udp_io(&socket, true, flags >> 1, |native| {
+                if let Some(peer) = &peer {
+                    socket
+                        .recv_with_flags(&mut data, native)
+                        .map(|count| (count, peer.clone()))
+                } else {
+                    socket.recv_from_with_flags(&mut data, native)
+                }
+            })?;
+            let Some((count, peer)) = received else {
+                return Ok(None);
+            };
+            let peer = udp_inet(peer)?;
+            let mut reply = format!("=inet:{peer}\n").into_bytes();
+            let data = unsafe { slice::from_raw_parts(data.as_ptr().cast::<u8>(), count.min(max)) };
+            reply.extend_from_slice(data);
+            Ok(Some(reply))
+        })();
+        match outcome {
+            Ok(Some(reply)) => unsafe { string(&reply) },
+            Ok(None) => unsafe { string(b"") },
+            Err(error) => text_result(Err(error)),
+        }
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = (handle, max, flags);
+        text_result(Err(unsupported()))
+    }
+}
+
 const SHUT_READ: i64 = 0;
 const SHUT_WRITE: i64 = 1;
 
@@ -641,7 +902,6 @@ pub extern "C" fn nassau_sock_shutdown(handle: i64, how: i64) -> i64 {
 
 #[cfg(unix)]
 fn raw_descriptor(stream: &Stream) -> Option<i32> {
-    use std::os::fd::AsRawFd;
     match stream {
         Stream::Stdin => Some(0),
         Stream::Stdout => Some(1),
@@ -650,18 +910,16 @@ fn raw_descriptor(stream: &Stream) -> Option<i32> {
         Stream::Dir { .. } => None,
         Stream::Socket(Socket::TcpListener(socket)) => Some(socket.as_raw_fd()),
         Stream::Socket(Socket::TcpStream(socket)) => Some(socket.as_raw_fd()),
+        Stream::Socket(Socket::Udp(socket)) => Some(socket.as_raw_fd()),
         Stream::Socket(Socket::UnixListener(socket, _)) => Some(socket.as_raw_fd()),
         Stream::Socket(Socket::UnixStream(socket)) => Some(socket.as_raw_fd()),
         Stream::Socket(_) => None,
     }
 }
 
-const KIND_FILE: i64 = 0;
-const KIND_DIR: i64 = 1;
-const KIND_TTY: i64 = 3;
-const KIND_PIPE: i64 = 4;
+#[cfg(any(unix, windows))]
 const KIND_SOCKET: i64 = 5;
-const KIND_DEVICE: i64 = 6;
+#[cfg(unix)]
 const EBADF: i64 = 9;
 
 #[cfg(unix)]
@@ -670,6 +928,12 @@ pub extern "C" fn nassau_os_io_kind(handle: i64) -> i64 {
     use std::mem::ManuallyDrop;
     use std::os::fd::FromRawFd;
     use std::os::unix::fs::FileTypeExt;
+
+    const KIND_FILE: i64 = 0;
+    const KIND_DIR: i64 = 1;
+    const KIND_TTY: i64 = 3;
+    const KIND_PIPE: i64 = 4;
+    const KIND_DEVICE: i64 = 6;
 
     let streams = streams();
     let Some(Some(stream)) = streams.get((handle >> 1) as usize) else {
@@ -704,7 +968,16 @@ pub extern "C" fn nassau_os_io_kind(handle: i64) -> i64 {
     })
 }
 
-#[cfg(not(unix))]
+#[cfg(windows)]
+#[unsafe(no_mangle)]
+pub extern "C" fn nassau_os_io_kind(handle: i64) -> i64 {
+    match streams().get((handle >> 1) as usize) {
+        Some(Some(Stream::Socket(_))) => tagged(KIND_SOCKET),
+        _ => tagged(-ENOSYS),
+    }
+}
+
+#[cfg(not(any(unix, windows)))]
 #[unsafe(no_mangle)]
 pub extern "C" fn nassau_os_io_kind(_handle: i64) -> i64 {
     tagged(-ENOSYS)

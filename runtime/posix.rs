@@ -1,4 +1,6 @@
-use super::{string, string_bytes, string_length, write_stdout};
+#[cfg(unix)]
+use super::write_stdout;
+use super::{string, string_bytes, string_length};
 use crate::value::tagged;
 
 unsafe fn text(word: i64) -> Vec<u8> {

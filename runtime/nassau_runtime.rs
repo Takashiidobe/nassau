@@ -18,12 +18,35 @@ use crate::value;
 
 use value::{BUILTIN_EXCEPTIONS, KIND_ARRAY, KIND_REF, KIND_STRING, KIND_VECTOR, NIL, header};
 
-// libc exposes neither stream
+#[cfg(not(windows))]
 unsafe extern "C" {
     #[cfg_attr(target_vendor = "apple", link_name = "__stdoutp")]
     static mut stdout: *mut FILE;
     #[cfg_attr(target_vendor = "apple", link_name = "__stderrp")]
     static mut stderr: *mut FILE;
+}
+
+#[cfg(windows)]
+unsafe extern "C" {
+    fn __acrt_iob_func(index: u32) -> *mut FILE;
+}
+
+unsafe fn c_stdout() -> *mut FILE {
+    #[cfg(windows)]
+    return unsafe { __acrt_iob_func(1) };
+    #[cfg(not(windows))]
+    unsafe {
+        stdout
+    }
+}
+
+unsafe fn c_stderr() -> *mut FILE {
+    #[cfg(windows)]
+    return unsafe { __acrt_iob_func(2) };
+    #[cfg(not(windows))]
+    unsafe {
+        stderr
+    }
 }
 
 static mut IDENTITIES: [i64; BUILTIN_EXCEPTIONS.len()] = [0; BUILTIN_EXCEPTIONS.len()];
@@ -67,7 +90,7 @@ pub unsafe extern "C" fn nassau_vector_from_array(array: i64) -> i64 {
 
 fn out_of_memory() -> ! {
     unsafe {
-        fprintf(stderr, c"nassau: out of memory\n".as_ptr());
+        fprintf(c_stderr(), c"nassau: out of memory\n".as_ptr());
         exit(1);
     }
 }
@@ -91,15 +114,17 @@ unsafe fn string_length(string: i64) -> usize {
 
 unsafe fn write_stdout(bytes: &[u8]) {
     unsafe {
-        fwrite(bytes.as_ptr().cast(), 1, bytes.len(), stdout);
-        fflush(stdout);
+        let stream = c_stdout();
+        fwrite(bytes.as_ptr().cast(), 1, bytes.len(), stream);
+        fflush(stream);
     }
 }
 
 unsafe fn write_stderr(bytes: &[u8]) {
     unsafe {
-        fwrite(bytes.as_ptr().cast(), 1, bytes.len(), stderr);
-        fflush(stderr);
+        let stream = c_stderr();
+        fwrite(bytes.as_ptr().cast(), 1, bytes.len(), stream);
+        fflush(stream);
     }
 }
 
@@ -163,16 +188,17 @@ pub unsafe extern "C" fn nassau_uncaught() -> c_int {
         let name = identity.add(1).read();
         let argument = exception.add(2).read();
         let location = exception.add(3).read();
-        fflush(stdout);
+        fflush(c_stdout());
+        let stream = c_stderr();
         fprintf(
-            stderr,
+            stream,
             c"/usr/lib/smlnj/bin/sml: Fatal error -- Uncaught exception %.*s with ".as_ptr(),
             string_length(name) as c_int,
             string_bytes(name),
         );
         if argument & 1 != 0 {
             fprintf(
-                stderr,
+                stream,
                 c"%lld\n raised at %.*s\n\n".as_ptr(),
                 argument >> 1,
                 string_length(location) as c_int,
@@ -180,7 +206,7 @@ pub unsafe extern "C" fn nassau_uncaught() -> c_int {
             );
         } else if (argument as *const i64).read() & 0xff == KIND_STRING {
             fprintf(
-                stderr,
+                stream,
                 c"\"%.*s\" raised at %.*s\n\n".as_ptr(),
                 string_length(argument) as c_int,
                 string_bytes(argument),
@@ -189,7 +215,7 @@ pub unsafe extern "C" fn nassau_uncaught() -> c_int {
             );
         } else {
             fprintf(
-                stderr,
+                stream,
                 c"<unknown> raised at %.*s\n\n".as_ptr(),
                 string_length(location) as c_int,
                 string_bytes(location),
@@ -202,7 +228,7 @@ pub unsafe extern "C" fn nassau_uncaught() -> c_int {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn nassau_exit(status: i64) {
     unsafe {
-        fflush(stdout);
+        fflush(c_stdout());
         exit(((status >> 1) & 0xff) as c_int);
     }
 }

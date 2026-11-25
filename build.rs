@@ -77,8 +77,13 @@ fn main() {
         .find_map(|line| line.strip_prefix("note: native-static-libs: "))
         .expect("rustc reports native libraries for the runtime staticlib");
     println!("cargo:rustc-env=NASSAU_RUNTIME_NATIVE_LIBS={libraries}");
+    let runtime = if target.ends_with("-msvc") {
+        "nassau.lib"
+    } else {
+        "libnassau.a"
+    };
     std::fs::copy(
-        bootstrap_target.join(&target).join("release/libnassau.a"),
+        bootstrap_target.join(&target).join("release").join(runtime),
         out.join("libnassau_runtime.a"),
     )
     .expect("embed the native runtime archive");
